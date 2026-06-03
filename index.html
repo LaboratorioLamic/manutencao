@@ -175,13 +175,35 @@
   }
   .toolbar-group { display: flex; align-items: center; gap: 8px; }
   
-  .filter-panel {
-    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 16px; margin-bottom: 20px; display: flex; gap: 16px; align-items: flex-end;
-    transition: max-height 0.3s ease, opacity 0.3s ease, padding 0.3s ease;
-    max-height: 200px; opacity: 1; overflow: hidden;
+  /* Filtros inline na toolbar (aba Ativos) — expande à esquerda do botão */
+  .toolbar-group-right { margin-left: auto; flex-shrink: 0; }
+  .ativos-filter-toolbar-zone {
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
   }
-  .filter-panel.hidden { max-height: 0; padding-top: 0; padding-bottom: 0; border-color: transparent; opacity: 0; margin-bottom: 0; }
+  .ativos-filter-inline {
+    display: flex; align-items: center; gap: 10px;
+    max-width: 0; opacity: 0; overflow: hidden;
+    padding: 0; border: 1px solid transparent; border-radius: var(--radius);
+    background: var(--bg);
+    transition: max-width 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.28s ease, padding 0.35s ease, border-color 0.2s;
+    white-space: nowrap; pointer-events: none;
+  }
+  .ativos-filter-inline.open {
+    max-width: min(360px, 52vw); opacity: 1;
+    padding: 6px 12px 6px 14px;
+    border-color: var(--border);
+    pointer-events: all;
+    box-shadow: var(--shadow-sm);
+  }
+  .ativos-filter-inline .ativos-filter-field {
+    display: flex; align-items: center; gap: 8px; margin: 0;
+  }
+  .ativos-filter-inline .field-label {
+    margin: 0; font-size: 11px; white-space: nowrap;
+  }
+  .ativos-filter-inline .field-select { min-width: 140px; width: auto; }
+  .ativos-filter-inline .btn { padding: 7px 12px; font-size: 12px; flex-shrink: 0; }
+  #btn-ativos-filtro.active { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-light); }
 
   .assets-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;
@@ -241,6 +263,9 @@
 
   .empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 60px 20px; text-align: center; color: var(--text-muted); background: var(--bg-card); border-radius: var(--radius-lg); border: 1px dashed var(--border); grid-column: 1 / -1; }
   .empty-state svg { width: 48px; height: 48px; margin-bottom: 16px; opacity: 0.5; }
+
+  .asset-card.alert-danger { border-left: 3px solid var(--red); }
+  .asset-card.alert-warning { border-left: 3px solid var(--amber); }
 
   /* FAB (Floating Action Button) */
   .fab-btn {
@@ -821,6 +846,11 @@
   .rotina-info-value { font-size: 13px; font-weight: 600; color: var(--text-primary); }
   .rotina-info-empty { font-size: 12.5px; color: var(--text-muted); font-style: italic; }
 
+  .data-realizada-hora {
+    font-size: 10.5px; font-weight: 500; color: var(--text-muted); margin-left: 5px;
+    font-family: 'DM Mono', monospace; letter-spacing: 0.2px;
+  }
+
   /* Campo próxima data auto */
   .auto-date-field {
     background: var(--bg); border: 1.5px dashed var(--border);
@@ -1159,7 +1189,7 @@
               <div class="rotina-toolbar-sep"></div>
 
               <div style="display:flex;align-items:center;gap:6px;">
-                <select id="filter-tipo" class="field-select" style="width:auto;min-width:160px;" onchange="renderRotinasTable()">
+                <select id="filter-tipo" class="field-select" style="width:auto;min-width:160px;" onchange="renderRotinasTable();updateNotifBadge()">
                   <option value="">Tipo (Todos)</option>
                   <option value="Preventivo">Preventivo</option>
                   <option value="Rotina">Rotina</option>
@@ -1169,11 +1199,11 @@
                 </button>
               </div>
 
-              <select id="filter-setor-rotina" class="field-select" style="width:auto;min-width:150px;" onchange="renderRotinasTable()">
+              <select id="filter-setor-rotina" class="field-select" style="width:auto;min-width:150px;" onchange="renderRotinasTable();updateNotifBadge()">
                 <option value="">Setor (Todos)</option>
               </select>
 
-              <select id="filter-cat-rotina" class="field-select" style="width:auto;min-width:150px;" onchange="renderRotinasTable()">
+              <select id="filter-cat-rotina" class="field-select" style="width:auto;min-width:150px;" onchange="renderRotinasTable();updateNotifBadge()">
                 <option value="">Categoria (Todas)</option>
               </select>
 
@@ -1231,9 +1261,9 @@
                 <p>Acompanhe e gerencie todas as tarefas de manutenção</p>
               </div>
               <div class="status-filter-group">
-                <button class="status-filter-btn active" id="sfbtn-tarefa-todos" onclick="setTarefaStatusFilter('todos')">Todos</button>
-                <button class="status-filter-btn" id="sfbtn-tarefa-ativo" onclick="setTarefaStatusFilter('ativo')">Ativos</button>
-                <button class="status-filter-btn" id="sfbtn-tarefa-inativo" onclick="setTarefaStatusFilter('inativo')">Inativos</button>
+                <button class="status-filter-btn active active-green" id="sfbtn-tarefa-ativo" onclick="setTarefaStatusFilter('main','ativo')">Ativos</button>
+                <button class="status-filter-btn" id="sfbtn-tarefa-inativo" onclick="setTarefaStatusFilter('main','inativo')">Inativos</button>
+                <button class="status-filter-btn" id="sfbtn-tarefa-ambos" onclick="setTarefaStatusFilter('main','ambos')">Ambos</button>
               </div>
             </div>
             <button class="rotina-fab" onclick="openTarefaDrawer()" title="Nova Tarefa">
@@ -1334,26 +1364,43 @@
 
         <div class="toolbar">
           <div class="toolbar-group">
-            <select id="main-sector-filter" class="field-select" style="min-width: 200px;" onchange="renderCards()">
+            <select id="main-sector-filter" class="field-select" style="min-width: 200px;" onchange="renderCards();updateNotifBadge()">
               <option value="todos">Setor (Todos)</option>
             </select>
             <button class="btn btn-outline btn-icon" onclick="openSetorModal()" title="Novo Setor">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
           </div>
-          <div class="toolbar-group">
-            <button class="btn btn-outline" onclick="toggleFilter()" title="Filtros">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-            </button>
-          </div>
-        </div>
-
-        <div id="filter-panel" class="filter-panel hidden">
-          <div class="form-field" style="margin:0; max-width: 250px;">
-            <label class="field-label">Filtrar por Categoria</label>
-            <select id="main-category-filter" class="field-select" onchange="renderCards()">
-              <option value="todas">Todas</option>
-            </select>
+          <div class="toolbar-group toolbar-group-right">
+            <div class="ativos-filter-toolbar-zone" id="ativos-filter-toolbar-zone">
+              <div id="ativos-filter-inline" class="ativos-filter-inline" aria-hidden="true">
+                <div class="ativos-filter-field">
+                  <label class="field-label" for="main-category-filter">Categoria</label>
+                  <select id="main-category-filter" class="field-select" onchange="renderCards();updateNotifBadge();updateAtivosFiltroBtn()">
+                    <option value="todas">Todas</option>
+                  </select>
+                </div>
+                <button type="button" class="btn btn-outline" onclick="limparAtivosFiltros()" title="Limpar filtro de categoria">Limpar</button>
+              </div>
+              <button type="button" class="btn btn-outline" id="btn-ativos-filtro" onclick="toggleAtivosFilter()" title="Filtros" aria-expanded="false" aria-controls="ativos-filter-inline">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+              </button>
+            </div>
+            <div class="notif-wrapper" id="ativos-notif-wrapper">
+              <button class="notif-btn" onclick="toggleAtivosNotifDropdown()" title="Alertas de tarefas">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                <span class="notif-badge" id="ativos-notif-badge">0</span>
+              </button>
+              <div class="notif-dropdown" id="ativos-notif-dropdown">
+                <div class="notif-header">
+                  <span>Alertas de Tarefas</span>
+                  <span id="ativos-notif-count-label" style="color:var(--text-muted);font-weight:400;text-transform:none;letter-spacing:0;">0 alertas</span>
+                </div>
+                <div class="notif-list" id="ativos-notif-list">
+                  <div class="notif-empty">Nenhum alerta no momento</div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1627,6 +1674,13 @@
         <div id="rotina-view-body"></div>
       </div>
       <div id="rvtab-tarefas" style="padding:16px 24px;display:none;">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <div class="status-filter-group">
+            <button class="status-filter-btn active active-green" id="sfbtn-rv-tarefa-ativo" onclick="setTarefaStatusFilter('rv','ativo')">Ativos</button>
+            <button class="status-filter-btn" id="sfbtn-rv-tarefa-inativo" onclick="setTarefaStatusFilter('rv','inativo')">Inativos</button>
+            <button class="status-filter-btn" id="sfbtn-rv-tarefa-ambos" onclick="setTarefaStatusFilter('rv','ambos')">Ambos</button>
+          </div>
+        </div>
         <div id="rotina-view-tarefas-list"></div>
       </div>
       <div id="rvtab-atividades" style="padding:16px 24px;display:none;">
@@ -1887,15 +1941,18 @@
       </button>
     </div>
     <div class="modal-body">
-      <div class="form-field">
-        <label class="field-label">Data de Realização <span class="required">*</span></label>
-        <input type="date" id="pub-data-realizada" class="field-input">
+      <div class="form-row">
+        <div class="form-field" style="margin-bottom:0;">
+          <label class="field-label">Data de Realização <span class="required">*</span></label>
+          <input type="date" id="pub-data-realizada" class="field-input">
+        </div>
+        <div class="form-field" style="margin-bottom:0;">
+          <label class="field-label">Hora de Realização <span class="required">*</span></label>
+          <input type="time" id="pub-hora-realizada" class="field-input">
+        </div>
       </div>
       <div id="pub-checklist-section" style="display:none;">
-        <div class="form-section-title" style="margin-bottom:6px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/></svg>
-          Checklist — marque todos os itens
-        </div>
+
         <div id="pub-checklist" class="pub-checklist"></div>
         <div class="pub-checklist-progress">
           <span id="pub-progress-label">0 / 0 itens marcados</span>
@@ -2016,9 +2073,15 @@
     </div>
     <div class="modal-body">
       <input type="hidden" id="edit-pub-id">
-      <div class="form-field">
-        <label class="field-label">Data de Realização <span class="required">*</span></label>
-        <input type="date" id="edit-pub-data" class="field-input">
+      <div class="form-row">
+        <div class="form-field" style="margin-bottom:0;">
+          <label class="field-label">Data de Realização <span class="required">*</span></label>
+          <input type="date" id="edit-pub-data" class="field-input">
+        </div>
+        <div class="form-field" style="margin-bottom:0;">
+          <label class="field-label">Hora de Realização <span class="required">*</span></label>
+          <input type="time" id="edit-pub-hora" class="field-input">
+        </div>
       </div>
       <div class="form-field">
         <label class="field-label">Observações</label>
@@ -2251,6 +2314,13 @@
         <div id="ativo-rotinas-list"></div>
       </div>
       <div id="avtab-tarefas" style="padding:16px 24px;display:none;">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <div class="status-filter-group">
+            <button class="status-filter-btn active active-green" id="sfbtn-av-tarefa-ativo" onclick="setTarefaStatusFilter('av','ativo')">Ativos</button>
+            <button class="status-filter-btn" id="sfbtn-av-tarefa-inativo" onclick="setTarefaStatusFilter('av','inativo')">Inativos</button>
+            <button class="status-filter-btn" id="sfbtn-av-tarefa-ambos" onclick="setTarefaStatusFilter('av','ambos')">Ambos</button>
+          </div>
+        </div>
         <div id="ativo-tarefas-list"></div>
       </div>
       <div id="avtab-atividades" style="padding:16px 24px;display:none;">
@@ -2281,7 +2351,60 @@
     publicacoes: []
   };
 
-  function saveState() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }
+  function saveState() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    refreshTaskFlagsUI();
+  }
+
+  function isModalOpen(id) {
+    return document.getElementById(id)?.classList.contains('open');
+  }
+
+  function getActiveSubTab(prefix, tabs) {
+    for (const t of tabs) {
+      const el = document.getElementById(prefix + '-' + t);
+      if (el && el.style.display !== 'none') return t;
+    }
+    return tabs[0];
+  }
+
+  function refreshTaskFlagsUI() {
+    renderCards();
+    renderRotinasTable();
+    renderTarefasTable();
+    renderAtividadesTable();
+    updateNotifBadge();
+
+    if (document.getElementById('notif-dropdown')?.classList.contains('open')) {
+      renderNotifDropdown();
+    }
+    if (document.getElementById('ativos-notif-dropdown')?.classList.contains('open')) {
+      renderAtivosNotifDropdown();
+    }
+
+    if (isModalOpen('modal-rotina-view') && rotinaViewId) {
+      renderRotinaViewInfo();
+      renderRotinaViewTarefas();
+      const rvTab = getActiveSubTab('rvtab', ['info', 'tarefas', 'atividades']);
+      if (rvTab === 'atividades') renderRotinaViewAtividades();
+    }
+
+    if (isModalOpen('modal-visualizar') && ativoEdicaoIndex !== null && ativoEdicaoIndex !== undefined) {
+      _atualizarBadgesAtivoTabs(ativoEdicaoIndex);
+      const avTab = getActiveSubTab('avtab', ['info', 'rotinas', 'tarefas', 'atividades']);
+      if (avTab === 'rotinas') _renderAtivoRotinas();
+      if (avTab === 'tarefas') _renderAtivoTarefas();
+      if (avTab === 'atividades') _renderAtivoAtividades();
+    }
+
+    if (isModalOpen('modal-tarefa-detalhe') && tarefaDetalheId) {
+      renderTarefaDetalheContent(tarefaDetalheId);
+    }
+
+    if (isModalOpen('modal-historico') && _historicoTarefaId) {
+      renderHistoricoTable(_historicoTarefaId);
+    }
+  }
   function loadState() {
     try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; }
   }
@@ -2303,8 +2426,47 @@
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   function formatDate(str) {
     if (!str) return '—';
-    const [y,m,d] = str.split('-');
+    const datePart = (str.includes('T') ? str.split('T')[0] : str);
+    const [y,m,d] = datePart.split('-');
     return `${d}/${m}/${y}`;
+  }
+  function parseDataRealizada(str) {
+    if (!str) return { date: '', time: '' };
+    if (str.includes('T')) {
+      const [date, timePart] = str.split('T');
+      const time = (timePart || '').slice(0, 5);
+      return { date, time: /^\d{2}:\d{2}$/.test(time) ? time : '' };
+    }
+    return { date: str, time: '' };
+  }
+  function buildDataRealizada(date, time) {
+    if (!date) return '';
+    return time ? `${date}T${time}` : date;
+  }
+  function dataRealizadaSortKey(str) {
+    const { date, time } = parseDataRealizada(str);
+    return (date || '') + 'T' + (time || '00:00');
+  }
+  function formatDataRealizadaHtml(str) {
+    const { date, time } = parseDataRealizada(str);
+    if (!date) return '—';
+    const dateStr = formatDate(date);
+    if (!time) return dateStr;
+    return `${dateStr}<span class="data-realizada-hora">${time}</span>`;
+  }
+  function formatDataRealizadaText(str) {
+    const { date, time } = parseDataRealizada(str);
+    if (!date) return '—';
+    return time ? `${formatDate(date)} ${time}` : formatDate(date);
+  }
+  function getTarefaLabel(t) {
+    if (!t) return '—';
+    const ativo = state.ativos[t.equipamentoIdx];
+    const parts = [];
+    if (ativo?.nome) parts.push(ativo.nome);
+    if (ativo?.codigo) parts.push(ativo.codigo);
+    if (t.dataTarefa) parts.push('prog. ' + formatDate(t.dataTarefa));
+    return parts.length ? parts.join(' · ') : '—';
   }
   function calcProximaData(dateStr, rotina) {
     if (!dateStr || !rotina) return '';
@@ -2334,8 +2496,13 @@
     atualizarSelects();       // popula setores, categorias, tipos
     atualizarFiltrosRotina(); // filtros do painel rotina
     populateTipoSelect();     // select de tipo no drawer
-    renderCards();            // grid de ativos
-    // Definir aba inicial: Ativos
+    renderCards();
+    updateNotifBadge();
+    updateAtivosFiltroBtn();
+    setInterval(refreshTaskFlagsUI, 60000);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) refreshTaskFlagsUI();
+    });
     switchTab('ativos');
   });
 
@@ -2377,14 +2544,13 @@
     document.getElementById('topbar-title').textContent = title;
     document.getElementById('topbar-breadcrumb').textContent = 'Sistema / ' + title;
     closeSidebar();
+    if (tabId !== 'ativos') closeAtivosFilter();
     // Inicializar conteúdo ao trocar de aba
     if (tabId === 'rotina') {
       atualizarFiltrosRotina();
       populateTipoSelect();
-      renderRotinasTable();
-      updateNotifBadge();
     }
-    if (tabId === 'ativos') renderCards();
+    if (tabId === 'rotina' || tabId === 'ativos') refreshTaskFlagsUI();
   }
 
   // ── ROTINA SUBTABS ──
@@ -2395,9 +2561,10 @@
     document.querySelectorAll('.rotina-nav-item').forEach(n => n.classList.remove('active'));
     document.getElementById('rpanel-' + tab).classList.add('active');
     document.getElementById('rnav-' + tab).classList.add('active');
-    if (tab === 'tarefas') renderTarefasTable();
-    if (tab === 'atividades') renderAtividadesTable();
-    if (tab === 'rotinas') renderRotinasTable();
+    renderRotinasTable();
+    renderTarefasTable();
+    renderAtividadesTable();
+    updateNotifBadge();
   }
 
   // ── NOTIFICAÇÕES ──
@@ -2409,12 +2576,16 @@
   document.addEventListener('click', e => {
     if (!e.target.closest('.notif-wrapper')) {
       document.getElementById('notif-dropdown')?.classList.remove('open');
+      document.getElementById('ativos-notif-dropdown')?.classList.remove('open');
+    }
+    if (!e.target.closest('#ativos-filter-toolbar-zone') && isAtivosFilterOpen()) {
+      closeAtivosFilter();
     }
   });
 
   function renderNotifDropdown() {
     const list = document.getElementById('notif-list');
-    const alerts = getNotifAlerts();
+    const alerts = getNotifAlerts('rotina');
     document.getElementById('notif-count-label').textContent = alerts.length + ' alerta' + (alerts.length !== 1 ? 's' : '');
     if (alerts.length === 0) {
       list.innerHTML = '<div class="notif-empty">Nenhum alerta no momento</div>';
@@ -2430,31 +2601,149 @@
       </div>`).join('');
   }
 
-  function getNotifAlerts() {
+  function ativoPassesAtivosFilters(equipamentoIdx) {
+    const ativo = state.ativos[equipamentoIdx];
+    if (!ativo) return false;
+    const fSetor = document.getElementById('main-sector-filter')?.value || 'todos';
+    const fCat   = document.getElementById('main-category-filter')?.value || 'todas';
+    if (fSetor !== 'todos' && ativo.setor !== fSetor) return false;
+    if (fCat !== 'todas' && ativo.categoria !== fCat) return false;
+    return true;
+  }
+
+  function tarefaPassesRotinaNotifFilters(t) {
+    const rotina = state.rotinas.find(r => r.id === t.rotinaId);
+    const ativo  = state.ativos[t.equipamentoIdx];
+    if (!rotina || !ativo) return false;
+
+    const fTipo   = document.getElementById('filter-tipo')?.value || '';
+    const fSetor  = document.getElementById('filter-setor-rotina')?.value || '';
+    const fCat    = document.getElementById('filter-cat-rotina')?.value || '';
+    const fAtivoIdx = state._ativoFiltroIdx ?? null;
+
+    if (fAtivoIdx !== null && fAtivoIdx !== undefined && t.equipamentoIdx !== fAtivoIdx) return false;
+    if (fTipo && rotina.tipo !== fTipo) return false;
+    if (fSetor && ativo.setor !== fSetor) return false;
+    if (fCat && ativo.categoria !== fCat) return false;
+
+    const rStatus = rotina.status || 'Ativo';
+    if (_rotinaStatusFilter === 'ativo' && rStatus !== 'Ativo') return false;
+    if (_rotinaStatusFilter === 'inativo' && rStatus !== 'Inativo') return false;
+
+    if (activeRotinaTab === 'tarefas') {
+      if (!tarefaPassesStatusFilter(t, 'main')) return false;
+      const fTarefaAtivo = state._ativoFiltroTarefasIdx ?? null;
+      if (fTarefaAtivo !== null && fTarefaAtivo !== undefined && t.equipamentoIdx !== fTarefaAtivo) return false;
+    }
+
+    if (activeRotinaTab === 'atividades') {
+      const fAtivAtivo = state._ativoFiltroAtividadesIdx ?? null;
+      if (fAtivAtivo !== null && fAtivAtivo !== undefined && t.equipamentoIdx !== fAtivAtivo) return false;
+    }
+
+    return true;
+  }
+
+  function getNotifAlerts(context) {
     const today = new Date(); today.setHours(0,0,0,0);
     const alerts = [];
-    state.tarefas.filter(t => t.status === 'Ativo').forEach(t => {
+    state.tarefas.forEach(t => {
+      const tStatus = t.status || 'Ativo';
+      if (tStatus !== 'Ativo') return;
       if (!t.proximaData) return;
+
+      if (context === 'rotina' && !tarefaPassesRotinaNotifFilters(t)) return;
+      if (context === 'ativos' && !ativoPassesAtivosFilters(t.equipamentoIdx)) return;
+
       const rotina = state.rotinas.find(r => r.id === t.rotinaId);
       const ativo = state.ativos[t.equipamentoIdx];
       if (!rotina || !ativo) return;
       const due = new Date(t.proximaData + 'T00:00:00');
       const diffDays = Math.ceil((due - today) / 86400000);
       if (diffDays < 0) {
-        alerts.push({ tarefaId: t.id, tipo: 'danger', rotinaNome: rotina.nome, equipNome: ativo.nome, msg: `Vencida há ${Math.abs(diffDays)} dia(s)` });
+        alerts.push({
+          tarefaId: t.id, equipamentoIdx: t.equipamentoIdx, proximaData: t.proximaData,
+          tipo: 'danger', rotinaNome: rotina.nome, equipNome: ativo.nome, equipCodigo: ativo.codigo,
+          msg: `Vencida há ${Math.abs(diffDays)} dia(s)`, diffDays
+        });
       } else if (diffDays <= (t.lembrete || 3)) {
-        alerts.push({ tarefaId: t.id, tipo: 'warning', rotinaNome: rotina.nome, equipNome: ativo.nome, msg: `Vence em ${diffDays} dia(s)` });
+        alerts.push({
+          tarefaId: t.id, equipamentoIdx: t.equipamentoIdx, proximaData: t.proximaData,
+          tipo: 'warning', rotinaNome: rotina.nome, equipNome: ativo.nome, equipCodigo: ativo.codigo,
+          msg: `Vence em ${diffDays} dia(s)`, diffDays
+        });
       }
+    });
+    alerts.sort((a, b) => {
+      if (a.tipo !== b.tipo) return a.tipo === 'danger' ? -1 : 1;
+      return (a.diffDays ?? 0) - (b.diffDays ?? 0);
     });
     return alerts;
   }
 
+  function getAtivoAlertCounts(equipamentoIdx) {
+    if (!ativoPassesAtivosFilters(equipamentoIdx)) return { danger: 0, warning: 0, total: 0 };
+    let danger = 0, warning = 0;
+    state.tarefas.filter(t => t.equipamentoIdx === equipamentoIdx && t.status === 'Ativo').forEach(t => {
+      const f = getTaskFlag(t);
+      if (f.cls === 'flag-danger') danger++;
+      else if (f.cls === 'flag-warning') warning++;
+    });
+    return { danger, warning, total: danger + warning };
+  }
+
+  function toggleAtivosNotifDropdown() {
+    const dd = document.getElementById('ativos-notif-dropdown');
+    if (!dd) return;
+    dd.classList.toggle('open');
+    if (dd.classList.contains('open')) renderAtivosNotifDropdown();
+  }
+
+  function renderAtivosNotifDropdown() {
+    const list = document.getElementById('ativos-notif-list');
+    const label = document.getElementById('ativos-notif-count-label');
+    if (!list) return;
+    const alerts = getNotifAlerts('ativos');
+    if (label) label.textContent = alerts.length + ' alerta' + (alerts.length !== 1 ? 's' : '');
+    if (alerts.length === 0) {
+      list.innerHTML = '<div class="notif-empty">Nenhum alerta no momento</div>';
+      return;
+    }
+    list.innerHTML = alerts.map(a => `
+      <div class="notif-item" onclick="openAlertaFromAtivos('${a.tarefaId}');document.getElementById('ativos-notif-dropdown').classList.remove('open')">
+        <div class="notif-dot ${a.tipo}"></div>
+        <div class="notif-text">
+          <strong>${a.rotinaNome}</strong> — ${a.equipNome}
+          <small>${a.equipCodigo ? a.equipCodigo + ' · ' : ''}${a.msg} · ${formatDate(a.proximaData)}</small>
+        </div>
+      </div>`).join('');
+  }
+
+  function openAlertaFromAtivos(tarefaId) {
+    const t = state.tarefas.find(t => t.id === tarefaId);
+    if (!t) return;
+    visualizarAtivo(t.equipamentoIdx, 'tarefas');
+  }
+
   function updateNotifBadge() {
-    const count = getNotifAlerts().length;
+    const rotinaCount = getNotifAlerts('rotina').length;
+    const ativosCount = getNotifAlerts('ativos').length;
     const badge = document.getElementById('notif-badge');
-    if (!badge) return;
-    badge.textContent = count;
-    badge.classList.toggle('visible', count > 0);
+    if (badge) {
+      badge.textContent = rotinaCount;
+      badge.classList.toggle('visible', rotinaCount > 0);
+    }
+    const ativosBadge = document.getElementById('ativos-notif-badge');
+    if (ativosBadge) {
+      ativosBadge.textContent = ativosCount;
+      ativosBadge.classList.toggle('visible', ativosCount > 0);
+    }
+    if (document.getElementById('notif-dropdown')?.classList.contains('open')) {
+      renderNotifDropdown();
+    }
+    if (document.getElementById('ativos-notif-dropdown')?.classList.contains('open')) {
+      renderAtivosNotifDropdown();
+    }
   }
 
   // ══════════════════════════════════════════
@@ -2721,8 +3010,6 @@
     }
     saveState();
     closeTarefaDrawer();
-    renderTarefasTable();
-    updateNotifBadge();
     showToast(tarefaEdicaoId ? 'Tarefa atualizada!' : 'Tarefa cadastrada!', 'success');
   }
 
@@ -2736,10 +3023,7 @@
     const fAtivoIdx = state._ativoFiltroTarefasIdx ?? null;
     const list = state.tarefas.filter(t => {
       if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
-      const tStatus = t.status || 'Ativo';
-      if (_tarefaStatusFilter === 'ativo' && tStatus !== 'Ativo') return false;
-      if (_tarefaStatusFilter === 'inativo' && tStatus !== 'Inativo') return false;
-      return true;
+      return tarefaPassesStatusFilter(t, 'main');
     });
 
     if (list.length === 0) {
@@ -2748,7 +3032,6 @@
         <strong>Nenhuma tarefa encontrada</strong>
         <p>Ajuste o filtro de ativo ou crie uma nova tarefa</p>
       </div></td></tr>`;
-      updateNotifBadge();
       return;
     }
 
@@ -2769,7 +3052,7 @@
           ${flag.label}
         </span></td>
         <td>
-          <div style="font-weight:600;">${rotina?.nome || '—'}</div>
+          <div style="font-weight:600;">Rotina: ${rotina?.nome || '—'}</div>
           <div style="font-size:11px;color:var(--text-muted);">${rotina?.tipo || ''}</div>
         </td>
         <td>
@@ -2782,7 +3065,6 @@
         <td>${statusChip}${nPubs > 0 ? `<span class="chip chip-cyan" style="margin-left:6px;">${nPubs} pub.</span>` : ''}</td>
       </tr>`;
     }).join('');
-    updateNotifBadge();
   }
 
   // ══════════════════════════════════════════
@@ -2790,7 +3072,7 @@
   // ══════════════════════════════════════════
   let tarefaDetalheId = null;
 
-  function openTarefaDetalhe(id) {
+  function renderTarefaDetalheContent(id) {
     tarefaDetalheId = id;
     const t = state.tarefas.find(t => t.id === id);
     if (!t) return;
@@ -2855,10 +3137,12 @@
         </div>` : ''}
       </div>`;
 
-    // Controla visibilidade do botão publicar
     const btnPub = document.getElementById('btn-publicar-tarefa');
     if (btnPub) btnPub.style.display = (t.status === 'Inativo') ? 'none' : '';
+  }
 
+  function openTarefaDetalhe(id) {
+    renderTarefaDetalheContent(id);
     openModal('modal-tarefa-detalhe');
   }
 
@@ -2873,9 +3157,6 @@
     state.publicacoes = state.publicacoes.filter(p => p.tarefaId !== tarefaDetalheId);
     saveState();
     closeModal('modal-tarefa-detalhe');
-    renderTarefasTable();
-    renderAtividadesTable();
-    updateNotifBadge();
     showToast('Tarefa excluída.', 'success');
   }
 
@@ -2932,7 +3213,10 @@
     if (t.status === 'Inativo') { showToast('Tarefas inativas não podem ser publicadas.', 'error'); return; }
     const rotina = state.rotinas.find(r => r.id === t.rotinaId);
 
-    document.getElementById('pub-data-realizada').value = '';
+    const now = new Date();
+    document.getElementById('pub-data-realizada').value = now.toISOString().split('T')[0];
+    document.getElementById('pub-hora-realizada').value =
+      String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     document.getElementById('pub-notas').value = '';
     pubChecklistState = {};
     pubAnexos = [];
@@ -3006,9 +3290,13 @@
     const t = state.tarefas.find(t => t.id === tarefaDetalheId);
     if (!t) return;
     const rotina = state.rotinas.find(r => r.id === t.rotinaId);
-    const dataRealizada = document.getElementById('pub-data-realizada').value;
+    const dataPub = document.getElementById('pub-data-realizada').value;
+    const horaPub = document.getElementById('pub-hora-realizada').value;
 
-    if (!dataRealizada) { showToast('Informe a data de realização.', 'error'); return; }
+    if (!dataPub) { showToast('Informe a data de realização.', 'error'); return; }
+    if (!horaPub) { showToast('Informe a hora de realização.', 'error'); return; }
+    const dataRealizada = buildDataRealizada(dataPub, horaPub);
+    const dataRealizadaDate = parseDataRealizada(dataRealizada).date;
 
     // Valida obrigatoriedade de anexo
     if (t.anexoObrigatorio && pubAnexos.length === 0) {
@@ -3036,11 +3324,11 @@
     state.publicacoes.push(pub);
 
     // Atualiza próxima data da tarefa baseado na data realizada
-    const novaProxima = calcProximaData(dataRealizada, rotina);
+    const novaProxima = calcProximaData(dataRealizadaDate, rotina);
     const tIdx = state.tarefas.findIndex(tt => tt.id === tarefaDetalheId);
     if (tIdx >= 0) {
       state.tarefas[tIdx].proximaData = novaProxima;
-      state.tarefas[tIdx].dataTarefa  = dataRealizada;
+      state.tarefas[tIdx].dataTarefa  = dataRealizadaDate;
 
       // Auto-inativar ao atingir o número de repetições
       if (rotina.repetir === 'Por') {
@@ -3052,13 +3340,10 @@
       }
     }
 
-    saveState();
     closeModal('modal-publicar');
+    saveState();
 
     const autoInativ = state.tarefas[tIdx]?.autoInativada;
-    renderTarefasTable();
-    renderAtividadesTable();
-    updateNotifBadge();
     if (autoInativ) {
       showToast(`Rotina concluída! Tarefa inativada após ${rotina.vezes} publicação(ões).`, 'info');
     } else {
@@ -3084,7 +3369,7 @@
     _historicoTarefaId = tarefaId;
     const tbody = document.getElementById('historico-tbody');
     const pubs  = state.publicacoes.filter(p => p.tarefaId === tarefaId)
-      .sort((a, b) => b.dataRealizada.localeCompare(a.dataRealizada));
+      .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)));
 
     if (pubs.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5"><div class="data-table-empty">
@@ -3099,7 +3384,7 @@
       const nCheck = p.checklistMarcado?.length || 0;
       const checkStr = nCheck > 0 ? `<span class="chip chip-green">${nCheck} item${nCheck>1?'s':''}</span>` : '<span style="color:var(--text-muted)">—</span>';
       return `<tr class="historico-pub-row" onclick="viewPublicacao('${p.id}')">
-        <td style="font-weight:600;">${formatDate(p.dataRealizada)}</td>
+        <td style="font-weight:600;">${formatDataRealizadaHtml(p.dataRealizada)}</td>
         <td style="font-size:12px;color:var(--text-muted);">${formatDate(p.dataPublicacao)}</td>
         <td>${checkStr}</td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--text-secondary);">${p.notas || '<span style="color:var(--text-muted)">—</span>'}</td>
@@ -3154,8 +3439,10 @@
   function abrirEditarPublicacao(pubId) {
     const p = state.publicacoes.find(p => p.id === pubId);
     if (!p) return;
+    const { date, time } = parseDataRealizada(p.dataRealizada);
     document.getElementById('edit-pub-id').value   = pubId;
-    document.getElementById('edit-pub-data').value = p.dataRealizada;
+    document.getElementById('edit-pub-data').value = date;
+    document.getElementById('edit-pub-hora').value = time || '00:00';
     document.getElementById('edit-pub-notas').value = p.notas || '';
     // Carrega anexos existentes — normaliza formato legado
     _editPubAnexos = (p.anexos || []).map((a, i) =>
@@ -3170,17 +3457,17 @@
   function salvarEdicaoPublicacao() {
     const pubId = document.getElementById('edit-pub-id').value;
     const data  = document.getElementById('edit-pub-data').value;
+    const hora  = document.getElementById('edit-pub-hora').value;
     const notas = document.getElementById('edit-pub-notas').value.trim();
     if (!data) { showToast('Informe a data de realização.', 'error'); return; }
+    if (!hora) { showToast('Informe a hora de realização.', 'error'); return; }
     const idx = state.publicacoes.findIndex(p => p.id === pubId);
     if (idx < 0) return;
-    state.publicacoes[idx].dataRealizada = data;
+    state.publicacoes[idx].dataRealizada = buildDataRealizada(data, hora);
     state.publicacoes[idx].notas = notas;
     state.publicacoes[idx].anexos = _editPubAnexos.slice();
     saveState();
     closeModal('modal-editar-pub');
-    if (_historicoTarefaId) renderHistoricoTable(_historicoTarefaId);
-    renderAtividadesTable();
     showToast('Publicação atualizada!', 'success');
   }
 
@@ -3204,9 +3491,6 @@
     }
 
     saveState();
-    if (_historicoTarefaId) renderHistoricoTable(_historicoTarefaId);
-    renderAtividadesTable();
-    renderTarefasTable();
     showToast('Publicação excluída.', 'success');
   }
 
@@ -3266,13 +3550,14 @@
       </div>` : '';
 
     document.getElementById('pub-view-subtitle').textContent =
-      `Realizada em ${formatDate(p.dataRealizada)} · Publicada em ${formatDate(p.dataPublicacao)}`;
+      `Realizada em ${formatDataRealizadaText(p.dataRealizada)} · Publicada em ${formatDate(p.dataPublicacao)}`;
 
     document.getElementById('pub-view-body').innerHTML = `
       <div class="view-hero">
         <div class="view-hero-name">${rotina?.nome || '—'}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Tarefa: ${getTarefaLabel(t)}</div>
         <div class="view-badges" style="margin-top:8px;">
-          <span class="view-badge">Realizada: ${formatDate(p.dataRealizada)}</span>
+          <span class="view-badge">Realizada: ${formatDataRealizadaText(p.dataRealizada)}</span>
           <span class="view-badge">Publicada: ${formatDate(p.dataPublicacao)}</span>
         </div>
       </div>
@@ -3298,7 +3583,7 @@
     const fAtivoIdx = state._ativoFiltroAtividadesIdx ?? null;
     const pubs = state.publicacoes
       .slice()
-      .sort((a, b) => b.dataRealizada.localeCompare(a.dataRealizada))
+      .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)))
       .filter(p => {
         if (fAtivoIdx === null) return true;
         const t = state.tarefas.find(t => t.id === p.tarefaId);
@@ -3319,10 +3604,11 @@
       const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
       const ativo  = t ? state.ativos[t.equipamentoIdx] : null;
       return `<tr onclick="viewPublicacao('${p.id}')">
-        <td style="font-weight:700;color:var(--text-primary);">${formatDate(p.dataRealizada)}</td>
+        <td style="font-weight:700;color:var(--text-primary);">${formatDataRealizadaHtml(p.dataRealizada)}</td>
         <td>
-          <div style="font-weight:600;">${rotina?.nome || '—'}</div>
+          <div style="font-weight:600;">Rotina: ${rotina?.nome || '—'}</div>
           <div style="font-size:11px;color:var(--text-muted);">${rotina?.tipo || ''}</div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Tarefa: ${getTarefaLabel(t)}</div>
         </td>
         <td>
           <div style="font-weight:500;">${ativo?.nome || '—'}</div>
@@ -3347,7 +3633,23 @@
   // ── FILTROS DE STATUS ──
   // ══════════════════════════════════════════
   let _rotinaStatusFilter = 'todos';
-  let _tarefaStatusFilter = 'todos';
+  let _tarefaStatusFilter = 'ativo';
+  let _rvTarefaStatusFilter = 'ativo';
+  let _avTarefaStatusFilter = 'ativo';
+
+  function getTarefaStatusFilter(ctx) {
+    if (ctx === 'rv') return _rvTarefaStatusFilter;
+    if (ctx === 'av') return _avTarefaStatusFilter;
+    return _tarefaStatusFilter;
+  }
+
+  function tarefaPassesStatusFilter(t, ctx) {
+    const f = getTarefaStatusFilter(ctx);
+    const tStatus = t.status || 'Ativo';
+    if (f === 'ativo' && tStatus !== 'Ativo') return false;
+    if (f === 'inativo' && tStatus !== 'Inativo') return false;
+    return true;
+  }
 
   function setRotinaStatusFilter(val) {
     _rotinaStatusFilter = val;
@@ -3357,16 +3659,27 @@
       btn.className = 'status-filter-btn' + (v === val ? (v === 'ativo' ? ' active active-green' : v === 'inativo' ? ' active active-gray' : ' active') : '');
     });
     renderRotinasTable();
+    updateNotifBadge();
   }
 
-  function setTarefaStatusFilter(val) {
-    _tarefaStatusFilter = val;
-    ['todos','ativo','inativo'].forEach(v => {
-      const btn = document.getElementById('sfbtn-tarefa-' + v);
+  function setTarefaStatusFilter(ctx, val) {
+    if (ctx === 'rv') _rvTarefaStatusFilter = val;
+    else if (ctx === 'av') _avTarefaStatusFilter = val;
+    else _tarefaStatusFilter = val;
+
+    const prefix = ctx === 'rv' ? 'sfbtn-rv-tarefa' : ctx === 'av' ? 'sfbtn-av-tarefa' : 'sfbtn-tarefa';
+    ['ativo', 'inativo', 'ambos'].forEach(v => {
+      const btn = document.getElementById(prefix + '-' + v);
       if (!btn) return;
-      btn.className = 'status-filter-btn' + (v === val ? (v === 'ativo' ? ' active active-green' : v === 'inativo' ? ' active active-gray' : ' active') : '');
+      btn.className = 'status-filter-btn' + (v === val
+        ? (v === 'ativo' ? ' active active-green' : v === 'inativo' ? ' active active-gray' : ' active')
+        : '');
     });
-    renderTarefasTable();
+
+    if (ctx === 'rv') renderRotinaViewTarefas();
+    else if (ctx === 'av') _renderAtivoTarefas();
+    else renderTarefasTable();
+    updateNotifBadge();
   }
 
   // ── ALERTAS POR ROTINA ──
@@ -3485,9 +3798,10 @@
     if (setorEl) setorEl.style.display = ativo ? 'none' : '';
     if (catEl)   catEl.style.display   = ativo ? 'none' : '';
     renderRotinasTable();
+    updateNotifBadge();
     closeModal('modal-ativo-selector');
   }
-  function limparAtivoFiltro() { setAtivoFiltro(undefined); state._ativoFiltroIdx = null; }
+  function limparAtivoFiltro() { setAtivoFiltro(undefined); state._ativoFiltroIdx = null; updateNotifBadge(); }
 
   // ── ATIVO FILTRO TAREFAS ──
   function setAtivoFiltroTarefas(idx) {
@@ -3509,9 +3823,10 @@
       }
     }
     renderTarefasTable();
+    updateNotifBadge();
     closeModal('modal-ativo-selector');
   }
-  function limparAtivoFiltroTarefas() { setAtivoFiltroTarefas(undefined); }
+  function limparAtivoFiltroTarefas() { setAtivoFiltroTarefas(undefined); updateNotifBadge(); }
 
   // ── ATIVO FILTRO ATIVIDADES ──
   function setAtivoFiltroAtividades(idx) {
@@ -3533,9 +3848,10 @@
       }
     }
     renderAtividadesTable();
+    updateNotifBadge();
     closeModal('modal-ativo-selector');
   }
-  function limparAtivoFiltroAtividades() { setAtivoFiltroAtividades(undefined); }
+  function limparAtivoFiltroAtividades() { setAtivoFiltroAtividades(undefined); updateNotifBadge(); }
 
   // ── MODAL BUSCA DE ATIVO ──
   let _ativoSelectorCtx = 'rotinas';
@@ -3764,9 +4080,6 @@
     }
     saveState();
     closeRotinaDrawer();
-    renderRotinasTable();
-    renderTarefasTable();
-    updateNotifBadge();
   }
 
   // ── CHECKLIST BUILDER ──
@@ -3934,7 +4247,7 @@
 
   function renderRotinaViewTarefas() {
     const container = document.getElementById('rotina-view-tarefas-list');
-    const tarefas   = state.tarefas.filter(t => t.rotinaId === rotinaViewId);
+    const tarefas   = state.tarefas.filter(t => t.rotinaId === rotinaViewId && tarefaPassesStatusFilter(t, 'rv'));
     const alerts    = getRotinaAlerts(rotinaViewId);
 
     // Atualiza label da aba com badge de alertas
@@ -3956,10 +4269,14 @@
       </div>`;
 
     if (tarefas.length === 0) {
+      const filtro = getTarefaStatusFilter('rv');
+      const msgFiltro = filtro !== 'ambos'
+        ? '<p>Nenhuma tarefa com o filtro selecionado. Tente "Ambos".</p>'
+        : '<p>Clique em "Nova Tarefa" acima para criar uma tarefa para esta rotina</p>';
       container.innerHTML = addBtnHtml + `<div class="data-table-empty" style="padding:24px 16px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        <strong>Nenhuma tarefa vinculada</strong>
-        <p>Clique em "Nova Tarefa" acima para criar uma tarefa para esta rotina</p>
+        <strong>Nenhuma tarefa encontrada</strong>
+        ${msgFiltro}
       </div>`;
       return;
     }
@@ -3977,14 +4294,18 @@
       </div>`;
     }
 
+    const rotina = state.rotinas.find(r => r.id === rotinaViewId);
     container.innerHTML = addBtnHtml + summaryHtml + `<div style="display:flex;flex-direction:column;gap:8px;">` +
       tarefas.map(t => {
         const flag  = getTaskFlag(t);
+        const ativo = state.ativos[t.equipamentoIdx];
         const nPubs = state.publicacoes.filter(p => p.tarefaId === t.id).length;
         const isAlert = flag.cls === 'flag-danger' || flag.cls === 'flag-warning';
         return `<div class="list-item-row" style="cursor:pointer;${isAlert ? 'border-left:3px solid ' + (flag.cls === 'flag-danger' ? 'var(--red)' : 'var(--amber)') + ';' : ''}" onclick="closeModal('modal-rotina-view');openTarefaDetalhe('${t.id}')">
           <div style="display:flex;flex-direction:column;gap:4px;flex:1;">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div style="font-weight:600;font-size:13px;">Rotina: ${rotina?.nome || '—'}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${ativo?.nome || '—'}${ativo?.codigo ? ' · ' + ativo.codigo : ''}</div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px;">
               <span class="task-flag ${flag.cls}" style="font-size:11px;">${flag.label}</span>
               <span style="font-size:12px;color:var(--text-muted);">Data: ${formatDate(t.dataTarefa)}</span>
               ${nPubs > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${nPubs} pub.</span>` : ''}
@@ -3999,9 +4320,10 @@
   function renderRotinaViewAtividades() {
     const container = document.getElementById('rotina-view-atividades-list');
     const tarefaIds = state.tarefas.filter(t => t.rotinaId === rotinaViewId).map(t => t.id);
+    const rotina = state.rotinas.find(r => r.id === rotinaViewId);
     const pubs = state.publicacoes
       .filter(p => tarefaIds.includes(p.tarefaId))
-      .sort((a, b) => b.dataRealizada.localeCompare(a.dataRealizada));
+      .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)));
     if (pubs.length === 0) {
       container.innerHTML = `<div class="data-table-empty" style="padding:32px 16px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -4011,14 +4333,18 @@
       return;
     }
     container.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;">` +
-      pubs.map(p => `
+      pubs.map(p => {
+        const t = state.tarefas.find(t => t.id === p.tarefaId);
+        return `
         <div class="list-item-row" style="cursor:pointer;" onclick="viewPublicacao('${p.id}')">
           <div style="display:flex;flex-direction:column;gap:3px;flex:1;">
-            <div style="font-weight:600;font-size:13px;">Realizada: ${formatDate(p.dataRealizada)}</div>
+            <div style="font-weight:600;font-size:13px;">Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
+            <div style="font-size:11px;color:var(--text-muted);">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
             <div style="font-size:11px;color:var(--text-muted);">Publicada em ${formatDate(p.dataPublicacao)}</div>
           </div>
           ${p.notas ? `<span style="font-size:12px;color:var(--text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.notas}</span>` : ''}
-        </div>`).join('') + `</div>`;
+        </div>`;
+      }).join('') + `</div>`;
   }
 
   function toggleRotinaStatus() {
@@ -4027,8 +4353,6 @@
     const novoStatus = r.status === 'Inativo' ? 'Ativo' : 'Inativo';
     r.status = novoStatus;
     saveState();
-    renderRotinaViewInfo();
-    renderRotinasTable();
     showToast(`Rotina ${novoStatus === 'Inativo' ? 'inativada' : 'ativada'} com sucesso!`, 'success');
   }
 
@@ -4056,9 +4380,47 @@
     if (fc) fc.innerHTML = `<option value="">Categoria (Todas)</option>` + catOpts;
   }
 
-  function toggleFilter() {
-    const panel = document.getElementById('filter-panel');
-    panel.classList.toggle('hidden');
+  function isAtivosFilterOpen() {
+    return document.getElementById('ativos-filter-inline')?.classList.contains('open');
+  }
+
+  function openAtivosFilter() {
+    const panel = document.getElementById('ativos-filter-inline');
+    const btn   = document.getElementById('btn-ativos-filtro');
+    panel?.classList.add('open');
+    if (panel) panel.setAttribute('aria-hidden', 'false');
+    btn?.classList.add('active');
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeAtivosFilter() {
+    const panel = document.getElementById('ativos-filter-inline');
+    const btn   = document.getElementById('btn-ativos-filtro');
+    panel?.classList.remove('open');
+    if (panel) panel.setAttribute('aria-hidden', 'true');
+    btn?.classList.remove('active');
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+  }
+
+  function toggleAtivosFilter() {
+    if (isAtivosFilterOpen()) closeAtivosFilter();
+    else openAtivosFilter();
+  }
+
+  function limparAtivosFiltros() {
+    const cat = document.getElementById('main-category-filter');
+    if (cat) cat.value = 'todas';
+    renderCards();
+    updateNotifBadge();
+    updateAtivosFiltroBtn();
+  }
+
+  function updateAtivosFiltroBtn() {
+    const btn = document.getElementById('btn-ativos-filtro');
+    const cat = document.getElementById('main-category-filter');
+    if (!btn || !cat) return;
+    const hasFilter = cat.value !== 'todas';
+    if (!isAtivosFilterOpen()) btn.classList.toggle('active', hasFilter);
   }
 
   // ── MODAIS ──
@@ -4106,7 +4468,7 @@
     openModal('modal-ativo');
   }
 
-  function visualizarAtivo(index) {
+  function visualizarAtivo(index, initialTab = 'info') {
     ativoEdicaoIndex = index;
     const ativo = state.ativos[index];
     document.getElementById('visualizar-title').textContent = ativo.nome;
@@ -4136,7 +4498,7 @@
 
     // Atualiza badges das abas
     _atualizarBadgesAtivoTabs(index);
-    switchAtivoTab('info');
+    switchAtivoTab(initialTab);
     openModal('modal-visualizar');
   }
 
@@ -4213,7 +4575,7 @@
   function _renderAtivoTarefas() {
     const idx = ativoEdicaoIndex;
     const container = document.getElementById('ativo-tarefas-list');
-    const tarefas = state.tarefas.filter(t => t.equipamentoIdx === idx);
+    const tarefas = state.tarefas.filter(t => t.equipamentoIdx === idx && tarefaPassesStatusFilter(t, 'av'));
     const addBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
       <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="closeModal('modal-visualizar');openTarefaDrawerParaAtivo(${idx})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -4221,7 +4583,11 @@
       </button>
     </div>`;
     if (tarefas.length === 0) {
-      container.innerHTML = addBtn + `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><strong>Nenhuma tarefa vinculada</strong><p>Clique em "Nova Tarefa" para criar uma</p></div>`;
+      const filtro = getTarefaStatusFilter('av');
+      const msgFiltro = filtro !== 'ambos'
+        ? '<p>Nenhuma tarefa com o filtro selecionado. Tente "Ambos".</p>'
+        : '<p>Clique em "Nova Tarefa" para criar uma</p>';
+      container.innerHTML = addBtn + `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><strong>Nenhuma tarefa encontrada</strong>${msgFiltro}</div>`;
       return;
     }
     container.innerHTML = addBtn + `<div style="display:flex;flex-direction:column;gap:8px;">` +
@@ -4232,7 +4598,7 @@
         return `<div class="list-item-row" style="cursor:pointer;" onclick="closeModal('modal-visualizar');openTarefaDetalhe('${t.id}')">
           <div style="flex:1;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <strong style="font-size:13px;">${rotina?.nome || '—'}</strong>
+              <strong style="font-size:13px;">Rotina: ${rotina?.nome || '—'}</strong>
               <span class="task-flag ${flag.cls}" style="font-size:11px;">${flag.label}</span>
               ${nPubs > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${nPubs} pub.</span>` : ''}
             </div>
@@ -4249,7 +4615,7 @@
     const tarefaIds = state.tarefas.filter(t => t.equipamentoIdx === idx).map(t => t.id);
     const pubs = state.publicacoes
       .filter(p => tarefaIds.includes(p.tarefaId))
-      .sort((a, b) => b.dataRealizada.localeCompare(a.dataRealizada));
+      .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)));
     if (pubs.length === 0) {
       container.innerHTML = `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><strong>Nenhuma atividade registrada</strong><p>As atividades aparecem após publicar tarefas deste ativo</p></div>`;
       return;
@@ -4260,8 +4626,9 @@
         const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
         return `<div class="list-item-row" style="cursor:pointer;" onclick="viewPublicacao('${p.id}')">
           <div style="flex:1;">
-            <div style="font-weight:600;font-size:13px;">${rotina?.nome || '—'}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Realizada: ${formatDate(p.dataRealizada)} · Publicada: ${formatDate(p.dataPublicacao)}</div>
+            <div style="font-weight:600;font-size:13px;">Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Publicada: ${formatDate(p.dataPublicacao)}</div>
           </div>
           ${p.anexos?.length > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${p.anexos.length} anexo${p.anexos.length>1?'s':''}</span>` : ''}
         </div>`;
@@ -4357,6 +4724,7 @@
     document.getElementById('ativo-categoria').innerHTML = `<option value="">Selecione...</option>` + catOptions;
     atualizarFiltrosRotina();
     populateTipoSelect();
+    updateAtivosFiltroBtn();
   }
 
   function salvarSetor() {
@@ -4424,7 +4792,6 @@
     document.getElementById('ativo-setor').value = '';
     document.getElementById('ativo-categoria').value = '';
     closeModal('modal-ativo');
-    renderCards();
     showToast('Ativo salvo com sucesso!', 'success');
   }
 
@@ -4435,7 +4802,7 @@
 
     const filtrados = state.ativos
       .map((item, index) => ({ item, index }))
-      .filter(({ item }) => {
+      .filter(({ item, index }) => {
         const matchSetor = fSetor === 'todos' || item.setor === fSetor;
         const matchCat = fCat === 'todas' || item.categoria === fCat;
         return matchSetor && matchCat;
@@ -4452,14 +4819,8 @@
     }
 
     grid.innerHTML = filtrados.map(({ item: a, index }) => {
-      const tarefasAtivas = state.tarefas.filter(t => t.equipamentoIdx === index && t.status === 'Ativo');
-      let danger = 0, warning = 0;
-      tarefasAtivas.forEach(t => {
-        const f = getTaskFlag(t);
-        if (f.cls === 'flag-danger')       danger++;
-        else if (f.cls === 'flag-warning') warning++;
-      });
-      const total = danger + warning;
+      const { danger, warning, total } = getAtivoAlertCounts(index);
+      const alertCls = danger > 0 ? 'alert-danger' : (warning > 0 ? 'alert-warning' : '');
 
       let flagHtml = '';
       if (total > 0) {
@@ -4468,11 +4829,11 @@
           ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
           : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;flex-shrink:0;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/></svg>`;
         const tip  = [danger > 0 ? `${danger} vencida(s)` : '', warning > 0 ? `${warning} próxima(s)` : ''].filter(Boolean).join(', ');
-        flagHtml = `<span class="task-flag ${cls}" style="font-size:11px;padding:3px 8px;white-space:nowrap;" title="${tip}">${icon}&nbsp;${total} tarefa${total > 1 ? 's' : ''}</span>`;
+        flagHtml = `<span class="task-flag ${cls}" style="font-size:11px;padding:3px 8px;white-space:nowrap;" title="${tip}" onclick="event.stopPropagation();openAtivoAlertasResumo(${index})">${icon}&nbsp;${total} alerta${total > 1 ? 's' : ''}</span>`;
       }
 
       return `
-      <div class="asset-card" onclick="visualizarAtivo(${index})">
+      <div class="asset-card ${alertCls}" onclick="visualizarAtivo(${index})">
         <div class="asset-header">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
             <div>
@@ -4494,6 +4855,10 @@
         </div>
       </div>`;
     }).join('');
+  }
+
+  function openAtivoAlertasResumo(equipamentoIdx) {
+    visualizarAtivo(equipamentoIdx, 'tarefas');
   }
 </script>
 </body>
