@@ -286,6 +286,16 @@
     display: flex; align-items: center; justify-content: center;
     z-index: 500; padding: 20px; opacity: 0; pointer-events: none; transition: opacity 0.28s ease;
   }
+  #modal-rotina-view,
+  #modal-tarefa-detalhe {
+    z-index: 560;
+  }
+  #modal-historico {
+    z-index: 570;
+  }
+  #modal-pub-view {
+    z-index: 580;
+  }
   .modal-overlay.open { opacity: 1; pointer-events: all; }
   .modal-overlay.open .modal { transform: scale(1) translateY(0); }
 
@@ -384,6 +394,50 @@
   }
   .field-textarea { resize: vertical; min-height: 72px; }
   .field-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23718096' stroke-width='2.5'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 12px center; padding-right: 36px; cursor: pointer; }
+
+  .status-toggle {
+    display: inline-flex; align-items: center;
+  }
+  .status-toggle-input {
+    position: absolute; opacity: 0; width: 0; height: 0;
+  }
+  .status-toggle-label {
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 96px; height: 36px;
+    border-radius: 999px;
+    background: var(--border);
+    color: var(--text-secondary);
+    font-size: 0;
+    cursor: pointer;
+    transition: var(--transition);
+  }
+  .status-toggle-label span {
+    display: none;
+  }
+  .status-toggle-label::before {
+    content: '';
+    position: absolute;
+    left: 4px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 6px 16px rgba(14,22,40,0.12);
+    transition: transform 0.2s ease;
+  }
+  .status-toggle-input:checked + .status-toggle-label {
+    background: rgba(38,190,86,0.2);
+    color: var(--green);
+    box-shadow: inset 0 0 0 1px rgba(38,190,86,0.3);
+  }
+  .status-toggle-input:checked + .status-toggle-label::before {
+    transform: translateX(52px);
+  }
+  .status-toggle-input:disabled + .status-toggle-label {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
 
   .input-with-btn { display: flex; gap: 8px; }
 
@@ -649,7 +703,7 @@
     position: fixed; inset: 0;
     background: rgba(10,16,32,0.52);
     backdrop-filter: blur(3px);
-    z-index: 450;
+    z-index: 580;
     opacity: 0; pointer-events: none;
     transition: opacity 0.3s ease;
   }
@@ -660,7 +714,7 @@
     width: 520px; max-width: 100vw;
     background: var(--bg-card);
     box-shadow: -8px 0 40px rgba(14,22,40,0.2);
-    z-index: 460;
+    z-index: 590;
     display: flex; flex-direction: column;
     transition: right 0.35s cubic-bezier(0.4,0,0.2,1);
   }
@@ -685,9 +739,9 @@
     display: flex; align-items: center; justify-content: center;
     color: var(--cyan); flex-shrink: 0;
   }
-  .drawer-header-icon svg { width: 17px; height: 17px; }
-  .drawer-title { font-size: 14.5px; font-weight: 700; color: #fff; }
-  .drawer-subtitle { font-size: 11px; color: rgba(255,255,255,0.42); margin-top: 1px; }
+  .drawer-header-icon svg { width: 18px; height: 18px; }
+  .drawer-title { font-size: 16px; font-weight: 700; color: #fff; }
+  .drawer-subtitle { font-size: 12.5px; color: rgba(255,255,255,0.72); margin-top: 2px; }
   .drawer-close {
     margin-left: auto; width: 32px; height: 32px; border-radius: 8px;
     border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06);
@@ -1172,9 +1226,9 @@
                 <p>Gerencie as rotinas preventivas e de manutenção dos equipamentos</p>
               </div>
               <div class="status-filter-group" id="rotina-status-filter-group">
-                <button class="status-filter-btn active" id="sfbtn-rotina-todos" onclick="setRotinaStatusFilter('todos')">Todos</button>
-                <button class="status-filter-btn" id="sfbtn-rotina-ativo" onclick="setRotinaStatusFilter('ativo')">Ativos</button>
+                <button class="status-filter-btn active active-green" id="sfbtn-rotina-ativo" onclick="setRotinaStatusFilter('ativo')">Ativos</button>
                 <button class="status-filter-btn" id="sfbtn-rotina-inativo" onclick="setRotinaStatusFilter('inativo')">Inativos</button>
+                <button class="status-filter-btn" id="sfbtn-rotina-ambos" onclick="setRotinaStatusFilter('ambos')">Ambos</button>
               </div>
             </div>
 
@@ -1648,9 +1702,15 @@
           <div class="modal-subtitle" id="rotina-view-subtitle">Informações completas</div>
         </div>
       </div>
-      <button class="modal-close" onclick="closeModal('modal-rotina-view')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn btn-outline" onclick="editarRotinaAtual()" style="padding:0 12px;min-height:34px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px;margin-right:6px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+          Editar
+        </button>
+        <button class="modal-close" onclick="closeModal('modal-rotina-view')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
     </div>
 
     <!-- Abas do modal de rotina -->
@@ -1689,14 +1749,9 @@
     </div>
 
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('modal-rotina-view')">Fechar</button>
       <button class="btn btn-outline" id="btn-toggle-rotina" onclick="toggleRotinaStatus()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
         Inativar
-      </button>
-      <button class="btn btn-outline" onclick="editarRotinaAtual()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-        Editar
       </button>
       <button class="btn btn-primary" style="background:var(--red);box-shadow:none;" onclick="confirmarDeleteRotina()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
@@ -1817,16 +1872,6 @@
           <input type="hidden" id="tarefa-proxima-data">
         </div>
 
-        <div class="form-row">
-          <div class="form-field">
-            <label class="field-label">Status</label>
-            <select id="tarefa-status" class="field-select">
-              <option value="Ativo">Ativo</option>
-              <option value="Inativo">Inativo</option>
-            </select>
-          </div>
-        </div>
-
         <div class="form-field" style="margin-bottom:0;">
           <label class="field-label">Observações</label>
           <textarea id="tarefa-obs" class="field-textarea" placeholder="Informações adicionais sobre a tarefa..."></textarea>
@@ -1874,6 +1919,17 @@
   </div><!-- /drawer-body -->
 
   <div class="drawer-footer">
+    <div style="margin-right:auto; display:flex; align-items:center; gap:12px;">
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <label class="field-label" style="margin:0;font-size:12px;line-height:1.2;color:var(--text-muted);">Ativo</label>
+        <div class="status-toggle" style="margin:0;">
+          <input type="checkbox" id="tarefa-status" class="status-toggle-input" onchange="updateTarefaStatusToggleLabel()" checked>
+          <label class="status-toggle-label" for="tarefa-status">
+            <span id="tarefa-status-label">Ativo</span>
+          </label>
+        </div>
+      </div>
+    </div>
     <button class="btn btn-outline" onclick="closeTarefaDrawer()">Cancelar</button>
     <button class="btn btn-primary" onclick="saveTarefa()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
@@ -2311,6 +2367,13 @@
         <div id="visualizar-body"></div>
       </div>
       <div id="avtab-rotinas" style="padding:16px 24px;display:none;">
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+          <div class="status-filter-group">
+            <button class="status-filter-btn active active-green" id="sfbtn-av-rotina-ativo" onclick="setAtivoRotinaStatusFilter('ativo')">Ativos</button>
+            <button class="status-filter-btn" id="sfbtn-av-rotina-inativo" onclick="setAtivoRotinaStatusFilter('inativo')">Inativos</button>
+            <button class="status-filter-btn" id="sfbtn-av-rotina-ambos" onclick="setAtivoRotinaStatusFilter('ambos')">Ambos</button>
+          </div>
+        </div>
         <div id="ativo-rotinas-list"></div>
       </div>
       <div id="avtab-tarefas" style="padding:16px 24px;display:none;">
@@ -2426,18 +2489,20 @@
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
   function formatDate(str) {
     if (!str) return '—';
-    const datePart = (str.includes('T') ? str.split('T')[0] : str);
+    const value = typeof str === 'string' ? str : String(str);
+    const datePart = (value.includes('T') ? value.split('T')[0] : value);
     const [y,m,d] = datePart.split('-');
     return `${d}/${m}/${y}`;
   }
   function parseDataRealizada(str) {
     if (!str) return { date: '', time: '' };
-    if (str.includes('T')) {
-      const [date, timePart] = str.split('T');
+    const value = typeof str === 'string' ? str : String(str);
+    if (value.includes('T')) {
+      const [date, timePart] = value.split('T');
       const time = (timePart || '').slice(0, 5);
       return { date, time: /^\d{2}:\d{2}$/.test(time) ? time : '' };
     }
-    return { date: str, time: '' };
+    return { date: value, time: '' };
   }
   function buildDataRealizada(date, time) {
     if (!date) return '';
@@ -2722,7 +2787,7 @@
   function openAlertaFromAtivos(tarefaId) {
     const t = state.tarefas.find(t => t.id === tarefaId);
     if (!t) return;
-    visualizarAtivo(t.equipamentoIdx, 'tarefas');
+    openTarefaDetalhe(tarefaId);
   }
 
   function updateNotifBadge() {
@@ -2754,7 +2819,6 @@
   function openTarefaDrawerParaRotina(rotinaId) {
     const r = state.rotinas.find(r => r.id === rotinaId);
     if (!r) return;
-    closeModal('modal-rotina-view');
     // Abre o drawer normalmente e depois pré-preenche
     openTarefaDrawer(null, rotinaId);
   }
@@ -2785,7 +2849,8 @@
     document.getElementById('tarefa-data').value = '';
     document.getElementById('tarefa-lembrete').value = '';
     document.getElementById('tarefa-obs').value = '';
-    document.getElementById('tarefa-status').value = 'Ativo';
+    document.getElementById('tarefa-status').checked = true;
+    updateTarefaStatusToggleLabel();
     setProximaDataDisplay('');
 
     if (editing) {
@@ -2796,7 +2861,8 @@
       document.getElementById('tarefa-data').value = editing.dataTarefa || '';
       document.getElementById('tarefa-lembrete').value = editing.lembrete || '';
       document.getElementById('tarefa-obs').value = editing.observacoes || '';
-      document.getElementById('tarefa-status').value = editing.status || 'Ativo';
+      document.getElementById('tarefa-status').checked = (editing.status || 'Ativo') === 'Ativo';
+      updateTarefaStatusToggleLabel();
       document.getElementById('tarefa-anexo-obrigatorio').checked = !!editing.anexoObrigatorio;
       setProximaDataDisplay(editing.proximaData || '');
       document.getElementById('tarefa-proxima-data').value = editing.proximaData || '';
@@ -2833,6 +2899,13 @@
 
     document.getElementById('right-drawer-tarefa').classList.add('open');
     document.getElementById('drawer-backdrop').classList.add('open');
+  }
+
+  function updateTarefaStatusToggleLabel() {
+    const toggle = document.getElementById('tarefa-status');
+    const label = document.getElementById('tarefa-status-label');
+    if (!toggle || !label) return;
+    label.textContent = toggle.checked ? 'Ativo' : 'Inativo';
   }
 
   // ── ABAS DO DRAWER DE TAREFA ──
@@ -2977,7 +3050,7 @@
     const data     = document.getElementById('tarefa-data').value;
     const lembrete = parseInt(document.getElementById('tarefa-lembrete').value) || 3;
     const proxima  = document.getElementById('tarefa-proxima-data').value;
-    const status   = document.getElementById('tarefa-status').value;
+    const status   = document.getElementById('tarefa-status').checked ? 'Ativo' : 'Inativo';
     const obs               = document.getElementById('tarefa-obs').value.trim();
     const anexoObrigatorio  = document.getElementById('tarefa-anexo-obrigatorio').checked;
 
@@ -3147,7 +3220,6 @@
   }
 
   function editarTarefaAtual() {
-    closeModal('modal-tarefa-detalhe');
     openTarefaDrawer(tarefaDetalheId);
   }
 
@@ -3161,7 +3233,6 @@
   }
 
   function abrirHistoricoTarefa() {
-    closeModal('modal-tarefa-detalhe');
     openHistoricoModal(tarefaDetalheId);
   }
 
@@ -3552,15 +3623,41 @@
     document.getElementById('pub-view-subtitle').textContent =
       `Realizada em ${formatDataRealizadaText(p.dataRealizada)} · Publicada em ${formatDate(p.dataPublicacao)}`;
 
+    const ativo = t ? state.ativos[t.equipamentoIdx] : null;
+
     document.getElementById('pub-view-body').innerHTML = `
-      <div class="view-hero">
-        <div class="view-hero-name">${rotina?.nome || '—'}</div>
+      <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;">
+        <div style="flex:1;min-width:220px;">
+          <div class="form-section-title" style="margin-bottom:8px;">Ativo</div>
+          <div style="background:var(--bg);border:1.2px solid var(--border);border-radius:8px;padding:12px;">
+            <div style="font-weight:700;font-size:15px;color:var(--text-primary);">${ativo?.nome || '—'}</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:6px;">Código: ${ativo?.codigo || '—'}</div>
+            <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+              <span class="chip chip-gray" style="font-size:11px;">Setor: ${ativo?.setor || '—'}</span>
+              <span class="chip chip-gray" style="font-size:11px;">Categoria: ${ativo?.categoria || '—'}</span>
+            </div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:220px;">
+          <div class="form-section-title" style="margin-bottom:8px;">Rotina</div>
+          <div style="background:var(--bg);border:1.2px solid var(--border);border-radius:8px;padding:12px;">
+            <div style="font-weight:700;font-size:15px;color:var(--text-primary);">${rotina?.nome || '—'}</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:6px;">Tipo: ${rotina?.tipo || '—'}</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Frequência: A cada ${rotina?.fazerCada || '—'} ${rotina?.frequencia || '—'}</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Repetir: ${rotina?.repetir === 'Por' ? (rotina?.vezes || '—') + 'x' : (rotina?.repetir || 'Sempre')}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:14px;" class="view-hero">
+        <div class="view-hero-name">Execução</div>
         <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Tarefa: ${getTarefaLabel(t)}</div>
         <div class="view-badges" style="margin-top:8px;">
           <span class="view-badge">Realizada: ${formatDataRealizadaText(p.dataRealizada)}</span>
           <span class="view-badge">Publicada: ${formatDate(p.dataPublicacao)}</span>
         </div>
       </div>
+
       ${checkListHtml(rotinaChecklist, 'Checklist Geral Verificado')}
       ${checkListHtml(tarefaChecklist, 'Checklist da Tarefa Verificado')}
       ${anexosHtml}
@@ -3632,15 +3729,29 @@
   // ══════════════════════════════════════════
   // ── FILTROS DE STATUS ──
   // ══════════════════════════════════════════
-  let _rotinaStatusFilter = 'todos';
+  let _rotinaStatusFilter = 'ativo';
   let _tarefaStatusFilter = 'ativo';
   let _rvTarefaStatusFilter = 'ativo';
   let _avTarefaStatusFilter = 'ativo';
+  let _avRotinaStatusFilter = 'ativo';
 
   function getTarefaStatusFilter(ctx) {
     if (ctx === 'rv') return _rvTarefaStatusFilter;
     if (ctx === 'av') return _avTarefaStatusFilter;
     return _tarefaStatusFilter;
+  }
+
+  function getRotinaStatusFilter(ctx) {
+    if (ctx === 'av') return _avRotinaStatusFilter;
+    return _rotinaStatusFilter;
+  }
+
+  function rotinaPassesStatusFilter(r, ctx) {
+    const f = getRotinaStatusFilter(ctx);
+    const rStatus = r.status || 'Ativo';
+    if (f === 'ativo' && rStatus !== 'Ativo') return false;
+    if (f === 'inativo' && rStatus !== 'Inativo') return false;
+    return true;
   }
 
   function tarefaPassesStatusFilter(t, ctx) {
@@ -3653,13 +3764,25 @@
 
   function setRotinaStatusFilter(val) {
     _rotinaStatusFilter = val;
-    ['todos','ativo','inativo'].forEach(v => {
+    ['ativo','inativo','ambos'].forEach(v => {
       const btn = document.getElementById('sfbtn-rotina-' + v);
       if (!btn) return;
       btn.className = 'status-filter-btn' + (v === val ? (v === 'ativo' ? ' active active-green' : v === 'inativo' ? ' active active-gray' : ' active') : '');
     });
     renderRotinasTable();
     updateNotifBadge();
+  }
+
+  function setAtivoRotinaStatusFilter(val) {
+    _avRotinaStatusFilter = val;
+    ['ativo', 'inativo', 'ambos'].forEach(v => {
+      const btn = document.getElementById('sfbtn-av-rotina-' + v);
+      if (!btn) return;
+      btn.className = 'status-filter-btn' + (v === val
+        ? (v === 'ativo' ? ' active active-green' : v === 'inativo' ? ' active active-gray' : ' active')
+        : '');
+    });
+    _renderAtivoRotinas();
   }
 
   function setTarefaStatusFilter(ctx, val) {
@@ -4301,7 +4424,7 @@
         const ativo = state.ativos[t.equipamentoIdx];
         const nPubs = state.publicacoes.filter(p => p.tarefaId === t.id).length;
         const isAlert = flag.cls === 'flag-danger' || flag.cls === 'flag-warning';
-        return `<div class="list-item-row" style="cursor:pointer;${isAlert ? 'border-left:3px solid ' + (flag.cls === 'flag-danger' ? 'var(--red)' : 'var(--amber)') + ';' : ''}" onclick="closeModal('modal-rotina-view');openTarefaDetalhe('${t.id}')">
+        return `<div class="list-item-row" style="cursor:pointer;${isAlert ? 'border-left:3px solid ' + (flag.cls === 'flag-danger' ? 'var(--red)' : 'var(--amber)') + ';' : ''}" onclick="openTarefaDetalhe('${t.id}')">
           <div style="display:flex;flex-direction:column;gap:4px;flex:1;">
             <div style="font-weight:600;font-size:13px;">Rotina: ${rotina?.nome || '—'}</div>
             <div style="font-size:11px;color:var(--text-muted);">${ativo?.nome || '—'}${ativo?.codigo ? ' · ' + ativo.codigo : ''}</div>
@@ -4357,7 +4480,6 @@
   }
 
   function editarRotinaAtual() {
-    closeModal('modal-rotina-view');
     openRotinaDrawer(rotinaViewId);
   }
 
@@ -4541,15 +4663,19 @@
   function _renderAtivoRotinas() {
     const idx = ativoEdicaoIndex;
     const container = document.getElementById('ativo-rotinas-list');
-    const rotinas = state.rotinas.filter(r => r.equipamentoIdx === idx);
+    const filtro = getRotinaStatusFilter('av');
+    const rotinas = state.rotinas.filter(r => r.equipamentoIdx === idx && rotinaPassesStatusFilter(r, 'av'));
     const addBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
-      <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="closeModal('modal-visualizar');openRotinaDrawerParaAtivo(${idx})">
+      <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="openRotinaDrawerParaAtivo(${idx})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Nova Rotina
       </button>
     </div>`;
     if (rotinas.length === 0) {
-      container.innerHTML = addBtn + `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg><strong>Nenhuma rotina vinculada</strong><p>Clique em "Nova Rotina" para criar uma</p></div>`;
+      const msgFiltro = filtro !== 'ambos'
+        ? '<p>Nenhuma rotina com o filtro selecionado. Tente "Ambos".</p>'
+        : '<p>Clique em "Nova Rotina" para criar uma</p>';
+      container.innerHTML = addBtn + `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg><strong>Nenhuma rotina vinculada</strong>${msgFiltro}</div>`;
       return;
     }
     const tipoCls = { Preventivo:'chip-blue', Rotina:'chip-cyan' };
@@ -4562,7 +4688,7 @@
           const cls = alerts.danger > 0 ? 'flag-danger' : 'flag-warning';
           badge = `<span class="task-flag ${cls}" style="font-size:10px;padding:2px 7px;margin-left:6px;">${alerts.total}</span>`;
         }
-        return `<div class="list-item-row" style="cursor:pointer;${isInativo?'opacity:0.6;':''}" onclick="closeModal('modal-visualizar');viewRotina('${r.id}')">
+        return `<div class="list-item-row" style="cursor:pointer;${isInativo?'opacity:0.6;':''}" onclick="viewRotina('${r.id}')">
           <div style="flex:1;">
             <div style="display:flex;align-items:center;"><strong style="font-size:13px;">${r.nome}</strong>${badge}${isInativo?'<span class="chip chip-gray" style="margin-left:6px;font-size:10px;">Inativa</span>':''}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">A cada ${r.fazerCada} ${r.frequencia} · ${r.repetir === 'Por' ? r.vezes + 'x' : 'Sempre'}</div>
@@ -4577,7 +4703,7 @@
     const container = document.getElementById('ativo-tarefas-list');
     const tarefas = state.tarefas.filter(t => t.equipamentoIdx === idx && tarefaPassesStatusFilter(t, 'av'));
     const addBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
-      <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="closeModal('modal-visualizar');openTarefaDrawerParaAtivo(${idx})">
+      <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="openTarefaDrawerParaAtivo(${idx})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Nova Tarefa
       </button>
@@ -4595,7 +4721,7 @@
         const rotina = state.rotinas.find(r => r.id === t.rotinaId);
         const flag   = getTaskFlag(t);
         const nPubs  = state.publicacoes.filter(p => p.tarefaId === t.id).length;
-        return `<div class="list-item-row" style="cursor:pointer;" onclick="closeModal('modal-visualizar');openTarefaDetalhe('${t.id}')">
+        return `<div class="list-item-row" style="cursor:pointer;" onclick="openTarefaDetalhe('${t.id}')">
           <div style="flex:1;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
               <strong style="font-size:13px;">Rotina: ${rotina?.nome || '—'}</strong>
