@@ -1831,6 +1831,9 @@
           <div style="font-size:13px;color:var(--text-secondary);white-space:pre-line;">${p.notas}</div>
         </div>` : ''}`;
 
+    const btnEditPub = document.querySelector('#modal-pub-view .modal-header button[onclick="editarPubView()"]');
+    if (btnEditPub) btnEditPub.style.display = _can('atividades.editar') ? '' : 'none';
+
     openModal('modal-pub-view');
   }
 
@@ -2712,20 +2715,20 @@
       tabBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg> Tarefas${badgeHtml}`;
     }
 
-    // Botão de adicionar tarefa para esta rotina
-    const addBtnHtml = `
+    // Botão de adicionar tarefa para esta rotina — apenas se tiver permissão
+    const addBtnHtml = _can('tarefas.criar') ? `
       <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
         <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="openTarefaDrawerParaRotina('${rotinaViewId}')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           Nova Tarefa
         </button>
-      </div>`;
+      </div>` : '';
 
     if (tarefas.length === 0) {
       const filtro = getTarefaStatusFilter('rv');
       const msgFiltro = filtro !== 'ambos'
         ? '<p>Nenhuma tarefa com o filtro selecionado. Tente "Ambos".</p>'
-        : '<p>Clique em "Nova Tarefa" acima para criar uma tarefa para esta rotina</p>';
+        : _can('tarefas.criar') ? '<p>Clique em "Nova Tarefa" acima para criar uma tarefa para esta rotina</p>' : '';
       container.innerHTML = addBtnHtml + `<div class="data-table-empty" style="padding:24px 16px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         <strong>Nenhuma tarefa encontrada</strong>
@@ -3031,16 +3034,16 @@
     const container = document.getElementById('ativo-rotinas-list');
     const filtro = getRotinaStatusFilter('av');
     const rotinas = state.rotinas.filter(r => r.equipamentoIdx === idx && rotinaPassesStatusFilter(r, 'av'));
-    const addBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+    const addBtn = _can('rotinas.criar') ? `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
       <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="openRotinaDrawerParaAtivo(${idx})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Nova Rotina
       </button>
-    </div>`;
+    </div>` : '';
     if (rotinas.length === 0) {
       const msgFiltro = filtro !== 'ambos'
         ? '<p>Nenhuma rotina com o filtro selecionado. Tente "Ambos".</p>'
-        : '<p>Clique em "Nova Rotina" para criar uma</p>';
+        : _can('rotinas.criar') ? '<p>Clique em "Nova Rotina" para criar uma</p>' : '';
       container.innerHTML = addBtn + `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg><strong>Nenhuma rotina vinculada</strong>${msgFiltro}</div>`;
       return;
     }
@@ -3068,17 +3071,17 @@
     const idx = ativoEdicaoIndex;
     const container = document.getElementById('ativo-tarefas-list');
     const tarefas = state.tarefas.filter(t => t.equipamentoIdx === idx && tarefaPassesStatusFilter(t, 'av'));
-    const addBtn = `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+    const addBtn = _can('tarefas.criar') ? `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
       <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="openTarefaDrawerParaAtivo(${idx})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
         Nova Tarefa
       </button>
-    </div>`;
+    </div>` : '';
     if (tarefas.length === 0) {
       const filtro = getTarefaStatusFilter('av');
       const msgFiltro = filtro !== 'ambos'
         ? '<p>Nenhuma tarefa com o filtro selecionado. Tente "Ambos".</p>'
-        : '<p>Clique em "Nova Tarefa" para criar uma</p>';
+        : _can('tarefas.criar') ? '<p>Clique em "Nova Tarefa" para criar uma</p>' : '';
       container.innerHTML = addBtn + `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><strong>Nenhuma tarefa encontrada</strong>${msgFiltro}</div>`;
       return;
     }
