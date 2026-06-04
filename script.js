@@ -32,6 +32,7 @@
     renderRotinasTable();
     renderTarefasTable();
     renderAtividadesTable();
+    if (typeof _updateRotinaFiltroAtividadesDisplay === 'function') _updateRotinaFiltroAtividadesDisplay();
     updateNotifBadge();
 
     if (document.getElementById('notif-dropdown')?.classList.contains('open')) {
@@ -212,20 +213,45 @@
       populateTipoSelect();
     }
     if (tabId === 'rotina' || tabId === 'ativos') refreshTaskFlagsUI();
+    if (tabId === 'config') {
+      // Guarda de permissão: bloqueia acesso sem visualizarConfig
+      if (typeof authHasPermission === 'function' &&
+          typeof currentSession    !== 'undefined' && currentSession &&
+          !currentSession.isAdmin  && !authHasPermission('config.visualizarConfig')) {
+        showToast('Sem permissão para acessar as configurações.', 'error');
+        switchTab('ativos');
+        return;
+      }
+      if (typeof renderUsersTable  === 'function') renderUsersTable();
+      if (typeof renderGroupsTable === 'function') renderGroupsTable();
+    }
   }
 
   // ── ROTINA SUBTABS ──
   let activeRotinaTab = 'rotinas';
   function switchRotinaTab(tab) {
     activeRotinaTab = tab;
-    document.querySelectorAll('.rotina-panel').forEach(p => p.classList.remove('active'));
-    document.querySelectorAll('.rotina-nav-item').forEach(n => n.classList.remove('active'));
+    const rotinaTab = document.getElementById('tab-rotina');
+    rotinaTab.querySelectorAll('.rotina-panel').forEach(p => p.classList.remove('active'));
+    rotinaTab.querySelectorAll('.rotina-nav-item').forEach(n => n.classList.remove('active'));
     document.getElementById('rpanel-' + tab).classList.add('active');
     document.getElementById('rnav-' + tab).classList.add('active');
     renderRotinasTable();
     renderTarefasTable();
     renderAtividadesTable();
     updateNotifBadge();
+  }
+
+  // ── CONFIG SUBTABS ──
+  function switchConfigTab(tab) {
+    const configTab = document.getElementById('tab-config');
+    configTab.querySelectorAll('.rotina-panel').forEach(p => p.classList.remove('active'));
+    configTab.querySelectorAll('.rotina-nav-item').forEach(n => n.classList.remove('active'));
+    document.getElementById('cpanel-' + tab).classList.add('active');
+    document.getElementById('cnav-' + tab).classList.add('active');
+    if (tab === 'backup')  renderSysInfo();
+    if (tab === 'usuario') { if (typeof renderUsersTable  === 'function') renderUsersTable(); }
+    if (tab === 'grupos')  { if (typeof renderGroupsTable === 'function') renderGroupsTable(); }
   }
 
   // ── NOTIFICAÇÕES ──
@@ -428,6 +454,8 @@
     const editing = id ? state.tarefas.find(t => t.id === id) : null;
 
     document.getElementById('drawer-tarefa-title').textContent = id ? 'Editar Tarefa' : 'Nova Tarefa';
+    const btnHistTarefa = document.getElementById('btn-hist-tarefa');
+    if (btnHistTarefa) btnHistTarefa.style.display = id ? '' : 'none';
     document.getElementById('tarefa-save-label').textContent = id ? 'Salvar Alterações' : 'Salvar Tarefa';
 
     // Popula select de equipamentos que possuem rotinas
@@ -440,16 +468,28 @@
       }).join('');
 
     // Limpar campos
+    document.getElementById('tarefa-titulo').value = '';
     document.getElementById('tarefa-rotina-select').innerHTML = '<option value="">Selecione a rotina...</option>';
     document.getElementById('tarefa-rotina-info').style.display = 'none';
     document.getElementById('tarefa-data').value = '';
     document.getElementById('tarefa-lembrete').value = '';
     document.getElementById('tarefa-obs').value = '';
+    document.getElementById('tarefa-fazer-cada').value = '';
+    document.getElementById('tarefa-frequencia').value = 'Meses';
+    document.getElementById('tarefa-repetir').value = 'Sempre';
+    document.getElementById('tarefa-vezes').value = '';
+    document.getElementById('tarefa-field-vezes').style.display = 'none';
     document.getElementById('tarefa-status').checked = true;
     updateTarefaStatusToggleLabel();
     setProximaDataDisplay('');
+    _diasSemanaSelected = [];
+    _tarefaResponsaveis = { usuarios: [], grupos: [] };
+    document.querySelectorAll('.dia-semana-btn').forEach(b => b.classList.remove('active'));
+    onTarefaFrequenciaChange();
+    _renderResponsaveisChips();
 
     if (editing) {
+      document.getElementById('tarefa-titulo').value = editing.titulo || '';
       equipSel.value = editing.equipamentoIdx;
       onTarefaEquipChange();
       document.getElementById('tarefa-rotina-select').value = editing.rotinaId;
@@ -457,11 +497,21 @@
       document.getElementById('tarefa-data').value = editing.dataTarefa || '';
       document.getElementById('tarefa-lembrete').value = editing.lembrete || '';
       document.getElementById('tarefa-obs').value = editing.observacoes || '';
+      document.getElementById('tarefa-fazer-cada').value = editing.fazerCada || '';
+      document.getElementById('tarefa-frequencia').value = editing.frequencia || 'Meses';
+      document.getElementById('tarefa-repetir').value = editing.repetir || 'Sempre';
+      document.getElementById('tarefa-vezes').value = editing.vezes || '';
+      document.getElementById('tarefa-field-vezes').style.display = editing.repetir === 'Por' ? '' : 'none';
       document.getElementById('tarefa-status').checked = (editing.status || 'Ativo') === 'Ativo';
       updateTarefaStatusToggleLabel();
       document.getElementById('tarefa-anexo-obrigatorio').checked = !!editing.anexoObrigatorio;
       setProximaDataDisplay(editing.proximaData || '');
       document.getElementById('tarefa-proxima-data').value = editing.proximaData || '';
+      _diasSemanaSelected = [...(editing.diasSemana || [])];
+      document.querySelectorAll('.dia-semana-btn').forEach(b => {
+        b.classList.toggle('active', _diasSemanaSelected.includes(parseInt(b.dataset.dia)));
+      });
+      onTarefaFrequenciaChange();
 
       // Bloquear reativação se concluída por repetições
       const statusSel = document.getElementById('tarefa-status');
@@ -486,9 +536,13 @@
       document.getElementById('tarefa-status').disabled = false;
     }
 
-    // Inicializa checklist e toggle de anexo
+    // Inicializa checklist, toggle de anexo e responsáveis
     checklistTarefaTemp = editing ? JSON.parse(JSON.stringify(editing.checklistTarefa || [])) : [];
     if (!editing) document.getElementById('tarefa-anexo-obrigatorio').checked = false;
+    if (editing?.responsaveis) {
+      _tarefaResponsaveis = { usuarios: [...(editing.responsaveis.usuarios || [])], grupos: [...(editing.responsaveis.grupos || [])] };
+    }
+    _renderResponsaveisChips();
     renderTarefaChecklistBuilder();
     atualizarAbaTarefaChecklist();
     switchTarefaDrawerTab('dados');
@@ -602,30 +656,374 @@
 
     const r = state.rotinas.find(r => r.id === rotinaId);
     if (!r) return;
-    const ativo = state.ativos[r.equipamentoIdx];
-    const repStr = r.repetir === 'Por' ? `${r.vezes}x` : 'Sempre';
+    const ativo  = state.ativos[r.equipamentoIdx];
     const nCheck = r.checklist?.length || 0;
 
     document.getElementById('tinfo-tipo').textContent  = r.tipo;
-    document.getElementById('tinfo-freq').textContent  = `A cada ${r.fazerCada} ${r.frequencia}`;
-    document.getElementById('tinfo-rep').textContent   = repStr;
     document.getElementById('tinfo-setor').textContent = ativo?.setor || '—';
     document.getElementById('tinfo-cat').textContent   = ativo?.categoria || '—';
     document.getElementById('tinfo-check').textContent = nCheck > 0 ? `${nCheck} item${nCheck>1?'s':''}` : 'Sem checklist';
 
     infoBox.style.display = '';
+  }
+
+  let _diasSemanaSelected = [];
+
+  // ── RASTREABILIDADE DE EDIÇÕES ──
+  let _rastreabilidadeCtx = null; // { tipo: 'ativo'|'rotina'|'tarefa', id }
+
+  // Campos a ignorar no diff (internos/não editáveis pelo usuário)
+  const _DIFF_IGNORE = new Set(['_historico','id','autoInativada','proximaData','status']);
+
+  // Rótulos legíveis para cada campo
+  const _FIELD_LABELS = {
+    nome:'Nome', titulo:'Título', tipo:'Tipo', equipamentoIdx:'Equipamento',
+    setor:'Setor', categoria:'Categoria', marca:'Marca', modelo:'Modelo',
+    serie:'Nº de Série', fornecedor:'Fornecedor', nota:'Observações',
+    codigo:'Código', frequencia:'Frequência', fazerCada:'Fazer a cada',
+    repetir:'Repetir', vezes:'Vezes', lembrete:'Lembrete', dataTarefa:'Data da Tarefa',
+    observacoes:'Observações', anexoObrigatorio:'Exigir Anexo',
+    checklistTarefa:'Checklist da Tarefa', checklist:'Checklist Geral',
+    responsaveis:'Responsáveis', diasSemana:'Dias da Semana'
+  };
+
+  function _diffObj(anterior, atual) {
+    const diffs = [];
+    const keys = new Set([...Object.keys(anterior || {}), ...Object.keys(atual || {})]);
+    for (const k of keys) {
+      if (_DIFF_IGNORE.has(k)) continue;
+      const vA = JSON.stringify(anterior?.[k] ?? null);
+      const vB = JSON.stringify(atual?.[k]     ?? null);
+      if (vA === vB) continue;
+      diffs.push({
+        campo: _FIELD_LABELS[k] || k,
+        antes: _formatDiffVal(anterior?.[k]),
+        depois: _formatDiffVal(atual?.[k])
+      });
+    }
+    return diffs;
+  }
+
+  function _formatDiffVal(v) {
+    if (v === null || v === undefined) return '—';
+    if (typeof v === 'boolean') return v ? 'Sim' : 'Não';
+    if (Array.isArray(v)) {
+      if (v.length === 0) return '—';
+      if (typeof v[0] === 'object' && v[0]?.texto) return v.map(i => i.texto).join(', ');
+      return v.join(', ');
+    }
+    if (typeof v === 'object') return JSON.stringify(v);
+    return String(v);
+  }
+
+  function _registrarEdicao(objNovo, objAnterior) {
+    const sess = typeof currentSession !== 'undefined' ? currentSession : null;
+    const isNew = !objAnterior || (objAnterior._historico || []).length === 0;
+    const entrada = {
+      ts:       new Date().toISOString(),
+      userId:   sess?.userId       || null,
+      userName: sess?.nomeCompleto || sess?.username || 'Sistema',
+      isNew,
+      diffs: isNew ? [] : _diffObj(objAnterior, objNovo)
+    };
+    if (!Array.isArray(objNovo._historico)) objNovo._historico = [];
+    objNovo._historico.unshift(entrada);
+  }
+
+  function openRastreabilidadeModal(tipo) {
+    let obj = null;
+    let nome = '';
+    let titleLabel = 'Rastreabilidade de Edições';
+
+    if (tipo === 'ativo') {
+      obj  = ativoEdicaoIndex !== null ? state.ativos[ativoEdicaoIndex] : null;
+      nome = obj?.nome || 'Ativo';
+    } else if (tipo === 'ativo-view') {
+      obj  = ativoEdicaoIndex !== null ? state.ativos[ativoEdicaoIndex] : null;
+      nome = obj?.nome || 'Ativo';
+    } else if (tipo === 'rotina') {
+      obj  = rotinaEdicaoId ? state.rotinas.find(r => r.id === rotinaEdicaoId) : null;
+      nome = obj?.nome || 'Rotina';
+    } else if (tipo === 'rotina-view') {
+      obj  = rotinaViewId ? state.rotinas.find(r => r.id === rotinaViewId) : null;
+      nome = obj?.nome || 'Rotina';
+    } else if (tipo === 'tarefa') {
+      obj  = tarefaEdicaoId ? state.tarefas.find(t => t.id === tarefaEdicaoId) : null;
+      nome = obj?.titulo || obj?.nome || 'Tarefa';
+    } else if (tipo === 'tarefa-view') {
+      obj  = tarefaDetalheId ? state.tarefas.find(t => t.id === tarefaDetalheId) : null;
+      nome = obj?.titulo || 'Tarefa';
+    } else if (tipo === 'pub-view') {
+      const pub = _pubViewId ? state.publicacoes.find(p => p.id === _pubViewId) : null;
+      if (pub) {
+        titleLabel = 'Informações da Publicação';
+        const t = state.tarefas.find(t => t.id === pub.tarefaId);
+        nome = t?.titulo || 'Atividade';
+        const dataStr = pub.dataPublicacao ? new Date(pub.dataPublicacao).toLocaleDateString('pt-BR') : '—';
+        const porNome = pub.publicadoPorNome || '—';
+        const listEl2 = document.getElementById('rastreabilidade-list');
+        const titleEl2 = document.getElementById('rastreabilidade-title');
+        const subtitleEl2 = document.getElementById('rastreabilidade-subtitle');
+        if (titleEl2) titleEl2.textContent = titleLabel;
+        if (subtitleEl2) subtitleEl2.textContent = nome;
+        if (listEl2) listEl2.innerHTML = `
+          <div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);">
+            <div style="width:32px;height:32px;border-radius:50%;background:rgba(0,180,216,.12);border:1.5px solid var(--cyan);
+              display:flex;align-items:center;justify-content:center;flex-shrink:0;color:var(--cyan);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;">
+                <path d="M22 2L11 13"/><path d="M22 2L15 22 11 13 2 9l20-7z"/>
+              </svg>
+            </div>
+            <div>
+              <div style="font-size:12.5px;font-weight:700;color:var(--text-primary);">${porNome}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Publicação · ${dataStr}</div>
+            </div>
+          </div>`;
+        openModal('modal-rastreabilidade');
+        return;
+      }
+    }
+
+    const titleEl    = document.getElementById('rastreabilidade-title');
+    const subtitleEl = document.getElementById('rastreabilidade-subtitle');
+    const listEl     = document.getElementById('rastreabilidade-list');
+    if (titleEl)    titleEl.textContent    = titleLabel;
+    if (subtitleEl) subtitleEl.textContent = nome;
+
+    const hist = obj?._historico || [];
+    if (hist.length === 0) {
+      listEl.innerHTML = `<div class="data-table-empty" style="padding:28px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <strong>Nenhuma edição registrada</strong>
+        <p>O histórico aparece após salvar alterações</p>
+      </div>`;
+    } else {
+      listEl.innerHTML = hist.map((h, i) => {
+        const dt   = new Date(h.ts);
+        const data = dt.toLocaleDateString('pt-BR');
+        const hora = dt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        const isCreation = h.isNew || i === hist.length - 1;
+        const label = isCreation ? 'Criação' : 'Edição';
+        const isLatest = i === 0;
+        const accent  = isCreation ? 'var(--amber)' : isLatest ? 'var(--cyan)' : 'var(--border)';
+        const accentBg = isCreation ? 'rgba(255,183,3,.1)' : isLatest ? 'rgba(0,180,216,.1)' : 'var(--bg)';
+        const iconSvg  = isCreation
+          ? '<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>'
+          : '<path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>';
+        const diffs = h.diffs || [];
+        const diffsHtml = diffs.length === 0 ? '' : `
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:4px;">
+            ${diffs.map(d => `
+              <div style="font-size:11.5px;">
+                <span style="font-weight:700;color:var(--text-secondary);">${d.campo}:</span>
+                <span style="background:rgba(230,57,70,.12);color:#e63946;border-radius:4px;padding:1px 5px;margin-left:4px;text-decoration:line-through;">${d.antes}</span>
+                <span style="font-size:10px;color:var(--text-muted);margin:0 3px;">→</span>
+                <span style="background:rgba(42,157,143,.12);color:#2a9d8f;border-radius:4px;padding:1px 5px;">${d.depois}</span>
+              </div>`).join('')}
+          </div>`;
+        return `<div style="display:flex;align-items:flex-start;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border);">
+          <div style="width:32px;height:32px;border-radius:50%;background:${accentBg};border:1.5px solid ${accent};
+            display:flex;align-items:center;justify-content:center;flex-shrink:0;color:${accent};margin-top:1px;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;">${iconSvg}</svg>
+          </div>
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:6px;">
+              <span style="font-size:12.5px;font-weight:700;color:var(--text-primary);">${h.userName}</span>
+              <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+                color:${isCreation?'var(--amber)':isLatest?'var(--cyan)':'var(--text-muted)'};">${label}</span>
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${data} às ${hora}</div>
+            ${diffsHtml}
+          </div>
+        </div>`;
+      }).join('');
+    }
+
+    openModal('modal-rastreabilidade');
+  }
+
+  // ── RESPONSÁVEIS DA TAREFA ──
+  let _tarefaResponsaveis = { usuarios: [], grupos: [] };
+
+  function filterResponsaveisSearch() {
+    const input = document.getElementById('resp-search-input');
+    const dropdown = document.getElementById('resp-search-dropdown');
+    if (!input || !dropdown) return;
+    const q = input.value.trim().toLowerCase();
+
+    const usuarios = (typeof authState !== 'undefined' ? authState.users : [])
+      .filter(u => u.ativo !== false && !_tarefaResponsaveis.usuarios.includes(u.id));
+    const grupos = (typeof authState !== 'undefined' ? authState.groups : [])
+      .filter(g => !_tarefaResponsaveis.grupos.includes(g.id));
+
+    const matchU = q ? usuarios.filter(u =>
+      u.nomeCompleto.toLowerCase().includes(q) || (u.username||'').toLowerCase().includes(q) || (u.cargo||'').toLowerCase().includes(q)
+    ) : usuarios;
+    const matchG = q ? grupos.filter(g => g.nome.toLowerCase().includes(q)) : grupos;
+
+    if (matchU.length === 0 && matchG.length === 0) {
+      dropdown.innerHTML = `<div class="autocomplete-empty">Nenhum resultado encontrado</div>`;
+      dropdown.classList.add('open');
+      return;
+    }
+
+    let html = '';
+    if (matchG.length > 0) {
+      html += `<div class="autocomplete-section-label">Grupos</div>`;
+      html += matchG.map(g => `
+        <div class="autocomplete-item" onmousedown="addResponsavel('grupo','${g.id}')">
+          <div class="resp-item-icon resp-icon-grupo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;">
+              <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+              <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size:13px;font-weight:600;">${g.nome}</div>
+            <div style="font-size:11px;color:var(--text-muted);">Grupo</div>
+          </div>
+        </div>`).join('');
+    }
+    if (matchU.length > 0) {
+      html += `<div class="autocomplete-section-label">Usuários</div>`;
+      html += matchU.map(u => `
+        <div class="autocomplete-item" onmousedown="addResponsavel('usuario','${u.id}')">
+          <div class="resp-item-icon resp-icon-user">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;">
+              <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size:13px;font-weight:600;">${u.nomeCompleto}</div>
+            <div style="font-size:11px;color:var(--text-muted);">${u.cargo || u.username || ''}</div>
+          </div>
+        </div>`).join('');
+    }
+
+    dropdown.innerHTML = html;
+    dropdown.classList.add('open');
+  }
+
+  function closeResponsaveisDropdown() {
+    const dd = document.getElementById('resp-search-dropdown');
+    if (dd) dd.classList.remove('open');
+  }
+
+  function addResponsavel(tipo, id) {
+    if (tipo === 'usuario' && !_tarefaResponsaveis.usuarios.includes(id)) {
+      _tarefaResponsaveis.usuarios.push(id);
+    } else if (tipo === 'grupo' && !_tarefaResponsaveis.grupos.includes(id)) {
+      _tarefaResponsaveis.grupos.push(id);
+    }
+    const input = document.getElementById('resp-search-input');
+    if (input) input.value = '';
+    closeResponsaveisDropdown();
+    _renderResponsaveisChips();
+  }
+
+  function removeResponsavel(tipo, id) {
+    if (tipo === 'usuario') _tarefaResponsaveis.usuarios = _tarefaResponsaveis.usuarios.filter(x => x !== id);
+    else _tarefaResponsaveis.grupos = _tarefaResponsaveis.grupos.filter(x => x !== id);
+    _renderResponsaveisChips();
+  }
+
+  function _renderResponsaveisChips() {
+    const chips = document.getElementById('responsaveis-chips');
+    if (!chips) return;
+    const usuarios = (typeof authState !== 'undefined' ? authState.users : []);
+    const grupos   = (typeof authState !== 'undefined' ? authState.groups : []);
+    const total = _tarefaResponsaveis.usuarios.length + _tarefaResponsaveis.grupos.length;
+    if (total === 0) { chips.innerHTML = ''; return; }
+
+    chips.innerHTML = [
+      ..._tarefaResponsaveis.grupos.map(id => {
+        const g = grupos.find(g => g.id === id);
+        return g ? `<span class="resp-chip resp-chip-grupo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;flex-shrink:0;">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>
+          ${g.nome}
+          <button class="resp-chip-remove" onmousedown="removeResponsavel('grupo','${id}')" title="Remover">&times;</button>
+        </span>` : '';
+      }),
+      ..._tarefaResponsaveis.usuarios.map(id => {
+        const u = usuarios.find(u => u.id === id);
+        return u ? `<span class="resp-chip resp-chip-user">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;flex-shrink:0;">
+            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>
+          ${u.nomeCompleto}
+          <button class="resp-chip-remove" onmousedown="removeResponsavel('usuario','${id}')" title="Remover">&times;</button>
+        </span>` : '';
+      })
+    ].join('');
+  }
+
+  function toggleDiaSemana(dia) {
+    const idx = _diasSemanaSelected.indexOf(dia);
+    if (idx >= 0) _diasSemanaSelected.splice(idx, 1);
+    else _diasSemanaSelected.push(dia);
+    document.querySelectorAll('.dia-semana-btn').forEach(btn => {
+      btn.classList.toggle('active', _diasSemanaSelected.includes(parseInt(btn.dataset.dia)));
+    });
+    autoCalcProximaData();
+  }
+
+  function onTarefaFrequenciaChange() {
+    const freq = document.getElementById('tarefa-frequencia')?.value;
+    const isSempre    = freq === 'Sempre';
+    const isDiaSemana = freq === 'DiaDaSemana';
+
+    const lembreteField  = document.getElementById('tarefa-lembrete-field');
+    const proximaField   = document.getElementById('tarefa-proxima-field');
+    const fazerCadaField = document.getElementById('tarefa-fazer-cada-field');
+    const diasField      = document.getElementById('tarefa-dias-semana-field');
+    const repetirRow     = document.getElementById('tarefa-repetir-row');
+
+    // Lembrete e próxima data — ocultos quando Sempre
+    if (lembreteField) lembreteField.style.display = isSempre ? 'none' : '';
+    if (proximaField)  proximaField.style.display  = isSempre ? 'none' : '';
+
+    // Campos dentro da seção de recorrência — o dropdown de Frequência SEMPRE visível
+    if (fazerCadaField) fazerCadaField.style.display = (isSempre || isDiaSemana) ? 'none' : '';
+    if (diasField)      diasField.style.display      = isDiaSemana ? '' : 'none';
+    if (repetirRow)     repetirRow.style.display     = isSempre ? 'none' : '';
+
     autoCalcProximaData();
   }
 
   function autoCalcProximaData() {
-    const rotinaId = document.getElementById('tarefa-rotina-select').value;
-    const data     = document.getElementById('tarefa-data').value;
-    if (!rotinaId || !data) { setProximaDataDisplay(''); return; }
-    const rotina   = state.rotinas.find(r => r.id === rotinaId);
-    if (!rotina) return;
-    const proxima  = calcProximaData(data, rotina);
+    const data      = document.getElementById('tarefa-data').value;
+    const frequencia = document.getElementById('tarefa-frequencia')?.value;
+
+    if (frequencia === 'Sempre') { setProximaDataDisplay(''); return; }
+
+    if (frequencia === 'DiaDaSemana') {
+      if (!data || _diasSemanaSelected.length === 0) { setProximaDataDisplay(''); return; }
+      const proxima = calcProximaDataDiaSemana(data, _diasSemanaSelected);
+      document.getElementById('tarefa-proxima-data').value = proxima;
+      setProximaDataDisplay(proxima);
+      return;
+    }
+
+    const fazerCada = parseInt(document.getElementById('tarefa-fazer-cada')?.value);
+    if (!data || !fazerCada || !frequencia) { setProximaDataDisplay(''); return; }
+    const proxima = calcProximaData(data, { fazerCada, frequencia });
     document.getElementById('tarefa-proxima-data').value = proxima;
     setProximaDataDisplay(proxima);
+  }
+
+  function calcProximaDataDiaSemana(dataBase, dias) {
+    const base = new Date(dataBase + 'T00:00:00');
+    const sorted = [...dias].sort((a, b) => a - b);
+    let proxima = new Date(base);
+    proxima.setDate(proxima.getDate() + 1); // dia seguinte ao base
+    for (let i = 0; i < 7; i++) {
+      if (sorted.includes(proxima.getDay())) break;
+      proxima.setDate(proxima.getDate() + 1);
+    }
+    return proxima.toISOString().split('T')[0];
   }
 
   function setProximaDataDisplay(val) {
@@ -641,18 +1039,33 @@
   }
 
   function saveTarefa() {
-    const equipIdx = parseInt(document.getElementById('tarefa-equip-select').value);
-    const rotinaId = document.getElementById('tarefa-rotina-select').value;
-    const data     = document.getElementById('tarefa-data').value;
-    const lembrete = parseInt(document.getElementById('tarefa-lembrete').value) || 3;
-    const proxima  = document.getElementById('tarefa-proxima-data').value;
-    const status   = document.getElementById('tarefa-status').checked ? 'Ativo' : 'Inativo';
-    const obs               = document.getElementById('tarefa-obs').value.trim();
-    const anexoObrigatorio  = document.getElementById('tarefa-anexo-obrigatorio').checked;
+    const isNew = !tarefaEdicaoId;
+    if (isNew && !_can('tarefas.criar'))  { showToast('Sem permissão para criar tarefas.', 'error'); return; }
+    if (!isNew && !_can('tarefas.editar')) { showToast('Sem permissão para editar tarefas.', 'error'); return; }
+    const titulo     = document.getElementById('tarefa-titulo').value.trim();
+    const equipIdx   = parseInt(document.getElementById('tarefa-equip-select').value);
+    const rotinaId   = document.getElementById('tarefa-rotina-select').value;
+    const data       = document.getElementById('tarefa-data').value;
+    const lembrete   = parseInt(document.getElementById('tarefa-lembrete').value) || 3;
+    const proxima    = document.getElementById('tarefa-proxima-data').value;
+    const status     = document.getElementById('tarefa-status').checked ? 'Ativo' : 'Inativo';
+    const obs        = document.getElementById('tarefa-obs').value.trim();
+    const frequencia = document.getElementById('tarefa-frequencia').value;
+    const isSempre   = frequencia === 'Sempre';
+    const isDiaSemana = frequencia === 'DiaDaSemana';
+    const fazerCada  = isSempre || isDiaSemana ? null : parseInt(document.getElementById('tarefa-fazer-cada').value);
+    const repetir    = isSempre ? 'Sempre' : document.getElementById('tarefa-repetir').value;
+    const vezes      = (!isSempre && repetir === 'Por') ? parseInt(document.getElementById('tarefa-vezes').value) : null;
+    const diasSemana = isDiaSemana ? [..._diasSemanaSelected] : [];
+    const anexoObrigatorio = document.getElementById('tarefa-anexo-obrigatorio').checked;
 
-    if (isNaN(equipIdx)) { showToast('Selecione o equipamento.', 'error'); return; }
-    if (!rotinaId)        { showToast('Selecione a rotina.', 'error'); return; }
-    if (!data)            { showToast('Informe a data da tarefa.', 'error'); return; }
+    if (!titulo)            { showToast('Informe o título da tarefa.', 'error'); return; }
+    if (isNaN(equipIdx))    { showToast('Selecione o equipamento.', 'error'); return; }
+    if (!rotinaId)          { showToast('Selecione a rotina.', 'error'); return; }
+    if (!data)              { showToast('Informe a data da tarefa.', 'error'); return; }
+    if (!isSempre && !isDiaSemana && (!fazerCada || fazerCada < 1)) { showToast('Informe o valor de "Fazer a cada".', 'error'); return; }
+    if (isDiaSemana && diasSemana.length === 0) { showToast('Selecione pelo menos um dia da semana.', 'error'); return; }
+    if (!isSempre && repetir === 'Por' && (!vezes || vezes < 1)) { showToast('Informe a quantidade de vezes.', 'error'); return; }
 
     // Bloquear reativação de tarefa auto-inativada por conclusão de repetições
     const existente = tarefaEdicaoId ? state.tarefas.find(t => t.id === tarefaEdicaoId) : null;
@@ -663,14 +1076,20 @@
 
     const tarefa = {
       id: tarefaEdicaoId || uid(),
-      equipamentoIdx: equipIdx,
+      titulo, equipamentoIdx: equipIdx,
       rotinaId, dataTarefa: data,
-      proximaData: proxima, lembrete, status, observacoes: obs,
+      fazerCada, frequencia, repetir, vezes, diasSemana,
+      proximaData: isSempre ? null : proxima,
+      lembrete: isSempre ? null : lembrete,
+      status, observacoes: obs,
       checklistTarefa: checklistTarefaTemp.slice(),
       anexoObrigatorio,
-      autoInativada: existente?.autoInativada || false
+      responsaveis: { usuarios: [..._tarefaResponsaveis.usuarios], grupos: [..._tarefaResponsaveis.grupos] },
+      autoInativada: existente?.autoInativada || false,
+      _historico: existente?._historico || []
     };
 
+    _registrarEdicao(tarefa, existente);
     if (tarefaEdicaoId) {
       const idx = state.tarefas.findIndex(t => t.id === tarefaEdicaoId);
       if (idx >= 0) state.tarefas[idx] = tarefa;
@@ -689,9 +1108,23 @@
     const tbody = document.getElementById('tarefas-tbody');
     if (!tbody) return;
 
-    const fAtivoIdx = state._ativoFiltroTarefasIdx ?? null;
+    const fAtivoIdx  = state._ativoFiltroTarefasIdx ?? null;
+    const fRotinaId  = state._rotinaFiltroTarefasId ?? null;
+    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
+    const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
     const list = state.tarefas.filter(t => {
+      if (visSetores) {
+        const ativo = state.ativos[t.equipamentoIdx];
+        if (!ativo || !visSetores.includes(ativo.setor)) return false;
+      }
       if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
+      if (fRotinaId !== null && t.rotinaId !== fRotinaId) return false;
+      if (_minhasTarefasAtivo && _sess) {
+        const resp = t.responsaveis || { usuarios: [], grupos: [] };
+        const myUser = resp.usuarios.includes(_sess.userId);
+        const myGroup = _sess.grupoId && resp.grupos.includes(_sess.grupoId);
+        if (!myUser && !myGroup) return false;
+      }
       return tarefaPassesStatusFilter(t, 'main');
     });
 
@@ -721,8 +1154,8 @@
           ${flag.label}
         </span></td>
         <td>
-          <div style="font-weight:600;">Rotina: ${rotina?.nome || '—'}</div>
-          <div style="font-size:11px;color:var(--text-muted);">${rotina?.tipo || ''}</div>
+          <div style="font-weight:600;">${t.titulo || '—'}</div>
+          <div style="font-size:11px;color:var(--text-muted);">${rotina?.nome || ''}</div>
         </td>
         <td>
           <div style="font-weight:500;">${ativo?.nome || '—'}</div>
@@ -750,7 +1183,7 @@
     const flag   = getTaskFlag(t);
     const nPubs  = state.publicacoes.filter(p => p.tarefaId === id).length;
 
-    document.getElementById('tarefa-detalhe-title').textContent = rotina?.nome || 'Tarefa';
+    document.getElementById('tarefa-detalhe-title').textContent = t.titulo || rotina?.nome || 'Tarefa';
     document.getElementById('tarefa-detalhe-subtitle').textContent = ativo?.nome || '';
 
     const flagIconMap = {
@@ -760,12 +1193,80 @@
       'flag-inactive': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
     };
 
+    // Responsáveis
+    const respUsuarios = (t.responsaveis?.usuarios || []);
+    const respGrupos   = (t.responsaveis?.grupos   || []);
+    const allUsers  = typeof authState !== 'undefined' ? authState.users  : [];
+    const allGroups = typeof authState !== 'undefined' ? authState.groups : [];
+    const temResponsaveis = respUsuarios.length > 0 || respGrupos.length > 0;
+    const respChipsHtml = temResponsaveis ? [
+      ...respGrupos.map(id => {
+        const g = allGroups.find(g => g.id === id);
+        return g ? `<span class="resp-chip resp-chip-grupo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;flex-shrink:0;">
+            <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
+            <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
+          </svg>${g.nome}</span>` : '';
+      }),
+      ...respUsuarios.map(id => {
+        const u = allUsers.find(u => u.id === id);
+        return u ? `<span class="resp-chip resp-chip-user">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;flex-shrink:0;">
+            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/>
+          </svg>${u.nomeCompleto}</span>` : '';
+      })
+    ].join('') : '';
+
+    // Checklist
+    const checklistRotina  = rotina?.checklist || [];
+    const checklistTarefa  = t.checklistTarefa || [];
+    const temChecklistGeral  = checklistRotina.length > 0;
+    const temChecklistTarefa = checklistTarefa.length > 0;
+
+    const checklistGeraldHtml = temChecklistGeral ? `
+      <div class="task-detail-section">
+        <div class="task-detail-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Checklist Geral da Rotina
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          ${checklistRotina.map(it => `<div class="detail-checklist-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0;color:var(--text-muted);"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+            <span style="font-size:13px;color:var(--text-secondary);">${it.texto}</span>
+          </div>`).join('')}
+        </div>
+      </div>` : '';
+
+    const checklistTarefaHtml = temChecklistTarefa ? `
+      <div class="task-detail-section">
+        <div class="task-detail-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Checklist da Tarefa
+        </div>
+        <div style="display:flex;flex-direction:column;gap:5px;">
+          ${checklistTarefa.map(it => `<div class="detail-checklist-item">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0;color:var(--text-muted);"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+            <span style="font-size:13px;color:var(--text-secondary);">${it.texto}</span>
+          </div>`).join('')}
+        </div>
+      </div>` : '';
+
+    // Frequência legível
+    const freqLabel = (() => {
+      if (t.frequencia === 'Sempre') return 'Sem recorrência';
+      if (t.frequencia === 'DiaDaSemana') {
+        const dias = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+        return (t.diasSemana || []).map(d => dias[d]).join(', ') || '—';
+      }
+      return t.fazerCada ? `A cada ${t.fazerCada} ${t.frequencia}` : '—';
+    })();
+
     document.getElementById('tarefa-detalhe-body').innerHTML = `
       <div class="view-hero">
-        <div class="view-hero-name">${rotina?.nome || '—'}</div>
+        <div class="view-hero-name">${t.titulo || rotina?.nome || '—'}</div>
         <div class="view-badges" style="margin-top:8px;">
+          <span class="view-badge">${rotina?.nome || '—'} &bull; ${rotina?.tipo || ''}</span>
           <span class="view-badge">${ativo?.nome || '—'} &bull; ${ativo?.codigo || ''}</span>
-          <span class="view-badge">${rotina?.tipo || ''}</span>
         </div>
         <div class="task-flag-hero ${flag.cls}" style="margin-top:10px;">
           ${flagIconMap[flag.cls] || ''}
@@ -779,8 +1280,8 @@
           Dados da Rotina
         </div>
         <div class="rotina-view-grid">
-          <div class="detail-card"><div class="detail-label">Frequência</div><div class="detail-value">A cada ${rotina?.fazerCada || '?'} ${rotina?.frequencia || ''}</div></div>
-          <div class="detail-card"><div class="detail-label">Repetição</div><div class="detail-value">${rotina?.repetir === 'Por' ? rotina.vezes + ' vez(es)' : 'Sempre'}</div></div>
+          <div class="detail-card"><div class="detail-label">Frequência</div><div class="detail-value">${freqLabel}</div></div>
+          <div class="detail-card"><div class="detail-label">Repetição</div><div class="detail-value">${t.frequencia === 'Sempre' ? '—' : t.repetir === 'Por' ? (t.vezes || '?') + ' vez(es)' : (t.repetir || 'Sempre')}</div></div>
           <div class="detail-card"><div class="detail-label">Setor</div><div class="detail-value">${ativo?.setor || '—'}</div></div>
           <div class="detail-card"><div class="detail-label">Categoria</div><div class="detail-value">${ativo?.categoria || '—'}</div></div>
         </div>
@@ -789,30 +1290,44 @@
       <div class="task-detail-section">
         <div class="task-detail-section-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          Programação da Tarefa
+          Programação
         </div>
         <div class="rotina-view-grid">
           <div class="detail-card"><div class="detail-label">Data da Tarefa</div><div class="detail-value">${formatDate(t.dataTarefa)}</div></div>
           <div class="detail-card"><div class="detail-label">Próxima Data</div><div class="detail-value" style="color:var(--cyan);">${t.proximaData ? formatDate(t.proximaData) : '—'}</div></div>
-          <div class="detail-card"><div class="detail-label">Lembrete</div><div class="detail-value">${t.lembrete ? t.lembrete + ' dias antes' : '—'}</div></div>
+          ${t.frequencia !== 'Sempre' ? `<div class="detail-card"><div class="detail-label">Lembrete</div><div class="detail-value">${t.lembrete ? t.lembrete + ' dias antes' : '—'}</div></div>` : ''}
           <div class="detail-card"><div class="detail-label">Status</div><div class="detail-value">${t.status}</div></div>
           <div class="detail-card"><div class="detail-label">Publicações</div><div class="detail-value">${nPubs} registrada${nPubs !== 1 ? 's' : ''}</div></div>
-          <div class="detail-card"><div class="detail-label">Checklist Geral</div><div class="detail-value">${rotina?.checklist?.length > 0 ? rotina.checklist.length + ' item(s)' : '—'}</div></div>
-          <div class="detail-card"><div class="detail-label">Checklist da Tarefa</div><div class="detail-value" style="${t.checklistTarefa?.length > 0 ? 'color:var(--cyan);' : ''}">${t.checklistTarefa?.length > 0 ? t.checklistTarefa.length + ' item(s)' : '—'}</div></div>
         </div>
         ${t.observacoes ? `<div class="detail-note" style="margin-top:10px;">
           <div class="detail-label" style="margin-bottom:6px;">Observações</div>
           <div style="font-size:13px;color:var(--text-secondary);white-space:pre-line;">${t.observacoes}</div>
         </div>` : ''}
-      </div>`;
+      </div>
+
+      ${temResponsaveis ? `
+      <div class="task-detail-section">
+        <div class="task-detail-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+          Responsáveis
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">${respChipsHtml}</div>
+      </div>` : ''}
+
+      ${checklistGeraldHtml}
+      ${checklistTarefaHtml}`;
 
     const btnPub = document.getElementById('btn-publicar-tarefa');
-    if (btnPub) btnPub.style.display = (t.status === 'Inativo') ? 'none' : '';
+    const canPublish = typeof authHasPermission !== 'function' || authHasPermission('tarefas.publicar');
+    if (btnPub) btnPub.style.display = (t.status === 'Inativo' || !canPublish) ? 'none' : '';
   }
 
   function openTarefaDetalhe(id) {
     renderTarefaDetalheContent(id);
     openModal('modal-tarefa-detalhe');
+    // Permissões
+    _mbtn('btn-editar-tarefa',  _can('tarefas.editar'));
+    _mbtn('btn-excluir-tarefa', _can('tarefas.excluir'));
   }
 
   function editarTarefaAtual() {
@@ -820,6 +1335,7 @@
   }
 
   function excluirTarefaAtual() {
+    if (!_can('tarefas.excluir')) { showToast('Sem permissão para excluir tarefas.', 'error'); return; }
     if (!confirm('Excluir esta tarefa? O histórico de publicações também será removido.')) return;
     state.tarefas = state.tarefas.filter(t => t.id !== tarefaDetalheId);
     state.publicacoes = state.publicacoes.filter(p => p.tarefaId !== tarefaDetalheId);
@@ -954,6 +1470,7 @@
   }
 
   function publicarTarefa() {
+    if (!_can('tarefas.publicar')) { showToast('Sem permissão para publicar tarefas.', 'error'); return; }
     const t = state.tarefas.find(t => t.id === tarefaDetalheId);
     if (!t) return;
     const rotina = state.rotinas.find(r => r.id === t.rotinaId);
@@ -979,6 +1496,7 @@
       if (!allChecked) { showToast('Marque todos os itens do checklist para publicar.', 'error'); return; }
     }
 
+    const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
     const pub = {
       id: uid(),
       tarefaId: tarefaDetalheId,
@@ -986,21 +1504,26 @@
       dataPublicacao: new Date().toISOString().split('T')[0],
       checklistMarcado: checkItems.map(it => it.id),
       notas: document.getElementById('pub-notas').value.trim(),
-      anexos: pubAnexos.slice()
+      anexos: pubAnexos.slice(),
+      publicadoPorId:   _sess?.userId       || null,
+      publicadoPorNome: _sess?.nomeCompleto || _sess?.username || null
     };
     state.publicacoes.push(pub);
 
     // Atualiza próxima data da tarefa baseado na data realizada
-    const novaProxima = calcProximaData(dataRealizadaDate, rotina);
     const tIdx = state.tarefas.findIndex(tt => tt.id === tarefaDetalheId);
     if (tIdx >= 0) {
+      const tarefaAtual = state.tarefas[tIdx];
+      const novaProxima = calcProximaData(dataRealizadaDate, tarefaAtual);
       state.tarefas[tIdx].proximaData = novaProxima;
       state.tarefas[tIdx].dataTarefa  = dataRealizadaDate;
 
       // Auto-inativar ao atingir o número de repetições
-      if (rotina.repetir === 'Por') {
+      const repetir = tarefaAtual.repetir || rotina?.repetir;
+      const vezes   = tarefaAtual.vezes   ?? rotina?.vezes;
+      if (repetir === 'Por') {
         const nPubs = state.publicacoes.filter(p => p.tarefaId === tarefaDetalheId).length;
-        if (nPubs >= rotina.vezes) {
+        if (nPubs >= vezes) {
           state.tarefas[tIdx].status = 'Inativo';
           state.tarefas[tIdx].autoInativada = true;
         }
@@ -1010,9 +1533,10 @@
     closeModal('modal-publicar');
     saveState();
 
-    const autoInativ = state.tarefas[tIdx]?.autoInativada;
-    if (autoInativ) {
-      showToast(`Rotina concluída! Tarefa inativada após ${rotina.vezes} publicação(ões).`, 'info');
+    const tarefaFinal = state.tarefas[tIdx];
+    const vezesFinal  = tarefaFinal?.vezes ?? rotina?.vezes;
+    if (tarefaFinal?.autoInativada) {
+      showToast(`Tarefa concluída após ${vezesFinal} publicação(ões).`, 'info');
     } else {
       showToast('Tarefa publicada com sucesso!', 'success');
     }
@@ -1025,46 +1549,79 @@
     const t = state.tarefas.find(t => t.id === tarefaId);
     const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
     document.getElementById('historico-title').textContent =
-      rotina ? `Histórico — ${rotina.nome}` : 'Histórico de Publicações';
+      t?.titulo ? `Histórico — ${t.titulo}` : (rotina ? `Histórico — ${rotina.nome}` : 'Histórico de Publicações');
     renderHistoricoTable(tarefaId);
     openModal('modal-historico');
   }
 
   let _historicoTarefaId = null;
 
-  function renderHistoricoTable(tarefaId) {
+  const HISTORICO_PER_PAGE = 25;
+  let _historicoPage = 0;
+
+  function renderHistoricoTable(tarefaId, page) {
     _historicoTarefaId = tarefaId;
-    const tbody = document.getElementById('historico-tbody');
-    const pubs  = state.publicacoes.filter(p => p.tarefaId === tarefaId)
+    if (page !== undefined) _historicoPage = page;
+    const tbody       = document.getElementById('historico-tbody');
+    const canEditAtiv = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
+    const canDelAtiv  = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
+    const allPubs = state.publicacoes.filter(p => p.tarefaId === tarefaId)
       .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)));
 
-    if (pubs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5"><div class="data-table-empty">
+    const totalPages = Math.max(1, Math.ceil(allPubs.length / HISTORICO_PER_PAGE));
+    if (_historicoPage >= totalPages) _historicoPage = totalPages - 1;
+    const pubs = allPubs.slice(_historicoPage * HISTORICO_PER_PAGE, (_historicoPage + 1) * HISTORICO_PER_PAGE);
+
+    if (allPubs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="data-table-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         <strong>Nenhuma publicação registrada</strong>
         <p>Publique a tarefa para registrar o histórico</p>
       </div></td></tr>`;
+      _renderHistoricoPagination(0, 1, 0);
       return;
     }
 
     tbody.innerHTML = pubs.map(p => {
       const nCheck = p.checklistMarcado?.length || 0;
       const checkStr = nCheck > 0 ? `<span class="chip chip-green">${nCheck} item${nCheck>1?'s':''}</span>` : '<span style="color:var(--text-muted)">—</span>';
+      const pubPor = p.publicadoPorNome || '<span style="color:var(--text-muted)">—</span>';
       return `<tr class="historico-pub-row" onclick="viewPublicacao('${p.id}')">
         <td style="font-weight:600;">${formatDataRealizadaHtml(p.dataRealizada)}</td>
         <td style="font-size:12px;color:var(--text-muted);">${formatDate(p.dataPublicacao)}</td>
+        <td style="font-size:12.5px;">${pubPor}</td>
         <td>${checkStr}</td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--text-secondary);">${p.notas || '<span style="color:var(--text-muted)">—</span>'}</td>
         <td onclick="event.stopPropagation();" style="white-space:nowrap;">
-          <button class="btn btn-outline btn-icon" onclick="abrirEditarPublicacao('${p.id}')" title="Editar" style="padding:5px;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-          </button>
-          <button class="btn btn-outline btn-icon" onclick="excluirPublicacao('${p.id}')" title="Excluir" style="padding:5px;color:var(--red);border-color:rgba(230,57,70,0.3);margin-left:4px;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-          </button>
+          ${canEditAtiv ? `<button class="btn btn-outline btn-icon" onclick="abrirEditarPublicacao('${p.id}')" title="Editar" style="padding:5px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ''}
+          ${canDelAtiv  ? `<button class="btn btn-outline btn-icon" onclick="excluirPublicacao('${p.id}')" title="Excluir" style="padding:5px;color:var(--red);border-color:rgba(230,57,70,0.3);margin-left:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>` : ''}
         </td>
       </tr>`;
     }).join('');
+    _renderHistoricoPagination(_historicoPage, totalPages, allPubs.length);
+  }
+
+  function _renderHistoricoPagination(page, totalPages, total) {
+    let el = document.getElementById('historico-pagination');
+    if (!el) {
+      const wrapper = document.querySelector('#modal-historico .data-table-wrapper');
+      if (!wrapper) return;
+      el = document.createElement('div');
+      el.id = 'historico-pagination';
+      el.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 0 0;';
+      wrapper.after(el);
+    }
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    const start = page * HISTORICO_PER_PAGE + 1;
+    const end   = Math.min((page + 1) * HISTORICO_PER_PAGE, total);
+    el.innerHTML = `
+      <span style="font-size:12px;color:var(--text-muted);">${start}–${end} de ${total}</span>
+      <button class="btn btn-outline btn-icon" onclick="renderHistoricoTable('${_historicoTarefaId}', ${page - 1})" ${page === 0 ? 'disabled' : ''} style="padding:5px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="btn btn-outline btn-icon" onclick="renderHistoricoTable('${_historicoTarefaId}', ${page + 1})" ${page >= totalPages - 1 ? 'disabled' : ''} style="padding:5px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>`;
   }
 
   let _editPubAnexos = [];
@@ -1104,6 +1661,7 @@
   }
 
   function abrirEditarPublicacao(pubId) {
+    if (!_can('atividades.editar')) { showToast('Sem permissão para editar publicações.', 'error'); return; }
     const p = state.publicacoes.find(p => p.id === pubId);
     if (!p) return;
     const { date, time } = parseDataRealizada(p.dataRealizada);
@@ -1139,6 +1697,7 @@
   }
 
   function excluirPublicacao(pubId) {
+    if (!_can('atividades.excluir')) { showToast('Sem permissão para excluir publicações.', 'error'); return; }
     if (!confirm('Excluir este registro de publicação?')) return;
     const p = state.publicacoes.find(p => p.id === pubId);
     state.publicacoes = state.publicacoes.filter(p => p.id !== pubId);
@@ -1147,9 +1706,8 @@
     if (p) {
       const t = state.tarefas.find(t => t.id === p.tarefaId);
       if (t?.autoInativada) {
-        const rotina = state.rotinas.find(r => r.id === t.rotinaId);
         const nPubs = state.publicacoes.filter(pp => pp.tarefaId === t.id).length;
-        if (rotina && nPubs < rotina.vezes) {
+        if (t.repetir === 'Por' && nPubs < (t.vezes || 0)) {
           const tIdx = state.tarefas.findIndex(tt => tt.id === t.id);
           state.tarefas[tIdx].autoInativada = false;
           state.tarefas[tIdx].status = 'Ativo';
@@ -1161,7 +1719,16 @@
     showToast('Publicação excluída.', 'success');
   }
 
+  let _pubViewId = null;
+
+  function editarPubView() {
+    if (!_pubViewId) return;
+    closeModal('modal-pub-view');
+    abrirEditarPublicacao(_pubViewId);
+  }
+
   function viewPublicacao(pubId) {
+    _pubViewId = pubId;
     const p = state.publicacoes.find(p => p.id === pubId);
     if (!p) return;
     const t = state.tarefas.find(t => t.id === p.tarefaId);
@@ -1239,8 +1806,8 @@
           <div style="background:var(--bg);border:1.2px solid var(--border);border-radius:8px;padding:12px;">
             <div style="font-weight:700;font-size:15px;color:var(--text-primary);">${rotina?.nome || '—'}</div>
             <div style="font-size:13px;color:var(--text-muted);margin-top:6px;">Tipo: ${rotina?.tipo || '—'}</div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Frequência: A cada ${rotina?.fazerCada || '—'} ${rotina?.frequencia || '—'}</div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Repetir: ${rotina?.repetir === 'Por' ? (rotina?.vezes || '—') + 'x' : (rotina?.repetir || 'Sempre')}</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Frequência: ${t?.fazerCada ? `A cada ${t.fazerCada} ${t.frequencia}` : '—'}</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:4px;">Repetir: ${t?.repetir === 'Por' ? (t?.vezes || '—') + 'x' : (t?.repetir || 'Sempre')}</div>
           </div>
         </div>
       </div>
@@ -1251,6 +1818,7 @@
         <div class="view-badges" style="margin-top:8px;">
           <span class="view-badge">Realizada: ${formatDataRealizadaText(p.dataRealizada)}</span>
           <span class="view-badge">Publicada: ${formatDate(p.dataPublicacao)}</span>
+          ${p.publicadoPorNome ? `<span class="view-badge">Por: ${p.publicadoPorNome}</span>` : ''}
         </div>
       </div>
 
@@ -1269,26 +1837,47 @@
   // ══════════════════════════════════════════
   // ── TABELA DE ATIVIDADES ──
   // ══════════════════════════════════════════
-  function renderAtividadesTable() {
+  const ATIVIDADES_PER_PAGE = 25;
+  let _atividadesPage = 0;
+
+  function renderAtividadesTable(page) {
+    if (page !== undefined) _atividadesPage = page;
     const tbody = document.getElementById('atividades-tbody');
     if (!tbody) return;
 
-    const fAtivoIdx = state._ativoFiltroAtividadesIdx ?? null;
-    const pubs = state.publicacoes
+    const fAtivoIdx  = state._ativoFiltroAtividadesIdx ?? null;
+    const fRotinaId  = state._rotinaFiltroAtividadesId ?? null;
+    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
+    const canEdit   = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
+    const canDelete = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
+    const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
+    const allPubs = state.publicacoes
       .slice()
       .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)))
       .filter(p => {
-        if (fAtivoIdx === null) return true;
+        if (_minhasAtividadesAtivo && _sess && p.publicadoPorId !== _sess.userId) return false;
         const t = state.tarefas.find(t => t.id === p.tarefaId);
-        return t && t.equipamentoIdx === fAtivoIdx;
+        if (!t) return false;
+        if (visSetores) {
+          const ativo = state.ativos[t.equipamentoIdx];
+          if (!ativo || !visSetores.includes(ativo.setor)) return false;
+        }
+        if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
+        if (fRotinaId !== null && t.rotinaId !== fRotinaId) return false;
+        return true;
       });
 
-    if (pubs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7"><div class="data-table-empty">
+    const totalPages = Math.max(1, Math.ceil(allPubs.length / ATIVIDADES_PER_PAGE));
+    if (_atividadesPage >= totalPages) _atividadesPage = totalPages - 1;
+    const pubs = allPubs.slice(_atividadesPage * ATIVIDADES_PER_PAGE, (_atividadesPage + 1) * ATIVIDADES_PER_PAGE);
+
+    if (allPubs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="data-table-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <strong>Nenhuma atividade encontrada</strong>
         <p>Ajuste o filtro ou publique tarefas para ver atividades</p>
       </div></td></tr>`;
+      _renderAtividadesPagination(0, 1, 0);
       return;
     }
 
@@ -1310,16 +1899,37 @@
         <td><span class="chip chip-gray">${ativo?.setor || '—'}</span></td>
         <td><span class="chip chip-gray">${ativo?.categoria || '—'}</span></td>
         <td style="font-size:12px;color:var(--text-muted);">${formatDate(p.dataPublicacao)}</td>
+        <td style="font-size:12.5px;">${p.publicadoPorNome || '<span style="color:var(--text-muted)">—</span>'}</td>
         <td onclick="event.stopPropagation();" style="white-space:nowrap;">
-          <button class="btn btn-outline btn-icon" onclick="abrirEditarPublicacao('${p.id}')" title="Editar" style="padding:5px;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-          </button>
-          <button class="btn btn-outline btn-icon" onclick="excluirPublicacao('${p.id}')" title="Excluir" style="padding:5px;color:var(--red);border-color:rgba(230,57,70,0.3);margin-left:4px;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
-          </button>
+          ${canEdit ? `<button class="btn btn-outline btn-icon" onclick="abrirEditarPublicacao('${p.id}')" title="Editar" style="padding:5px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ''}
+          ${canDelete ? `<button class="btn btn-outline btn-icon" onclick="excluirPublicacao('${p.id}')" title="Excluir" style="padding:5px;color:var(--red);border-color:rgba(230,57,70,0.3);margin-left:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>` : ''}
         </td>
       </tr>`;
     }).join('');
+    _renderAtividadesPagination(_atividadesPage, totalPages, allPubs.length);
+  }
+
+  function _renderAtividadesPagination(page, totalPages, total) {
+    let el = document.getElementById('atividades-pagination');
+    if (!el) {
+      const wrapper = document.querySelector('#rpanel-atividades .data-table-wrapper');
+      if (!wrapper) return;
+      el = document.createElement('div');
+      el.id = 'atividades-pagination';
+      el.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 0 0;';
+      wrapper.after(el);
+    }
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    const start = page * ATIVIDADES_PER_PAGE + 1;
+    const end   = Math.min((page + 1) * ATIVIDADES_PER_PAGE, total);
+    el.innerHTML = `
+      <span style="font-size:12px;color:var(--text-muted);">${start}–${end} de ${total}</span>
+      <button class="btn btn-outline btn-icon" onclick="renderAtividadesTable(${page - 1})" ${page === 0 ? 'disabled' : ''} style="padding:5px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="btn btn-outline btn-icon" onclick="renderAtividadesTable(${page + 1})" ${page >= totalPages - 1 ? 'disabled' : ''} style="padding:5px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>`;
   }
 
   // ══════════════════════════════════════════
@@ -1423,10 +2033,12 @@
     const fSetor  = document.getElementById('filter-setor-rotina')?.value || '';
     const fCat    = document.getElementById('filter-cat-rotina')?.value || '';
     const fAtivoIdx = state._ativoFiltroIdx ?? null;
+    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
 
     const list = state.rotinas.filter(r => {
       const ativo = state.ativos[r.equipamentoIdx];
       if (!ativo) return false;
+      if (visSetores && !visSetores.includes(ativo.setor)) return false;
       if (fAtivoIdx !== null && r.equipamentoIdx !== fAtivoIdx) return false;
       if (fTipo && r.tipo !== fTipo) return false;
       if (fSetor && ativo.setor !== fSetor) return false;
@@ -1439,7 +2051,7 @@
     });
 
     if (list.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="7"><div class="data-table-empty">
+      tbody.innerHTML = `<tr><td colspan="6"><div class="data-table-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <strong>Nenhuma rotina encontrada</strong>
         <p>Ajuste os filtros ou cadastre uma nova rotina com o botão "+"</p>
@@ -1451,7 +2063,6 @@
 
     tbody.innerHTML = list.map(r => {
       const ativo     = state.ativos[r.equipamentoIdx];
-      const freq      = `A cada ${r.fazerCada} ${r.frequencia}`;
       const clChip    = tipoCls[r.tipo] || 'chip-gray';
       const nItems    = r.checklist?.length || 0;
       const isInativo = r.status === 'Inativo';
@@ -1481,7 +2092,6 @@
         <td><span class="chip ${clChip}">${r.tipo}</span></td>
         <td><span class="chip chip-gray">${ativo?.setor || '—'}</span></td>
         <td><span class="chip chip-gray">${ativo?.categoria || '—'}</span></td>
-        <td style="font-size:12.5px;">${freq}</td>
         <td>${nItems > 0
           ? `<span class="chip chip-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;"><polyline points="9 11 12 14 22 4"/></svg>${nItems} item${nItems>1?'s':''}</span>`
           : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}</td>
@@ -1541,11 +2151,158 @@
         </button>`;
       }
     }
+    _updateRotinaFiltroTarefasWrap();
     renderTarefasTable();
     updateNotifBadge();
     closeModal('modal-ativo-selector');
   }
-  function limparAtivoFiltroTarefas() { setAtivoFiltroTarefas(undefined); updateNotifBadge(); }
+  function limparAtivoFiltroTarefas() {
+    state._rotinaFiltroTarefasId = null;
+    _updateRotinaFiltroTarefasDisplay();
+    setAtivoFiltroTarefas(undefined);
+    updateNotifBadge();
+  }
+
+  // ── ROTINA FILTRO TAREFAS ──
+  function _updateRotinaFiltroTarefasWrap() {
+    const wrap = document.getElementById('rotina-filter-tarefas-wrap');
+    if (!wrap) return;
+    const hasAtivo = (state._ativoFiltroTarefasIdx ?? null) !== null;
+    wrap.style.display = hasAtivo ? '' : 'none';
+    if (!hasAtivo) {
+      state._rotinaFiltroTarefasId = null;
+      _updateRotinaFiltroTarefasDisplay();
+    }
+  }
+
+  function _updateRotinaFiltroTarefasDisplay() {
+    const wrap = document.getElementById('rotina-filter-tarefas-wrap');
+    if (!wrap) return;
+    const rotinaId = state._rotinaFiltroTarefasId ?? null;
+    if (rotinaId) {
+      const rotina = state.rotinas.find(r => r.id === rotinaId);
+      wrap.innerHTML = `<div class="ativo-selecionado-chip" onclick="limparRotinaFiltroTarefas()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        ${rotina?.nome || 'Rotina'}
+        <span class="chip-x" title="Limpar">&times;</span>
+      </div>`;
+    } else {
+      wrap.innerHTML = `<button class="btn-select-ativo" id="btn-filtrar-rotina-tarefas" onclick="openRotinaSelectorCtx('tarefas')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+        Filtrar por Rotina
+      </button>`;
+    }
+  }
+
+  function setRotinaFiltroTarefas(rotinaId) {
+    state._rotinaFiltroTarefasId = rotinaId ?? null;
+    _updateRotinaFiltroTarefasDisplay();
+    renderTarefasTable();
+    updateNotifBadge();
+    closeModal('modal-rotina-selector-tarefas');
+  }
+
+  function limparRotinaFiltroTarefas() {
+    setRotinaFiltroTarefas(null);
+  }
+
+  let _rotinaSelectorCtx = 'tarefas';
+  function openRotinaSelectorCtx(ctx) {
+    _rotinaSelectorCtx = ctx;
+    const isAtiv = ctx === 'atividades';
+    const fAtivoIdx = isAtiv
+      ? (state._ativoFiltroAtividadesIdx ?? null)
+      : (state._ativoFiltroTarefasIdx ?? null);
+
+    const rotinas = state.rotinas.filter(r => {
+      if (fAtivoIdx !== null) {
+        if (isAtiv) return state.publicacoes.some(p => {
+          const t = state.tarefas.find(t => t.id === p.tarefaId);
+          return t?.rotinaId === r.id && t?.equipamentoIdx === fAtivoIdx;
+        });
+        return state.tarefas.some(t => t.rotinaId === r.id && t.equipamentoIdx === fAtivoIdx);
+      }
+      return true;
+    });
+
+    const setFn  = isAtiv ? `setRotinaFiltroAtividades` : `setRotinaFiltroTarefas`;
+    const listId = isAtiv ? 'rotina-selector-atividades-list' : 'rotina-selector-tarefas-list';
+    const modalId = isAtiv ? 'modal-rotina-selector-atividades' : 'modal-rotina-selector-tarefas';
+
+    const list = document.getElementById(listId);
+    if (!list) return;
+    list.innerHTML = rotinas.length === 0
+      ? `<div class="ativo-search-empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Nenhuma rotina encontrada</div>`
+      : rotinas.map(r => `<div class="ativo-search-card" onclick="${setFn}('${r.id}')">
+          <div class="ativo-search-card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </div>
+          <div>
+            <div class="ativo-search-card-name">${r.nome}</div>
+            <div class="ativo-search-card-meta">${r.tipo || ''}</div>
+          </div>
+        </div>`).join('');
+    openModal(modalId);
+  }
+
+  // ── ROTINA FILTRO ATIVIDADES ──
+  function _updateRotinaFiltroAtividadesDisplay() {
+    const wrap = document.getElementById('rotina-filter-atividades-wrap');
+    if (!wrap) return;
+    const rotinaId = state._rotinaFiltroAtividadesId ?? null;
+    if (rotinaId) {
+      const rotina = state.rotinas.find(r => r.id === rotinaId);
+      wrap.innerHTML = `<div class="ativo-selecionado-chip" onclick="limparRotinaFiltroAtividades()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        ${rotina?.nome || 'Rotina'}
+        <span class="chip-x" title="Limpar">&times;</span>
+      </div>`;
+    } else {
+      wrap.innerHTML = `<button class="btn-select-ativo" onclick="openRotinaSelectorCtx('atividades')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+        Filtrar por Rotina
+      </button>`;
+    }
+  }
+
+  function setRotinaFiltroAtividades(rotinaId) {
+    state._rotinaFiltroAtividadesId = rotinaId ?? null;
+    _updateRotinaFiltroAtividadesDisplay();
+    _atividadesPage = 0;
+    renderAtividadesTable();
+    closeModal('modal-rotina-selector-atividades');
+  }
+
+  function limparRotinaFiltroAtividades() { setRotinaFiltroAtividades(null); }
+
+  // ── MINHAS TAREFAS ──
+  let _minhasTarefasAtivo = false;
+
+  function toggleMinhasTarefas() {
+    _minhasTarefasAtivo = !_minhasTarefasAtivo;
+    const btn = document.getElementById('btn-minhas-tarefas');
+    if (btn) {
+      btn.style.background    = _minhasTarefasAtivo ? 'var(--cyan)' : '';
+      btn.style.color         = _minhasTarefasAtivo ? '#fff' : '';
+      btn.style.borderColor   = _minhasTarefasAtivo ? 'var(--cyan)' : '';
+    }
+    renderTarefasTable();
+  }
+
+  // ── MINHAS ATIVIDADES ──
+  let _minhasAtividadesAtivo = false;
+
+  function toggleMinhasAtividades() {
+    _minhasAtividadesAtivo = !_minhasAtividadesAtivo;
+    const btn = document.getElementById('btn-minhas-atividades');
+    if (btn) {
+      btn.style.background  = _minhasAtividadesAtivo ? 'var(--cyan)' : '';
+      btn.style.color       = _minhasAtividadesAtivo ? '#fff' : '';
+      btn.style.borderColor = _minhasAtividadesAtivo ? 'var(--cyan)' : '';
+    }
+    _atividadesPage = 0;
+    renderAtividadesTable();
+  }
 
   // ── ATIVO FILTRO ATIVIDADES ──
   function setAtivoFiltroAtividades(idx) {
@@ -1587,9 +2344,13 @@
   function renderAtivoSelectorList() {
     const q = document.getElementById('ativo-selector-search').value.toLowerCase();
     const container = document.getElementById('ativo-selector-list');
+    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
     const found = state.ativos
       .map((a, i) => ({ a, i }))
-      .filter(({ a }) => !q || a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q) || a.setor.toLowerCase().includes(q));
+      .filter(({ a }) => {
+        if (visSetores && !visSetores.includes(a.setor)) return false;
+        return !q || a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q) || a.setor.toLowerCase().includes(q);
+      });
 
     if (found.length === 0) {
       container.innerHTML = `<div class="ativo-search-empty">
@@ -1628,6 +2389,8 @@
     checklistTemp = editing ? JSON.parse(JSON.stringify(editing.checklist || [])) : [];
 
     document.getElementById('drawer-rotina-title').textContent = id ? 'Editar Rotina' : 'Nova Rotina';
+    const btnHistRotina = document.getElementById('btn-hist-rotina');
+    if (btnHistRotina) btnHistRotina.style.display = id ? '' : 'none';
     document.getElementById('drawer-rotina-subtitle').textContent = id ? 'Altere os dados da rotina' : 'Preencha os dados da rotina de manutenção';
     document.getElementById('drawer-save-label').textContent = id ? 'Salvar Alterações' : 'Salvar Rotina';
 
@@ -1637,11 +2400,6 @@
       el('rotina-nome').value = '';
       el('rotina-equip-input').value = '';
       el('rotina-tipo').value = '';
-      el('rotina-fazer-cada').value = '';
-      el('rotina-frequencia').value = 'Meses';
-      el('rotina-repetir').value = 'Sempre';
-      el('rotina-vezes').value = '';
-      el('field-vezes').style.display = 'none';
       setRotinaEquipDisplay(null);
     } else {
       const r = editing;
@@ -1649,11 +2407,6 @@
       el('rotina-nome').value = r.nome;
       el('rotina-equip-input').value = ativo?.nome || '';
       el('rotina-tipo').value = r.tipo;
-      el('rotina-fazer-cada').value = r.fazerCada;
-      el('rotina-frequencia').value = r.frequencia;
-      el('rotina-repetir').value = r.repetir;
-      el('rotina-vezes').value = r.vezes || '';
-      el('field-vezes').style.display = r.repetir === 'Por' ? '' : 'none';
       setRotinaEquipDisplay(r.equipamentoIdx);
       _selectedEquipIdx = r.equipamentoIdx;
     }
@@ -1679,9 +2432,9 @@
     });
   }
 
-  function toggleVezesField() {
-    const val = document.getElementById('rotina-repetir').value;
-    document.getElementById('field-vezes').style.display = val === 'Por' ? '' : 'none';
+  function toggleTarefaVezesField() {
+    const val = document.getElementById('tarefa-repetir').value;
+    document.getElementById('tarefa-field-vezes').style.display = val === 'Por' ? '' : 'none';
   }
 
   // ── EQUIPMENT AUTOCOMPLETE ──
@@ -1737,12 +2490,11 @@
 
   // ── SALVAR ROTINA ──
   function saveRotina() {
+    const isNew = !rotinaEdicaoId;
+    if (isNew && !_can('rotinas.criar'))  { showToast('Sem permissão para criar rotinas.', 'error'); return; }
+    if (!isNew && !_can('rotinas.editar')) { showToast('Sem permissão para editar rotinas.', 'error'); return; }
     const nome = document.getElementById('rotina-nome').value.trim();
     const tipo = document.getElementById('rotina-tipo').value;
-    const fazerCada = parseInt(document.getElementById('rotina-fazer-cada').value);
-    const frequencia = document.getElementById('rotina-frequencia').value;
-    const repetir = document.getElementById('rotina-repetir').value;
-    const vezes = repetir === 'Por' ? parseInt(document.getElementById('rotina-vezes').value) : null;
 
     if (!nome) { showToast('Informe o nome da rotina.', 'error'); return; }
     if (_selectedEquipIdx === null || _selectedEquipIdx === undefined) {
@@ -1752,47 +2504,21 @@
       _selectedEquipIdx = found;
     }
     if (!tipo) { showToast('Selecione o tipo da rotina.', 'error'); return; }
-    if (!fazerCada || fazerCada < 1) { showToast('Informe o valor de "Fazer a cada".', 'error'); return; }
-    if (repetir === 'Por' && (!vezes || vezes < 1)) { showToast('Informe a quantidade de vezes.', 'error'); return; }
 
     const rotinaExistente = rotinaEdicaoId ? state.rotinas.find(r => r.id === rotinaEdicaoId) : null;
     const rotina = {
       id: rotinaEdicaoId || uid(),
       nome, tipo, equipamentoIdx: _selectedEquipIdx,
-      fazerCada, frequencia, repetir, vezes,
       checklist: checklistTemp.slice(),
-      status: rotinaExistente?.status || 'Ativo'
+      status: rotinaExistente?.status || 'Ativo',
+      _historico: rotinaExistente?._historico || []
     };
 
+    _registrarEdicao(rotina, rotinaExistente);
     if (rotinaEdicaoId) {
       const idx = state.rotinas.findIndex(r => r.id === rotinaEdicaoId);
-      if (idx >= 0) {
-        const antiga = state.rotinas[idx];
-        const frequenciaAlterada =
-          antiga.fazerCada !== rotina.fazerCada ||
-          antiga.frequencia !== rotina.frequencia;
-
-        state.rotinas[idx] = rotina;
-
-        // Recalcula próxima data das tarefas vinculadas se a frequência mudou
-        if (frequenciaAlterada) {
-          let recalculadas = 0;
-          state.tarefas.forEach((t, ti) => {
-            if (t.rotinaId !== rotinaEdicaoId) return;
-            if (!t.dataTarefa) return;
-            const novaProxima = calcProximaData(t.dataTarefa, rotina);
-            state.tarefas[ti] = { ...t, proximaData: novaProxima };
-            recalculadas++;
-          });
-          if (recalculadas > 0) {
-            showToast(`Rotina atualizada! Próxima data recalculada em ${recalculadas} tarefa${recalculadas > 1 ? 's' : ''}.`, 'success');
-          } else {
-            showToast('Rotina atualizada!', 'success');
-          }
-        } else {
-          showToast('Rotina atualizada!', 'success');
-        }
-      }
+      if (idx >= 0) state.rotinas[idx] = rotina;
+      showToast('Rotina atualizada!', 'success');
     } else {
       state.rotinas.push(rotina);
       showToast('Rotina cadastrada!', 'success');
@@ -1818,7 +2544,6 @@
 
   function renderChecklistBuilder() {
     const container = document.getElementById('checklist-builder');
-    const emptyMsg = document.getElementById('checklist-empty-msg');
     if (checklistTemp.length === 0) {
       container.innerHTML = `<div class="checklist-empty-tip" id="checklist-empty-msg">
         Nenhum item adicionado. O checklist é opcional — adicione itens acima.
@@ -1889,14 +2614,26 @@
   // ── VER / EDITAR / DELETAR ROTINA ──
   let rotinaViewId = null;
 
+  // Helper: mostra/esconde botão por ID com base em permissão
+  function _mbtn(id, visible) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? '' : 'none';
+  }
+  function _can(key) {
+    return typeof authHasPermission !== 'function' || authHasPermission(key);
+  }
+
   function viewRotina(id) {
     rotinaViewId = id;
     switchRotinaViewTab('info');
     renderRotinaViewInfo();
-    // Inicializa badge da aba Tarefas com contagem de alertas
     renderRotinaViewTarefas();
-    switchRotinaViewTab('info'); // volta para info após renderizar tarefas
+    switchRotinaViewTab('info');
     openModal('modal-rotina-view');
+    // Permissões
+    _mbtn('btn-editar-rotina',  _can('rotinas.editar'));
+    _mbtn('btn-toggle-rotina',  _can('rotinas.editar'));
+    _mbtn('btn-excluir-rotina', _can('rotinas.excluir'));
   }
 
   function switchRotinaViewTab(tab) {
@@ -1912,7 +2649,6 @@
     const r = state.rotinas.find(r => r.id === rotinaViewId);
     if (!r) return;
     const ativo  = state.ativos[r.equipamentoIdx];
-    const repStr = r.repetir === 'Por' ? `${r.vezes} vez(es)` : 'Sempre';
     const isInativo = r.status === 'Inativo';
 
     document.getElementById('rotina-view-title').textContent = r.nome;
@@ -1937,8 +2673,6 @@
         <div class="view-hero-name">${r.nome}</div>
         <div class="view-badges" style="margin-top:10px;">
           <span class="view-badge">${r.tipo}</span>
-          <span class="view-badge">A cada ${r.fazerCada} ${r.frequencia}</span>
-          <span class="view-badge">${repStr}</span>
           ${isInativo ? '<span class="view-badge" style="background:rgba(230,57,70,0.15);border-color:rgba(230,57,70,0.3);color:var(--red);">Inativa</span>' : ''}
         </div>
       </div>
@@ -2059,7 +2793,7 @@
           <div style="display:flex;flex-direction:column;gap:3px;flex:1;">
             <div style="font-weight:600;font-size:13px;">Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
             <div style="font-size:11px;color:var(--text-muted);">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
-            <div style="font-size:11px;color:var(--text-muted);">Publicada em ${formatDate(p.dataPublicacao)}</div>
+            <div style="font-size:11px;color:var(--text-muted);">Publicada em ${formatDate(p.dataPublicacao)}${p.publicadoPorNome ? ` · Por: ${p.publicadoPorNome}` : ''}</div>
           </div>
           ${p.notas ? `<span style="font-size:12px;color:var(--text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.notas}</span>` : ''}
         </div>`;
@@ -2080,6 +2814,7 @@
   }
 
   function confirmarDeleteRotina() {
+    if (!_can('rotinas.excluir')) { showToast('Sem permissão para excluir rotinas.', 'error'); return; }
     if (!confirm('Excluir esta rotina? As tarefas vinculadas também serão removidas.')) return;
     state.rotinas = state.rotinas.filter(r => r.id !== rotinaViewId);
     state.tarefas = state.tarefas.filter(t => t.rotinaId !== rotinaViewId);
@@ -2090,7 +2825,8 @@
 
   // ── FILTROS DA ABA ROTINA ──
   function atualizarFiltrosRotina() {
-    const setorOpts = state.setores.map(s => `<option value="${s}">${s}</option>`).join('');
+    const setores = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
+    const setorOpts = setores.map(s => `<option value="${s}">${s}</option>`).join('');
     const catOpts = state.categorias.map(c => `<option value="${c}">${c}</option>`).join('');
     const fs = document.getElementById('filter-setor-rotina');
     const fc = document.getElementById('filter-cat-rotina');
@@ -2142,8 +2878,38 @@
   }
 
   // ── MODAIS ──
-  function openModal(id) { document.getElementById(id)?.classList.add('open'); }
-  function closeModal(id) { document.getElementById(id)?.classList.remove('open'); }
+  // Pilha de modais abertos — o anterior fica oculto (visibility:hidden) enquanto
+  // há outro na frente, evitando repaint desnecessário.
+  const _modalStack = [];
+
+  function _applyModalVisibility() {
+    _modalStack.forEach((mid, i) => {
+      const el = document.getElementById(mid);
+      if (!el) return;
+      el.style.visibility = i < _modalStack.length - 1 ? 'hidden' : '';
+    });
+  }
+
+  function openModal(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.add('open');
+    // Remove da pilha se já estava (reabertura), depois empurra ao topo
+    const existing = _modalStack.indexOf(id);
+    if (existing !== -1) _modalStack.splice(existing, 1);
+    _modalStack.push(id);
+    _applyModalVisibility();
+  }
+
+  function closeModal(id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.classList.remove('open');
+    el.style.visibility = '';
+    const idx = _modalStack.indexOf(id);
+    if (idx !== -1) _modalStack.splice(idx, 1);
+    _applyModalVisibility();
+  }
 
   let ativoEdicaoIndex = null;
   let setorEdicaoIndex = -1;
@@ -2164,6 +2930,8 @@
   function openAtivoModal(index = null) {
     ativoEdicaoIndex = index;
     document.getElementById('modal-ativo-title').textContent = index === null ? 'Novo Ativo' : 'Editar Ativo';
+    const btnHistAtivo = document.getElementById('btn-hist-ativo');
+    if (btnHistAtivo) btnHistAtivo.style.display = index !== null ? '' : 'none';
     document.querySelector('#modal-ativo .modal-subtitle').textContent = index === null ? 'Preencha os dados do equipamento' : 'Altere os dados do equipamento';
 
     if (index === null) {
@@ -2218,6 +2986,8 @@
     _atualizarBadgesAtivoTabs(index);
     switchAtivoTab(initialTab);
     openModal('modal-visualizar');
+    // Permissões
+    _mbtn('btn-editar-ativo', _can('ativos.editar'));
   }
 
   function _atualizarBadgesAtivoTabs(index) {
@@ -2287,7 +3057,7 @@
         return `<div class="list-item-row" style="cursor:pointer;${isInativo?'opacity:0.6;':''}" onclick="viewRotina('${r.id}')">
           <div style="flex:1;">
             <div style="display:flex;align-items:center;"><strong style="font-size:13px;">${r.nome}</strong>${badge}${isInativo?'<span class="chip chip-gray" style="margin-left:6px;font-size:10px;">Inativa</span>':''}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">A cada ${r.fazerCada} ${r.frequencia} · ${r.repetir === 'Por' ? r.vezes + 'x' : 'Sempre'}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${r.tipo}</div>
           </div>
           <span class="chip ${tipoCls[r.tipo]||'chip-gray'}">${r.tipo}</span>
         </div>`;
@@ -2350,7 +3120,7 @@
           <div style="flex:1;">
             <div style="font-weight:600;font-size:13px;">Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Publicada: ${formatDate(p.dataPublicacao)}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Publicada: ${formatDate(p.dataPublicacao)}${p.publicadoPorNome ? ` · Por: ${p.publicadoPorNome}` : ''}</div>
           </div>
           ${p.anexos?.length > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${p.anexos.length} anexo${p.anexos.length>1?'s':''}</span>` : ''}
         </div>`;
@@ -2438,7 +3208,8 @@
   }
 
   function atualizarSelects() {
-    const setorOptions = state.setores.map(s => `<option value="${s}">${s}</option>`).join('');
+    const setores = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
+    const setorOptions = setores.map(s => `<option value="${s}">${s}</option>`).join('');
     document.getElementById('main-sector-filter').innerHTML = `<option value="todos">Setor (Todos)</option>` + setorOptions;
     document.getElementById('ativo-setor').innerHTML = `<option value="">Selecione...</option>` + setorOptions;
     const catOptions = state.categorias.map(c => `<option value="${c}">${c}</option>`).join('');
@@ -2453,6 +3224,10 @@
     const val = document.getElementById('input-novo-setor').value.trim();
     if (!val) return;
     if (setorEdicaoIndex >= 0) {
+      const oldVal = state.setores[setorEdicaoIndex];
+      if (oldVal && oldVal !== val) {
+        state.ativos.forEach(a => { if (a.setor === oldVal) a.setor = val; });
+      }
       state.setores[setorEdicaoIndex] = val;
     } else if (!state.setores.includes(val)) {
       state.setores.push(val);
@@ -2470,6 +3245,10 @@
     const val = document.getElementById('input-nova-categoria').value.trim();
     if (!val) return;
     if (categoriaEdicaoIndex >= 0) {
+      const oldVal = state.categorias[categoriaEdicaoIndex];
+      if (oldVal && oldVal !== val) {
+        state.ativos.forEach(a => { if (a.categoria === oldVal) a.categoria = val; });
+      }
       state.categorias[categoriaEdicaoIndex] = val;
     } else if (!state.categorias.includes(val)) {
       state.categorias.push(val);
@@ -2484,6 +3263,9 @@
   }
 
   function salvarAtivo() {
+    const isNew = ativoEdicaoIndex === null;
+    if (isNew && !_can('ativos.criar'))  { showToast('Sem permissão para criar ativos.', 'error'); return; }
+    if (!isNew && !_can('ativos.editar')) { showToast('Sem permissão para editar ativos.', 'error'); return; }
     const nome = document.getElementById('ativo-nome').value.trim();
     const codigo = document.getElementById('ativo-codigo').value.trim();
     const setor = document.getElementById('ativo-setor').value;
@@ -2493,15 +3275,18 @@
       showToast('Preencha os campos obrigatórios (*).', 'error'); return;
     }
 
+    const ativoExistente = ativoEdicaoIndex !== null ? state.ativos[ativoEdicaoIndex] : null;
     const ativo = {
       nome, codigo, setor, categoria,
       marca: document.getElementById('ativo-marca').value.trim() || "-",
       modelo: document.getElementById('ativo-modelo').value.trim() || "-",
       serie: document.getElementById('ativo-serie').value.trim() || "-",
       fornecedor: document.getElementById('ativo-fornecedor').value.trim() || "-",
-      nota: document.getElementById('ativo-nota').value.trim()
+      nota: document.getElementById('ativo-nota').value.trim(),
+      _historico: ativoExistente?._historico || []
     };
 
+    _registrarEdicao(ativo, ativoExistente);
     if (ativoEdicaoIndex === null) {
       state.ativos.push(ativo);
     } else {
@@ -2521,10 +3306,12 @@
     const grid = document.getElementById('assets-grid');
     const fSetor = document.getElementById('main-sector-filter').value;
     const fCat = document.getElementById('main-category-filter').value;
+    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
 
     const filtrados = state.ativos
       .map((item, index) => ({ item, index }))
-      .filter(({ item, index }) => {
+      .filter(({ item }) => {
+        if (visSetores && !visSetores.includes(item.setor)) return false;
         const matchSetor = fSetor === 'todos' || item.setor === fSetor;
         const matchCat = fCat === 'todas' || item.categoria === fCat;
         return matchSetor && matchCat;
@@ -2581,4 +3368,178 @@
 
   function openAtivoAlertasResumo(equipamentoIdx) {
     visualizarAtivo(equipamentoIdx, 'tarefas');
+  }
+
+  // ══════════════════════════════════════════
+  // ── CONFIGURAÇÕES — BACKUP ──
+  // ══════════════════════════════════════════
+
+  let _backupFile = null;
+
+  function renderSysInfo() {
+    const grid = document.getElementById('cfg-sysinfo-grid');
+    if (!grid) return;
+    const nAtivos    = state.ativos.length;
+    const nRotinas   = state.rotinas.length;
+    const nTarefas   = state.tarefas.length;
+    const nPubs      = state.publicacoes.length;
+    const nSetores   = state.setores.length;
+    const nCats      = state.categorias.length;
+    const raw        = localStorage.getItem(STORAGE_KEY) || '';
+    const sizeKb     = (new Blob([raw]).size / 1024).toFixed(1);
+    grid.innerHTML = [
+      ['Ativos cadastrados', nAtivos],
+      ['Rotinas', nRotinas],
+      ['Tarefas', nTarefas],
+      ['Publicações', nPubs],
+      ['Setores', nSetores],
+      ['Categorias', nCats],
+      ['Tamanho do banco', sizeKb + ' KB'],
+      ['Chave de armazenamento', STORAGE_KEY],
+    ].map(([label, value]) => `
+      <div class="cfg-sysinfo-item">
+        <div class="cfg-sysinfo-label">${label}</div>
+        <div class="cfg-sysinfo-value">${value}</div>
+      </div>`).join('');
+  }
+
+  function exportarBackup() {
+    // Inclui dados de auth se disponíveis
+    const exportData = { ...state };
+    if (typeof authState !== 'undefined') {
+      exportData.auth = {
+        users:             authState.users,
+        groups:            authState.groups,
+        cargos:            authState.cargos,
+        allowRegistration: authState.allowRegistration
+      };
+    }
+    const data     = JSON.stringify(exportData, null, 2);
+    const blob     = new Blob([data], { type: 'application/json' });
+    const url      = URL.createObjectURL(blob);
+    const now      = new Date();
+    const stamp    = now.toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const a        = document.createElement('a');
+    a.href         = url;
+    a.download     = `backup-gestao-ativos-${stamp}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    const label = document.getElementById('backup-last-export-label');
+    if (label) label.textContent = `Último export: ${now.toLocaleString('pt-BR')}`;
+    showToast('Backup exportado com sucesso!', 'success');
+  }
+
+  function backupDragOver(e) {
+    e.preventDefault();
+    document.getElementById('backup-drop-zone')?.classList.add('drag-over');
+  }
+  function backupDragLeave() {
+    document.getElementById('backup-drop-zone')?.classList.remove('drag-over');
+  }
+  function backupDrop(e) {
+    e.preventDefault();
+    document.getElementById('backup-drop-zone')?.classList.remove('drag-over');
+    const file = e.dataTransfer?.files?.[0];
+    if (file) _processarArquivoBackup(file);
+  }
+  function backupFileSelected(e) {
+    const file = e.target.files?.[0];
+    if (file) _processarArquivoBackup(file);
+    e.target.value = '';
+  }
+
+  function _processarArquivoBackup(file) {
+    if (!file.name.endsWith('.json')) {
+      showToast('Selecione um arquivo .json válido.', 'error');
+      return;
+    }
+    _backupFile = file;
+    const nameEl = document.getElementById('backup-file-name');
+    const infoEl = document.getElementById('backup-file-info');
+    const btnEl  = document.getElementById('btn-restaurar-backup');
+    if (nameEl) nameEl.textContent = file.name;
+    if (infoEl) infoEl.style.display = 'flex';
+    if (btnEl)  btnEl.disabled = false;
+  }
+
+  function limparArquivoBackup() {
+    _backupFile = null;
+    const infoEl = document.getElementById('backup-file-info');
+    const btnEl  = document.getElementById('btn-restaurar-backup');
+    if (infoEl) infoEl.style.display = 'none';
+    if (btnEl)  btnEl.disabled = true;
+  }
+
+  function restaurarBackup() {
+    if (!_backupFile) return;
+    const input = document.getElementById('restauracao-confirm-input');
+    if (input) input.value = '';
+    const btn = document.getElementById('btn-executar-restauracao');
+    if (btn) { btn.disabled = true; btn.style.opacity = '.4'; btn.style.cursor = 'not-allowed'; }
+    openModal('modal-confirmar-restauracao');
+    setTimeout(() => input?.focus(), 120);
+  }
+
+  function validarConfirmRestauracao() {
+    const input = document.getElementById('restauracao-confirm-input');
+    const btn   = document.getElementById('btn-executar-restauracao');
+    if (!input || !btn) return;
+    const ok = input.value.trim().toUpperCase() === 'SIM';
+    btn.disabled      = !ok;
+    btn.style.opacity = ok ? '1' : '.4';
+    btn.style.cursor  = ok ? 'pointer' : 'not-allowed';
+  }
+
+  function executarRestauracao() {
+    const input = document.getElementById('restauracao-confirm-input');
+    if (!input || input.value.trim().toUpperCase() !== 'SIM') return;
+    if (!_backupFile) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const parsed = JSON.parse(e.target.result);
+        const requiredKeys = ['setores', 'categorias', 'ativos', 'rotinas', 'tarefas', 'publicacoes'];
+        const missing = requiredKeys.filter(k => !(k in parsed));
+        if (missing.length > 0) {
+          closeModal('modal-confirmar-restauracao');
+          showToast(`Arquivo inválido: campos ausentes (${missing.join(', ')}).`, 'error');
+          return;
+        }
+        // Separa dados de auth dos dados de sistema
+        const { auth: authBackup, ...stateData } = parsed;
+        state = stateData;
+        saveState();
+
+        // Restaura dados de auth (se presentes no backup)
+        if (authBackup && typeof authState !== 'undefined' && typeof _saveAuth === 'function') {
+          if (Array.isArray(authBackup.users))  authState.users  = authBackup.users;
+          if (Array.isArray(authBackup.groups)) authState.groups = authBackup.groups;
+          if (Array.isArray(authBackup.cargos)) authState.cargos = authBackup.cargos;
+          authState.allowRegistration = authBackup.allowRegistration !== false;
+          _saveAuth();
+          // Verifica se o usuário atual ainda existe nos dados restaurados
+          if (typeof currentSession !== 'undefined' && currentSession) {
+            const aindaExiste = authState.users.some(u =>
+              u.id === currentSession.userId && u.ativo !== false);
+            if (!aindaExiste) {
+              closeModal('modal-confirmar-restauracao');
+              showToast('Backup restaurado. Sua conta não existe nos dados restaurados — faça login novamente.', 'info');
+              if (typeof authLogout === 'function') { setTimeout(authLogout, 1800); }
+              return;
+            }
+          }
+          if (typeof renderUsersTable  === 'function') renderUsersTable();
+          if (typeof renderGroupsTable === 'function') renderGroupsTable();
+        }
+
+        limparArquivoBackup();
+        renderSysInfo();
+        closeModal('modal-confirmar-restauracao');
+        showToast('Dados restaurados com sucesso!', 'success');
+      } catch {
+        closeModal('modal-confirmar-restauracao');
+        showToast('Erro ao ler o arquivo. Verifique se é um backup válido.', 'error');
+      }
+    };
+    reader.readAsText(_backupFile);
   }
