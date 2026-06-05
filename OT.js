@@ -353,9 +353,9 @@ function _otTryTransition(otId, targetStatus) {
   if (!o) return;
   const from = o.status;
 
-  // Bloqueios: concluída e cancelada são finais
-  if (from === 'concluida' || from === 'cancelada') {
-    showToast('OTs concluídas ou canceladas não podem ser movidas.', 'error'); return;
+  // Bloqueios: apenas OTs canceladas são finais; OTs concluídas podem ser reabertas/alteradas
+  if (from === 'cancelada') {
+    showToast('OTs canceladas não podem ser movidas.', 'error'); return;
   }
 
   // Validações de transição
@@ -409,8 +409,8 @@ function _otSetStatus(otId, newStatus, pubTipo, texto) {
   const idx = otState.ordens.findIndex(x => x.id === otId);
   if (idx < 0) return;
   const old = otState.ordens[idx].status;
-  if (old === 'concluida' || old === 'cancelada') {
-    showToast('OTs concluídas ou canceladas não podem ser movidas.', 'error'); return;
+  if (old === 'cancelada') {
+    showToast('OTs canceladas não podem ser movidas.', 'error'); return;
   }
   otState.ordens[idx].status      = newStatus;
   otState.ordens[idx].atualizadoEm = new Date().toISOString();
@@ -919,7 +919,7 @@ function _otRenderView(o) {
   const pubs = otState.publicacoes.filter(p => p.otId === o.id)
     .sort((a, b) => a.data < b.data ? 1 : -1);
 
-  const canEdit = o.status !== 'concluida' && o.status !== 'cancelada';
+  const canEdit = o.status !== 'cancelada';
 
   const el = document.getElementById('ot-view-body');
   if (!el) return;
@@ -1044,6 +1044,88 @@ ${o.motivoCancelamento ? `<div class="detail-note" style="border-left-color:var(
     : `<div class="ot-pub-log">${pubs.map(p => _otPubEntryHTML(p)).join('')}</div>`}
 </div>
 `;
+
+  // Build a compact Status button in the header with a dropdown menu
+  const hdrRight = document.querySelector('#modal-ot-view .modal-header > div:nth-child(2)');
+  if (hdrRight) {
+    // remove any existing status wrap
+    const existing = hdrRight.querySelector('.ot-status-wrap');
+    if (existing) existing.remove();
+    const wrapHtml = `
+      <div class="ot-status-wrap" style="position:relative;margin-right:8px;">
+        <button class="btn btn-outline" id="ot-status-btn">Status</button>
+      </div>`;
+    hdrRight.insertAdjacentHTML('afterbegin', wrapHtml);
+    const btn = hdrRight.querySelector('#ot-status-btn');
+    if (btn) {
+      // create menu appended to body to avoid clipping by modal stacking contexts
+      const existingMenu = document.getElementById('ot-status-menu');
+      if (existingMenu) existingMenu.remove();
+      const menu = document.createElement('div');
+      menu.id = 'ot-status-menu';
+      menu.className = 'ot-status-menu';
+      Object.assign(menu.style, {
+        display: 'none', position: 'absolute', background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
+        boxShadow: '0 8px 24px rgba(11,22,30,0.08)', zIndex: '20002', minWidth: '180px', borderRadius: '6px', padding: '6px 6px'
+      });
+      const statuses = OT_STATUSES.filter(s => s !== o.status);
+      menu.innerHTML = statuses.map(s => `
+        <div class="ot-status-item" style="padding:8px 10px;cursor:pointer;border-radius:4px;margin:2px 0;font-size:13px;color:var(--text-primary);">${OT_STATUS_CFG[s]?.label || s}</div>
+      `).join('');
+      // attach click handlers to menu items
+      menu.addEventListener('click', (ev) => {
+        const item = ev.target.closest('.ot-status-item');
+        if (!item) return;
+        const idx = Array.from(menu.querySelectorAll('.ot-status-item')).indexOf(item);
+        const status = statuses[idx];
+        if (status) otChangeStatusFromView(o.id, status);
+        menu.style.display = 'none';
+      });
+      document.body.appendChild(menu);
+
+      btn.onclick = (ev) => {
+        ev.stopPropagation();
+        // hide other menus
+        document.querySelectorAll('.ot-status-menu').forEach(m => { if (m !== menu) m.style.display = 'none'; });
+        if (menu.style.display === 'block') { menu.style.display = 'none'; return; }
+        // position menu under the button
+        const rect = btn.getBoundingClientRect();
+        menu.style.display = 'block';
+        // allow browser to compute width
+        const mw = menu.offsetWidth;
+        let left = rect.right - mw;
+        if (left < 6) left = rect.left;
+        menu.style.left = `${left}px`;
+        menu.style.top = `${rect.bottom + 6}px`;
+      };
+
+      // close when clicking outside (bind once)
+      if (!window._otStatusMenuBound) {
+        document.addEventListener('click', (e) => {
+          if (!e.target.closest('#ot-status-menu') && !e.target.closest('.ot-status-wrap')) {
+            document.querySelectorAll('.ot-status-menu').forEach(m => m.style.display = 'none');
+          }
+        });
+        window._otStatusMenuBound = true;
+      }
+    }
+  }
+}
+
+// Helper to change status from within the view and keep the same tab open
+function otChangeStatusFromView(otId, targetStatus) {
+  const currentTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'ordem';
+  _otTryTransition(otId, targetStatus);
+  // Re-render view and restore tab (if view still open)
+  setTimeout(() => {
+    if (_otViewId === otId) {
+      const o = otState.ordens.find(x => x.id === otId);
+      if (o) {
+        _otRenderView(o);
+        otSwitchViewTab(currentTab);
+      }
+    }
+  }, 120);
 }
 
 function _otPubEntryHTML(p) {
@@ -1074,6 +1156,8 @@ function otViewToggleSub(otId, i) {
   if (idx < 0) return;
   const sub = otState.ordens[idx].subtarefas;
   if (!sub[i]) return;
+  // preserve current active tab in view
+  const currentTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'subtarefas';
   sub[i].concluida = !sub[i].concluida;
   if (sub[i].concluida) {
     const sess = typeof currentSession !== 'undefined' ? currentSession : null;
@@ -1086,6 +1170,8 @@ function otViewToggleSub(otId, i) {
   otSave();
   _otRenderKanban();
   _otRenderView(otState.ordens[idx]);
+  // restore previously active tab
+  otSwitchViewTab(currentTab);
 }
 
 // ── PUBLICAÇÃO DA OT ──────────────────────────────────────────
@@ -1148,8 +1234,13 @@ function otConfirmPub() {
   otCloseModal('modal-ot-pub');
   if (typeof resetUploadZone === 'function') resetUploadZone('ot-pub');
   _otPubAnexos = [];
+  // preserve current active tab in view when adding publication
+  const currentTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'publicacoes';
   const o = otState.ordens.find(x => x.id === _otViewId);
-  if (o) _otRenderView(o);
+  if (o) {
+    _otRenderView(o);
+    otSwitchViewTab(currentTab);
+  }
   showToast('Publicação registrada.', 'success');
 }
 
