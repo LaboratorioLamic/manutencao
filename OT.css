@@ -18,6 +18,7 @@
   overflow: hidden;
   height: 100%;
   min-height: 0;
+  position: relative;
 }
 
 /* ── Toolbar ── */
@@ -211,6 +212,7 @@
 .ot-badge-tipo-corretiva   { background: rgba(230,57,70,0.1);   color: var(--red);   border: 1px solid rgba(230,57,70,0.25); }
 .ot-badge-tipo-implantacao { background: rgba(42,157,143,0.1);  color: var(--green); border: 1px solid rgba(42,157,143,0.25); }
 .ot-badge-tipo-melhoria    { background: rgba(244,162,97,0.12); color: #b45309;      border: 1px solid rgba(244,162,97,0.3); }
+.ot-badge-tipo-alteracao   { background: rgba(139,92,246,0.1);  color: #7c3aed;      border: 1px solid rgba(139,92,246,0.25); }
 .ot-badge-sev-baixa   { background: rgba(42,157,143,0.1);  color: var(--green); border: 1px solid rgba(42,157,143,0.25); }
 .ot-badge-sev-media   { background: rgba(0,168,204,0.1);   color: var(--cyan);  border: 1px solid rgba(0,168,204,0.25); }
 .ot-badge-sev-alta    { background: rgba(244,162,97,0.12); color: #b45309;      border: 1px solid rgba(244,162,97,0.3); }
@@ -228,6 +230,7 @@
 .ot-card-meta-row svg { width: 11px; height: 11px; flex-shrink: 0; opacity: 0.6; }
 .ot-card-meta-val { color: var(--text-secondary); font-weight: 500; }
 .ot-card-overdue { color: var(--red) !important; font-weight: 700; }
+.ot-card-warning { color: #b45309 !important; font-weight: 700; }
 
 .ot-card-footer {
   border-top: 1px solid var(--border); padding-top: 8px; margin-top: 4px;
@@ -531,6 +534,40 @@
 }
 .ot-cat-item-del:hover { background: rgba(230,57,70,0.1); color: var(--red); }
 .ot-cat-item-del svg { width: 12px; height: 12px; }
+
+/* ── FAB Nova OT ── */
+.ot-fab {
+  position: absolute;
+  bottom: 28px;
+  right: 28px;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--cyan);
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0,168,204,0.45);
+  transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+  z-index: 10;
+  flex-shrink: 0;
+}
+.ot-fab svg {
+  width: 22px;
+  height: 22px;
+  color: #fff;
+  stroke: #fff;
+}
+.ot-fab:hover {
+  background: var(--cyan-hover);
+  transform: scale(1.08);
+  box-shadow: 0 6px 20px rgba(0,168,204,0.55);
+}
+.ot-fab:active {
+  transform: scale(0.95);
+}
 
 /* Animações */
 @keyframes ot-fade-in {

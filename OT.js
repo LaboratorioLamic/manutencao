@@ -52,6 +52,7 @@ const OT_TIPO_CFG = {
   corretiva:   { label: 'Corretiva',    cls: 'ot-badge-tipo-corretiva'   },
   implantacao: { label: 'Implantação',  cls: 'ot-badge-tipo-implantacao' },
   melhoria:    { label: 'Melhoria',     cls: 'ot-badge-tipo-melhoria'    },
+  alteracao:   { label: 'Alteração',    cls: 'ot-badge-tipo-alteracao'   },
 };
 
 const OT_SEV_CFG = {
@@ -94,6 +95,14 @@ const OT_CHECKLIST_TPL = {
     'Executar a melhoria planejada',
     'Validar resultado com as partes interessadas',
     'Documentar processo e lições aprendidas',
+  ],
+  alteracao: [
+    'Identificar o escopo da alteração',
+    'Avaliar impacto nos processos e equipamentos',
+    'Obter aprovação formal da alteração',
+    'Executar a alteração conforme plano',
+    'Testar e validar o resultado',
+    'Atualizar documentação técnica',
   ],
 };
 
@@ -158,6 +167,7 @@ function _otBuildTabHTML() {
       <option value="corretiva">Corretiva</option>
       <option value="implantacao">Implantação</option>
       <option value="melhoria">Melhoria</option>
+      <option value="alteracao">Alteração</option>
     </select>
     <select class="ot-filter-select" id="ot-filter-sev" onchange="otFilterChange()">
       <option value="">Toda severidade</option>
@@ -167,12 +177,11 @@ function _otBuildTabHTML() {
       <option value="baixa">Baixa</option>
     </select>
     <div class="ot-toolbar-spacer"></div>
-    <button class="btn btn-primary" onclick="otOpenForm(null)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-      Nova OT
-    </button>
   </div>
   <div class="ot-board" id="ot-board"></div>
+  <button class="ot-fab" onclick="otOpenForm(null)" title="Nova OT">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  </button>
 </div>`;
 }
 
@@ -196,6 +205,16 @@ function _otRenderKanban() {
   if (!board) return;
 
   const filtered = otState.ordens.filter(o => {
+    // Filtro de setor: topbar + permissão de grupo
+    const ativo = (o.ativoIdx !== null && o.ativoIdx !== undefined && typeof state !== 'undefined')
+      ? state.ativos[o.ativoIdx] : null;
+    if (ativo) {
+      if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
+    } else if (o.setor) {
+      // OT sem ativo vinculado mas com setor salvo: aplica filtro de grupo
+      const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
+      if (visSetores && !visSetores.includes(o.setor)) return false;
+    }
     if (_otFilterTipo && o.tipo !== _otFilterTipo) return false;
     if (_otFilterSev  && o.severidade !== _otFilterSev)  return false;
     if (_otSearchQ) {
@@ -244,7 +263,12 @@ function _otCardHTML(o) {
   if (o.prazo) {
     const d    = new Date(o.prazo + 'T00:00:00');
     const diff = Math.ceil((d - today) / 86400000);
-    const cls  = diff < 0 ? 'ot-card-overdue' : (diff <= 2 ? 'ot-card-overdue' : '');
+    let alertLimit = 2;
+    if (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null) {
+      const parsed = parseInt(o.prazoAlertaDias, 10);
+      if (!Number.isNaN(parsed) && parsed >= 0) alertLimit = parsed;
+    }
+    const cls  = diff < 0 ? 'ot-card-overdue' : (diff <= alertLimit ? 'ot-card-warning' : '');
     const txt  = diff < 0 ? `Vencida ${Math.abs(diff)}d` : (diff === 0 ? 'Vence hoje' : _fmtDate(o.prazo));
     prazoHtml = `<div class="ot-card-meta-row">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -346,6 +370,10 @@ function _otTryTransition(otId, targetStatus) {
     }
   }
   if (targetStatus === 'concluida') {
+    const sub = o.subtarefas || [];
+    if (sub.length > 0 && sub.some(s => !s.concluida)) {
+      showToast('Conclua todas as subtarefas antes de concluir a OT.', 'error'); return;
+    }
     const pubs = otState.publicacoes.filter(p => p.otId === otId);
     if (pubs.length === 0) {
       showToast('Adicione ao menos uma publicação de evidência antes de concluir.', 'error'); return;
@@ -381,6 +409,9 @@ function _otSetStatus(otId, newStatus, pubTipo, texto) {
   const idx = otState.ordens.findIndex(x => x.id === otId);
   if (idx < 0) return;
   const old = otState.ordens[idx].status;
+  if (old === 'concluida' || old === 'cancelada') {
+    showToast('OTs concluídas ou canceladas não podem ser movidas.', 'error'); return;
+  }
   otState.ordens[idx].status      = newStatus;
   otState.ordens[idx].atualizadoEm = new Date().toISOString();
   if (newStatus === 'concluida') otState.ordens[idx].dataConclusao = new Date().toISOString().split('T')[0];
@@ -447,6 +478,7 @@ function otConfirmDevolve() {
 function otOpenForm(id) {
   _otFormId   = id;
   _otAtivoIdx = null;
+  _otRespId   = null;
   const o     = id ? otState.ordens.find(x => x.id === id) : null;
 
   document.getElementById('ot-form-title').textContent   = id ? 'Editar OT' : 'Nova Ordem de Trabalho';
@@ -458,6 +490,7 @@ function otOpenForm(id) {
   _otFormSetField('ot-f-descricao',  o?.descricao   || '');
   _otFormSetField('ot-f-severidade', o?.severidade  || 'media');
   _otFormSetField('ot-f-prazo',      o?.prazo       || '');
+  _otFormSetField('ot-f-prazo-alerta', o?.prazoAlertaDias ?? 2);
   _otFormSetField('ot-f-resp',       o?.responsavelId || '');
   _otFormSetField('ot-f-tipo-falha', o?.tipoFalha   || '');
   _otFormSetField('ot-f-causa',      o?.causaRaiz   || '');
@@ -479,10 +512,10 @@ function otOpenForm(id) {
   document.getElementById('ot-falha-section').classList.toggle('show', ativoFalhou && o?.tipo === 'corretiva');
   document.getElementById('ot-terceiro-section').classList.toggle('show', terceirizado);
 
-  _otFormSetField('ot-f-empresa',  o?.empresa  || '');
-  _otFormSetField('ot-f-cnpj',     o?.cnpj     || '');
-  _otFormSetField('ot-f-contato',  o?.contato  || '');
-  _otFormSetField('ot-f-contrato', o?.contrato || '');
+  // Selects de empresa/responsável (populados do módulo Empresas)
+  if (typeof empPopulateBothSelects === 'function') {
+    empPopulateBothSelects('ot-f-empresa', 'ot-f-resp-empresa', o?.empresa || '', o?.respEmpresa || '');
+  }
 
   // Subtarefas
   _otSubTemp = o?.subtarefas ? JSON.parse(JSON.stringify(o.subtarefas)) : [];
@@ -506,11 +539,70 @@ function _otFormSetField(id, val) {
 }
 
 function _otBuildRespSelect(selectedId) {
-  const sel = document.getElementById('ot-f-resp');
-  if (!sel) return;
-  const users = (typeof authState !== 'undefined' ? authState.users : []).filter(u => u.ativo !== false);
-  sel.innerHTML = '<option value="">— Sem responsável interno —</option>' +
-    users.map(u => `<option value="${u.id}" ${u.id === selectedId ? 'selected' : ''}>${_escHtml(u.nomeCompleto)}${u.cargo ? ' · ' + u.cargo : ''}</option>`).join('');
+  _otRespId = selectedId || null;
+  _otRenderRespChip();
+}
+
+let _otRespId = null;
+
+function _otRenderRespChip() {
+  const wrap = document.getElementById('ot-resp-chip-wrap');
+  if (!wrap) return;
+  const users = typeof authState !== 'undefined' ? authState.users : [];
+  const user = _otRespId ? users.find(u => u.id === _otRespId) : null;
+  if (user) {
+    wrap.innerHTML = `<div style="display:flex;align-items:center;gap:6px;">
+      <span class="ativo-selecionado-chip">
+        ${_escHtml(user.nomeCompleto)}${user.cargo ? ' · ' + _escHtml(user.cargo) : ''}
+        <span class="chip-x" onclick="otClearResp()">×</span>
+      </span>
+    </div>`;
+  } else {
+    wrap.innerHTML = `<button type="button" class="btn btn-outline" onclick="otOpenRespSearch()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+      Selecionar Responsável
+    </button>`;
+  }
+}
+
+function otClearResp() { _otRespId = null; _otRenderRespChip(); }
+
+function otOpenRespSearch() {
+  const input = document.getElementById('ot-resp-search-input');
+  if (input) input.value = '';
+  _otRenderRespSearchList('');
+  otOpenModal('modal-ot-resp-search');
+  setTimeout(() => document.getElementById('ot-resp-search-input')?.focus(), 80);
+}
+
+function otRespSearchInput(q) { _otRenderRespSearchList(q.toLowerCase()); }
+
+function _otRenderRespSearchList(q) {
+  const list = document.getElementById('ot-resp-search-list');
+  if (!list) return;
+  const users = (typeof authState !== 'undefined' ? authState.users : [])
+    .filter(u => u.ativo !== false)
+    .filter(u => !q || `${u.nomeCompleto} ${u.cargo || ''}`.toLowerCase().includes(q));
+  if (users.length === 0) {
+    list.innerHTML = '<div class="autocomplete-empty">Nenhum usuário encontrado</div>';
+    return;
+  }
+  list.innerHTML = users.map(u => `
+    <div class="ativo-search-card" onclick="otSelectResp('${u.id}')">
+      <div class="ativo-search-card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+      </div>
+      <div>
+        <div class="ativo-search-card-name">${_escHtml(u.nomeCompleto)}</div>
+        <div class="ativo-search-card-meta">${u.cargo ? _escHtml(u.cargo) : 'Sem cargo'}</div>
+      </div>
+    </div>`).join('');
+}
+
+function otSelectResp(id) {
+  _otRespId = id;
+  otCloseModal('modal-ot-resp-search');
+  _otRenderRespChip();
 }
 
 function _otSetToggle(id, active) {
@@ -614,13 +706,26 @@ function otSelectAtivo(idx) {
 
 // ── TABS DO FORM ──────────────────────────────────────────────
 function otSwitchFormTab(tab) {
-  document.querySelectorAll('.ot-modal-tab-btn[data-tab]').forEach(btn => {
+  const modal = document.getElementById('modal-ot-form');
+  if (!modal) return;
+  modal.querySelectorAll('.ot-modal-tab-btn[data-tab]').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.tab === tab);
   });
-  document.querySelectorAll('.ot-modal-tab-panel[data-tab]').forEach(p => {
+  modal.querySelectorAll('.ot-modal-tab-panel[data-tab]').forEach(p => {
     p.classList.toggle('active', p.dataset.tab === tab);
   });
   if (tab === 'subtarefas') _otRenderSubList();
+}
+
+function otSwitchViewTab(tab) {
+  const modal = document.getElementById('modal-ot-view');
+  if (!modal) return;
+  modal.querySelectorAll('.ot-modal-tab-btn[data-tab]').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tab);
+  });
+  modal.querySelectorAll('.ot-modal-tab-panel[data-tab]').forEach(p => {
+    p.classList.toggle('active', p.dataset.tab === tab);
+  });
 }
 
 // ── SUBTAREFAS ────────────────────────────────────────────────
@@ -705,7 +810,7 @@ function otSaveForm() {
   const tipo = document.getElementById('ot-f-tipo')?.value;
   if (!tipo)  { showToast('Selecione o tipo da OT.', 'error'); return; }
 
-  const respId  = document.getElementById('ot-f-resp')?.value || '';
+  const respId  = _otRespId || '';
   const respUser = respId && typeof authState !== 'undefined'
     ? authState.users.find(u => u.id === respId) : null;
 
@@ -728,11 +833,13 @@ function otSaveForm() {
       ativoIdx:   _otAtivoIdx,
       responsavelId:   respId,
       responsavelNome: respUser?.nomeCompleto || '',
+      prazoAlertaDias: (() => {
+        const v = parseInt(document.getElementById('ot-f-prazo-alerta')?.value, 10);
+        return Number.isNaN(v) || v < 0 ? 2 : v;
+      })(),
       terceirizado,
-      empresa:  terceirizado ? (document.getElementById('ot-f-empresa')?.value.trim()  || '') : '',
-      cnpj:     terceirizado ? (document.getElementById('ot-f-cnpj')?.value.trim()     || '') : '',
-      contato:  terceirizado ? (document.getElementById('ot-f-contato')?.value.trim()  || '') : '',
-      contrato: terceirizado ? (document.getElementById('ot-f-contrato')?.value.trim() || '') : '',
+      empresa:     terceirizado ? (document.getElementById('ot-f-empresa')?.value.trim()      || '') : '',
+      respEmpresa: terceirizado ? (document.getElementById('ot-f-resp-empresa')?.value.trim() || '') : '',
       ativoFalhou,
       tipoFalha:   ativoFalhou ? (document.getElementById('ot-f-tipo-falha')?.value || '') : '',
       causaRaiz:   ativoFalhou ? (document.getElementById('ot-f-causa')?.value      || '') : '',
@@ -760,11 +867,13 @@ function otSaveForm() {
       solicitanteNome: sess?.nomeCompleto || sess?.username || '',
       responsavelId:   respId,
       responsavelNome: respUser?.nomeCompleto || '',
+      prazoAlertaDias: (() => {
+        const v = parseInt(document.getElementById('ot-f-prazo-alerta')?.value, 10);
+        return Number.isNaN(v) || v < 0 ? 2 : v;
+      })(),
       terceirizado,
-      empresa:  terceirizado ? (document.getElementById('ot-f-empresa')?.value.trim()  || '') : '',
-      cnpj:     terceirizado ? (document.getElementById('ot-f-cnpj')?.value.trim()     || '') : '',
-      contato:  terceirizado ? (document.getElementById('ot-f-contato')?.value.trim()  || '') : '',
-      contrato: terceirizado ? (document.getElementById('ot-f-contrato')?.value.trim() || '') : '',
+      empresa:     terceirizado ? (document.getElementById('ot-f-empresa')?.value.trim()      || '') : '',
+      respEmpresa: terceirizado ? (document.getElementById('ot-f-resp-empresa')?.value.trim() || '') : '',
       ativoFalhou,
       tipoFalha:   ativoFalhou ? (document.getElementById('ot-f-tipo-falha')?.value || '') : '',
       causaRaiz:   ativoFalhou ? (document.getElementById('ot-f-causa')?.value      || '') : '',
@@ -827,6 +936,13 @@ function _otRenderView(o) {
   </div>
 </div>
 
+<div class="ot-modal-tabs" style="margin-bottom:16px;">
+  <button class="ot-modal-tab-btn active" data-tab="ordem" onclick="otSwitchViewTab('ordem')">Informações</button>
+  <button class="ot-modal-tab-btn" data-tab="subtarefas" onclick="otSwitchViewTab('subtarefas')">Subtarefas <span class="ot-modal-tab-badge">${sub.length}</span></button>
+  <button class="ot-modal-tab-btn" data-tab="publicacoes" onclick="otSwitchViewTab('publicacoes')">Publicações <span class="ot-modal-tab-badge">${pubs.length}</span></button>
+</div>
+
+<div class="ot-modal-tab-panel active" data-tab="ordem">
 <div class="detail-grid" style="margin-bottom:16px;">
   <div class="detail-card">
     <div class="detail-label">Solicitante</div>
@@ -847,6 +963,10 @@ function _otRenderView(o) {
   <div class="detail-card">
     <div class="detail-label">Prazo</div>
     <div class="detail-value">${o.prazo ? _fmtDate(o.prazo) : '—'}</div>
+  </div>
+  <div class="detail-card">
+    <div class="detail-label">Alerta</div>
+    <div class="detail-value">${o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null ? _escHtml(String(o.prazoAlertaDias)) + ' dia(s)' : '2 dia(s)'}</div>
   </div>
   ${o.dataConclusao ? `<div class="detail-card">
     <div class="detail-label">Data de Conclusão</div>
@@ -877,49 +997,52 @@ ${o.terceirizado ? `
   Dados do Terceirizado
 </div>
 <div class="detail-grid" style="margin-bottom:16px;">
-  ${o.empresa  ? `<div class="detail-card"><div class="detail-label">Empresa</div><div class="detail-value">${_escHtml(o.empresa)}</div></div>` : ''}
-  ${o.cnpj     ? `<div class="detail-card"><div class="detail-label">CNPJ/CPF</div><div class="detail-value">${_escHtml(o.cnpj)}</div></div>` : ''}
-  ${o.contato  ? `<div class="detail-card"><div class="detail-label">Contato</div><div class="detail-value">${_escHtml(o.contato)}</div></div>` : ''}
-  ${o.contrato ? `<div class="detail-card"><div class="detail-label">Contrato/Ref.</div><div class="detail-value">${_escHtml(o.contrato)}</div></div>` : ''}
-</div>` : ''}
-
-${sub.length > 0 ? `
-<div class="form-section-title" style="margin-bottom:10px;">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-  Subtarefas — ${subDone}/${sub.length} (${pct}%)
-</div>
-<div class="ot-sub-list" style="margin-bottom:16px;">
-${sub.map((s, i) => `
-  <div class="ot-sub-item${s.concluida ? ' done' : ''}" style="cursor:${canEdit ? 'pointer' : 'default'}" onclick="${canEdit ? `otViewToggleSub('${o.id}',${i})` : ''}">
-    <div class="ot-sub-check${s.concluida ? ' checked' : ''}">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-    </div>
-    <div class="ot-sub-body">
-      <div class="ot-sub-desc">${_escHtml(s.descricao)}</div>
-      <div class="ot-sub-meta">
-        ${s.exigeEvidencia ? `<span class="ot-sub-ev-badge">Exige evidência</span>` : ''}
-        ${s.concluidoPorNome ? `<span>✓ ${_escHtml(s.concluidoPorNome)} · ${s.concluidoEm ? _fmtDateTime(s.concluidoEm) : ''}</span>` : ''}
-      </div>
-    </div>
-  </div>`).join('')}
+  ${o.empresa     ? `<div class="detail-card"><div class="detail-label">Empresa / Prestador</div><div class="detail-value">${_escHtml(o.empresa)}</div></div>` : ''}
+  ${o.respEmpresa ? `<div class="detail-card"><div class="detail-label">Responsável pela empresa</div><div class="detail-value">${_escHtml(o.respEmpresa)}</div></div>` : ''}
 </div>` : ''}
 
 ${o.motivoCancelamento ? `<div class="detail-note" style="border-left-color:var(--red);margin-bottom:16px;">
   <div class="detail-label" style="margin-bottom:6px;color:var(--red);">Motivo do Cancelamento</div>
   <div style="font-size:13px;">${_escHtml(o.motivoCancelamento)}</div>
 </div>` : ''}
-
-<div class="form-section-title" style="margin-bottom:10px;">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-  Publicações e Evidências
-  ${canEdit ? `<button class="btn btn-outline" style="margin-left:auto;padding:5px 12px;font-size:12px;" onclick="otOpenPubModal()">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:13px;height:13px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    Nova Publicação
-  </button>` : ''}
 </div>
-${pubs.length === 0
-  ? `<div class="checklist-empty-tip">Nenhuma publicação ainda.</div>`
-  : `<div class="ot-pub-log">${pubs.map(p => _otPubEntryHTML(p)).join('')}</div>`}
+
+<div class="ot-modal-tab-panel" data-tab="subtarefas">
+  ${sub.length > 0 ? `
+  <div class="form-section-title" style="margin-bottom:10px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+    Subtarefas — ${subDone}/${sub.length} (${pct}%)
+  </div>
+  <div class="ot-sub-list" style="margin-bottom:16px;">
+  ${sub.map((s, i) => `
+    <div class="ot-sub-item${s.concluida ? ' done' : ''}" style="cursor:${canEdit ? 'pointer' : 'default'}" onclick="${canEdit ? `otViewToggleSub('${o.id}',${i})` : ''}">
+      <div class="ot-sub-check${s.concluida ? ' checked' : ''}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <div class="ot-sub-body">
+        <div class="ot-sub-desc">${_escHtml(s.descricao)}</div>
+        <div class="ot-sub-meta">
+          ${s.exigeEvidencia ? `<span class="ot-sub-ev-badge">Exige evidência</span>` : ''}
+          ${s.concluidoPorNome ? `<span>✓ ${_escHtml(s.concluidoPorNome)} · ${s.concluidoEm ? _fmtDateTime(s.concluidoEm) : ''}</span>` : ''}
+        </div>
+      </div>
+    </div>`).join('')}
+  </div>` : `<div class="checklist-empty-tip">Nenhuma subtarefa ainda.</div>`}
+</div>
+
+<div class="ot-modal-tab-panel" data-tab="publicacoes">
+  <div class="form-section-title" style="margin-bottom:10px;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+    Publicações e Evidências
+    ${canEdit ? `<button class="btn btn-outline" style="margin-left:auto;padding:5px 12px;font-size:12px;" onclick="otOpenPubModal()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:13px;height:13px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Nova Publicação
+    </button>` : ''}
+  </div>
+  ${pubs.length === 0
+    ? `<div class="checklist-empty-tip">Nenhuma publicação ainda.</div>`
+    : `<div class="ot-pub-log">${pubs.map(p => _otPubEntryHTML(p)).join('')}</div>`}
+</div>
 `;
 }
 
@@ -1209,6 +1332,7 @@ function _otModalsHTML() {
                 <option value="corretiva">Corretiva</option>
                 <option value="implantacao">Implantação</option>
                 <option value="melhoria">Melhoria / Projeto</option>
+                <option value="alteracao">Alteração</option>
               </select>
             </div>
             <div class="form-field">
@@ -1233,9 +1357,15 @@ function _otModalsHTML() {
             <label class="field-label">Ativo Vinculado</label>
             <div id="ot-ativo-chip-wrap"></div>
           </div>
-          <div class="form-field">
-            <label class="field-label">Prazo</label>
-            <input type="date" id="ot-f-prazo" class="field-input">
+          <div class="form-row">
+            <div class="form-field">
+              <label class="field-label">Prazo</label>
+              <input type="date" id="ot-f-prazo" class="field-input">
+            </div>
+            <div class="form-field">
+              <label class="field-label">Alerta (Dias)</label>
+              <input type="number" id="ot-f-prazo-alerta" class="field-input" min="0" max="365" placeholder="2">
+            </div>
           </div>
         </div>
 
@@ -1246,9 +1376,7 @@ function _otModalsHTML() {
           </div>
           <div class="form-field">
             <label class="field-label">Responsável Técnico</label>
-            <select id="ot-f-resp" class="field-select">
-              <option value="">— Sem responsável interno —</option>
-            </select>
+            <div id="ot-resp-chip-wrap"></div>
           </div>
           <div class="form-field">
             <label class="field-label" style="margin-bottom:8px;">Terceirizado</label>
@@ -1259,23 +1387,17 @@ function _otModalsHTML() {
           </div>
           <div class="ot-terceiro-section" id="ot-terceiro-section">
             <div class="form-row">
-              <div class="form-field" style="margin-bottom:12px;">
+              <div class="form-field" style="margin-bottom:0;">
                 <label class="field-label">Empresa / Prestador</label>
-                <input type="text" id="ot-f-empresa" class="field-input" placeholder="Nome da empresa">
-              </div>
-              <div class="form-field" style="margin-bottom:12px;">
-                <label class="field-label">CNPJ / CPF</label>
-                <input type="text" id="ot-f-cnpj" class="field-input" placeholder="00.000.000/0001-00">
-              </div>
-            </div>
-            <div class="form-row">
-              <div class="form-field" style="margin-bottom:0;">
-                <label class="field-label">Contato / Telefone</label>
-                <input type="text" id="ot-f-contato" class="field-input" placeholder="(00) 00000-0000">
+                <select id="ot-f-empresa" class="field-select" onchange="empPopulateTecnicoSelect('ot-f-resp-empresa','ot-f-empresa')">
+                  <option value="">— Selecione a empresa —</option>
+                </select>
               </div>
               <div class="form-field" style="margin-bottom:0;">
-                <label class="field-label">Contrato / OS do Fornecedor</label>
-                <input type="text" id="ot-f-contrato" class="field-input" placeholder="Referência do contrato">
+                <label class="field-label">Responsável pela empresa</label>
+                <select id="ot-f-resp-empresa" class="field-select">
+                  <option value="">— Selecione o responsável —</option>
+                </select>
               </div>
             </div>
           </div>
@@ -1549,6 +1671,31 @@ function _otModalsHTML() {
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary" onclick="otCloseModal('modal-ot-cat')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL BUSCA DE RESPONSÁVEL ══ -->
+<div class="modal-overlay" id="modal-ot-resp-search" style="z-index:750;">
+  <div class="modal sm">
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-header-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        </div>
+        <div><div class="modal-title">Selecionar Responsável</div></div>
+      </div>
+      <button class="modal-close" onclick="otCloseModal('modal-ot-resp-search')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="ativo-search-input-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" class="field-input" id="ot-resp-search-input" placeholder="Buscar por nome ou cargo..."
+          oninput="otRespSearchInput(this.value)">
+      </div>
+      <div id="ot-resp-search-list" class="ativo-search-list"></div>
     </div>
   </div>
 </div>

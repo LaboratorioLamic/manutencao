@@ -252,9 +252,10 @@
     configTab.querySelectorAll('.rotina-nav-item').forEach(n => n.classList.remove('active'));
     document.getElementById('cpanel-' + tab).classList.add('active');
     document.getElementById('cnav-' + tab).classList.add('active');
-    if (tab === 'backup')  renderSysInfo();
-    if (tab === 'usuario') { if (typeof renderUsersTable  === 'function') renderUsersTable(); }
-    if (tab === 'grupos')  { if (typeof renderGroupsTable === 'function') renderGroupsTable(); }
+    if (tab === 'backup')   renderSysInfo();
+    if (tab === 'usuario')  { if (typeof renderUsersTable  === 'function') renderUsersTable(); }
+    if (tab === 'grupos')   { if (typeof renderGroupsTable === 'function') renderGroupsTable(); }
+    if (tab === 'empresas') { if (typeof empRenderTable    === 'function') empRenderTable(); }
   }
 
   // ── NOTIFICAÇÕES ──
@@ -1489,8 +1490,12 @@
     document.getElementById('pub-hora-realizada').value =
       String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     document.getElementById('pub-notas').value = '';
-    document.getElementById('pub-empresa-responsavel').value = '';
-    document.getElementById('pub-tecnico-responsavel').value = '';
+    if (typeof empPopulateBothSelects === 'function') {
+      empPopulateBothSelects('pub-empresa-responsavel', 'pub-tecnico-responsavel', '', '');
+    } else {
+      document.getElementById('pub-empresa-responsavel').value = '';
+      document.getElementById('pub-tecnico-responsavel').value = '';
+    }
     const terceiroSection = document.getElementById('pub-terceiro-section');
     if (terceiroSection) terceiroSection.style.display = t.realizadoPorTerceiro ? '' : 'none';
     pubChecklistState = {};
@@ -1927,8 +1932,12 @@
     const tEdit = state.tarefas.find(t => t.id === p.tarefaId);
     const editTerceiroSection = document.getElementById('edit-pub-terceiro-section');
     if (editTerceiroSection) editTerceiroSection.style.display = tEdit?.realizadoPorTerceiro ? '' : 'none';
-    document.getElementById('edit-pub-empresa').value = p.empresaResponsavel || '';
-    document.getElementById('edit-pub-tecnico').value = p.tecnicoResponsavel || '';
+    if (typeof empPopulateBothSelects === 'function') {
+      empPopulateBothSelects('edit-pub-empresa', 'edit-pub-tecnico', p.empresaResponsavel || '', p.tecnicoResponsavel || '');
+    } else {
+      document.getElementById('edit-pub-empresa').value = p.empresaResponsavel || '';
+      document.getElementById('edit-pub-tecnico').value = p.tecnicoResponsavel || '';
+    }
     // Carrega anexos existentes — normaliza formato legado
     _editPubAnexos = (p.anexos || []).map((a, i) =>
       typeof a === 'string' ? { titulo: `Anexo ${i + 1}`, url: a } : { ...a }

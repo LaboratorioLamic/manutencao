@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="OT.css">
+<link rel="stylesheet" href="empresas.css">
 </head>
 <body class="auth-locked">
 
@@ -642,6 +643,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6"/><circle cx="17" cy="7" r="3"/><path d="M21 20c0-3.3-2.7-6-6-6"/><path d="M9 20h6"/></svg>
             Grupos de Usuários
           </div>
+          <div class="rotina-nav-item" id="cnav-empresas" onclick="switchConfigTab('empresas')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Empresas
+          </div>
           <div class="rotina-nav-divider"></div>
           <div class="rotina-nav-item" id="cnav-backup" onclick="switchConfigTab('backup')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -736,6 +741,47 @@
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6"/><circle cx="17" cy="7" r="3"/><path d="M21 20c0-3.3-2.7-6-6-6"/></svg>
                     <strong>Nenhum grupo cadastrado</strong>
                     <p>Crie grupos para gerenciar permissões de usuários</p>
+                  </div></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- PAINEL: EMPRESAS -->
+          <div id="cpanel-empresas" class="rotina-panel">
+            <div class="panel-header">
+              <div class="panel-header-left">
+                <h2>Empresas</h2>
+                <p>Gerencie empresas e prestadores terceirizados</p>
+              </div>
+              <button class="btn btn-primary" onclick="empOpenForm(null)" style="gap:7px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:15px;height:15px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Nova Empresa
+              </button>
+            </div>
+
+            <!-- Busca -->
+            <div class="ot-search" style="margin-bottom:12px;max-width:320px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input type="text" placeholder="Buscar empresa..." oninput="empSearchChange(this.value)"
+                style="width:100%;padding-left:32px;" class="field-input">
+            </div>
+
+            <div class="data-table-wrapper">
+              <table class="data-table" id="emp-table">
+                <thead>
+                  <tr>
+                    <th>Empresa / CNPJ</th>
+                    <th>Contato Principal</th>
+                    <th>E-mail</th>
+                    <th style="width:110px;text-align:right;">Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="emp-tbody">
+                  <tr><td colspan="4"><div class="data-table-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+                    <strong>Nenhuma empresa cadastrada</strong>
+                    <p>Cadastre empresas terceirizadas para vincular às OTs</p>
                   </div></td></tr>
                 </tbody>
               </table>
@@ -1833,11 +1879,15 @@
         <div class="form-row">
           <div class="form-field" style="margin-bottom:0;">
             <label class="field-label">Empresa Responsável</label>
-            <input type="text" id="pub-empresa-responsavel" class="field-input" placeholder="Nome da empresa">
+            <select id="pub-empresa-responsavel" class="field-select" onchange="empPopulateTecnicoSelect('pub-tecnico-responsavel','pub-empresa-responsavel')">
+              <option value="">— Selecione a empresa —</option>
+            </select>
           </div>
           <div class="form-field" style="margin-bottom:0;">
             <label class="field-label">Técnico Responsável</label>
-            <input type="text" id="pub-tecnico-responsavel" class="field-input" placeholder="Nome do técnico">
+            <select id="pub-tecnico-responsavel" class="field-select">
+              <option value="">— Selecione o técnico —</option>
+            </select>
           </div>
         </div>
       </div>
@@ -1962,11 +2012,15 @@
         <div class="form-row">
           <div class="form-field" style="margin-bottom:0;">
             <label class="field-label">Empresa Responsável</label>
-            <input type="text" id="edit-pub-empresa" class="field-input" placeholder="Nome da empresa">
+            <select id="edit-pub-empresa" class="field-select" onchange="empPopulateTecnicoSelect('edit-pub-tecnico','edit-pub-empresa')">
+              <option value="">— Selecione a empresa —</option>
+            </select>
           </div>
           <div class="form-field" style="margin-bottom:0;">
             <label class="field-label">Técnico Responsável</label>
-            <input type="text" id="edit-pub-tecnico" class="field-input" placeholder="Nome do técnico">
+            <select id="edit-pub-tecnico" class="field-select">
+              <option value="">— Selecione o técnico —</option>
+            </select>
           </div>
         </div>
       </div>
@@ -2763,5 +2817,6 @@
 <script src="script.js"></script>
 <script src="agenda.js"></script>
 <script src="OT.js"></script>
+<script src="empresas.js"></script>
 </body>
 </html>
