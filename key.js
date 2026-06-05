@@ -20,8 +20,8 @@ let currentSession = null;
              setores[], grupoId, isAdmin, ativo, createdAt }
 
   Group:   { id, nome, isDefault, permissoes: {
-               ativos:      { criar, editar, excluir },
-               rotinas:     { criar, editar, excluir },
+               ativos:      { criar, editar, excluir, editarSetor, editarCategoria },
+               rotinas:     { criar, editar, excluir, editarTipo },
                tarefas:     { criar, editar, excluir, publicar },
                atividades:  { editar, excluir },
                os:          { criar, editar, excluir },
@@ -123,8 +123,12 @@ function authHasPermission(key) {
 
 function authGetVisibleSetores() {
   if (!currentSession) return null;
-  const s = currentSession.setores;
-  return (Array.isArray(s) && s.length > 0) ? s : null;
+  if (currentSession.isAdmin) return null;
+  const g = authState.groups.find(g => g.id === currentSession.grupoId);
+  if (g && Array.isArray(g.setoresPermitidos) && g.setoresPermitidos.length > 0) {
+    return g.setoresPermitidos;
+  }
+  return null;
 }
 
 // ── OPERAÇÕES ────────────────────────────────────────────────
@@ -274,8 +278,6 @@ function _restoreSession() {
 }
 
 // ── ESTADO TEMPORÁRIO (seleção de setores) ───────────────────
-let _regSetoresTemp     = [];
-let _profileSetoresTemp = [];
 let _sectorModalCallback = null;
 
 // ── INICIALIZAÇÃO ─────────────────────────────────────────────
@@ -330,38 +332,81 @@ function _unlockApp() {
   setTimeout(() => {
     if (typeof atualizarSelects    === 'function') atualizarSelects();
     if (typeof refreshTaskFlagsUI  === 'function') refreshTaskFlagsUI();
-    _updateSectorBadge();
+    _initTopbarSectorFilter();
   }, 60);
 }
 
-// Atualiza o badge de filtro de setor na topbar
-function _updateSectorBadge() {
-  const badge   = document.getElementById('sector-filter-badge');
-  const badgeTxt = document.getElementById('sector-badge-text');
-  if (!badge || !badgeTxt) return;
-  const sectors = authGetVisibleSetores();
-  if (sectors && sectors.length > 0) {
-    badgeTxt.textContent = sectors.length === 1
-      ? sectors[0]
-      : `${sectors.length} setores`;
-    badge.style.display = '';
+// Setores disponíveis para o usuário (considerando restrição de grupo)
+function _getAvailableSetores() {
+  const all = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
+  const groupAllowed = authGetVisibleSetores();
+  return groupAllowed ? all.filter(s => groupAllowed.includes(s)) : all;
+}
+
+// Filtro de setores ativo na sessão (null = não inicializado; array = setores selecionados)
+let _topbarSetorFilter = null;
+
+// Inicializa o filtro da topbar considerando o override por usuário
+function _initTopbarSectorFilter() {
+  const available  = _getAvailableSetores(); // setores do grupo
+  const userPref   = currentSession?.setores; // override individual configurado pelo admin
+  if (Array.isArray(userPref) && userPref.length > 0) {
+    // Interseção: só mostra setores que estão tanto no override quanto no grupo
+    const intersection = available.filter(s => userPref.includes(s));
+    _topbarSetorFilter = intersection.length > 0 ? intersection : [...available];
   } else {
-    badge.style.display = 'none';
+    _topbarSetorFilter = [...available];
+  }
+  _updateTopbarSectorBtn();
+}
+
+// Atualiza o botão da topbar com o estado atual do filtro
+function _updateTopbarSectorBtn() {
+  const badge = document.getElementById('sector-filter-badge');
+  const txt   = document.getElementById('sector-badge-text');
+  if (!badge || !txt) return;
+  badge.style.display = ''; // sempre visível após login
+  const available = _getAvailableSetores();
+  const selected  = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter : available;
+  if (available.length === 0 || selected.length >= available.length) {
+    txt.textContent = 'Todos os setores';
+    badge.style.background = '';
+    badge.style.borderColor = '';
+  } else {
+    txt.textContent = selected.length === 1 ? selected[0] : `${selected.length}/${available.length} setores`;
+    badge.style.background = 'rgba(0,168,204,0.25)';
+    badge.style.borderColor = 'var(--cyan)';
   }
 }
 
-// Verifica se o usuário pode ver um ativo com base nos setores selecionados
-function _userCanSeeAtivo(ativo) {
-  if (!ativo) return false;
-  const allowed = authGetVisibleSetores();
-  return !allowed || allowed.includes(ativo.setor);
+// Abre o modal de seleção de setores para o filtro da topbar
+function openTopbarSectorFilter() {
+  const available = _getAvailableSetores();
+  const current   = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter : available;
+  _openSectorModal(current, function (sel) {
+    _topbarSetorFilter = sel;
+    _updateTopbarSectorBtn();
+    if (typeof renderCards              === 'function') renderCards();
+    if (typeof renderRotinasTable       === 'function') renderRotinasTable();
+    if (typeof renderTarefasTable       === 'function') renderTarefasTable();
+    if (typeof renderAtividadesTable    === 'function') renderAtividadesTable();
+    if (typeof atualizarSelects         === 'function') atualizarSelects();
+    if (typeof updateNotifBadge         === 'function') updateNotifBadge();
+  }, available);
 }
 
-// Retorna os setores do state filtrados pelos setores visíveis do usuário
+// Verifica se o usuário pode ver um ativo com base no filtro de setores ativo
+function _userCanSeeAtivo(ativo) {
+  if (!ativo) return false;
+  const filter = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter : _getAvailableSetores();
+  return filter.length === 0 || filter.includes(ativo.setor);
+}
+
+// Retorna os setores do state filtrados pelo filtro ativo da topbar
 function _getFilteredSetores() {
-  const all = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
-  const allowed = authGetVisibleSetores();
-  return allowed ? all.filter(s => allowed.includes(s)) : all;
+  const all    = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
+  const filter = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter : _getAvailableSetores();
+  return filter.length > 0 ? all.filter(s => filter.includes(s)) : all;
 }
 
 // Aplica visibilidade/estado de botões com base nas permissões do usuário logado
@@ -379,6 +424,13 @@ function applyPermissions() {
   vis('fab-new-ativo',   can('ativos.criar'));
   vis('fab-new-rotina',  can('rotinas.criar'));
   vis('fab-new-tarefa',  can('tarefas.criar'));
+
+  // Botões de editar setor, categoria e tipo
+  vis('btn-editar-setor-toolbar',  can('ativos.editarSetor'));
+  vis('btn-editar-setor-form',     can('ativos.editarSetor'));
+  vis('btn-editar-categoria-form',  can('ativos.editarCategoria'));
+  vis('btn-nova-categoria-toolbar', can('ativos.editarCategoria'));
+  vis('btn-editar-tipo-rotina',    can('rotinas.editarTipo'));
 
   // Botões de config
   vis('btn-novo-usuario', can('config.criarUsuarios'));
@@ -475,16 +527,13 @@ function authDoRegister() {
     cargo:           document.getElementById('reg-cargo')?.value    || '',
     username:        document.getElementById('reg-username')?.value || '',
     password:        document.getElementById('reg-password')?.value || '',
-    confirmPassword: document.getElementById('reg-confirm')?.value  || '',
-    setores:         _regSetoresTemp.slice()
+    confirmPassword: document.getElementById('reg-confirm')?.value  || ''
   };
   const result = authRegister(data);
   if (result.ok) {
     document.getElementById('reg-error').style.display = 'none';
     ['reg-nome','reg-cpf','reg-cargo','reg-username','reg-password','reg-confirm']
       .forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-    _regSetoresTemp = [];
-    _updateRegSetoresBtn();
     showAuthScreen('login');
     setTimeout(() => {
       if (typeof showToast === 'function')
@@ -495,42 +544,11 @@ function authDoRegister() {
   }
 }
 
-// ── SELETOR DE SETORES (cadastro) ────────────────────────────
-function openRegSectorModal() {
-  _openSectorModal(_regSetoresTemp, function (sel) {
-    _regSetoresTemp = sel;
-    _updateRegSetoresBtn();
-  });
-}
-
-function _updateRegSetoresBtn() {
-  const btn = document.getElementById('btn-reg-setores');
-  if (!btn) return;
-  const n = _regSetoresTemp.length;
-  const total = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores.length : 0;
-  const allSelected = n === 0 || (total > 0 && n >= total);
-  if (allSelected) {
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-      style="width:15px;height:15px;flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
-      Todos os Setores`;
-    btn.style.cssText = 'background:var(--cyan);color:#fff;border-color:var(--cyan);width:100%;' +
-      'padding:12px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;' +
-      'display:flex;align-items:center;gap:8px;justify-content:center;font-family:inherit;transition:all .3s;border:1px solid var(--cyan);';
-  } else {
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-      style="width:15px;height:15px;flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
-      ${n} setor(es) selecionado(s)`;
-    btn.style.cssText = 'background:var(--cyan);color:#fff;border-color:var(--cyan);width:100%;' +
-      'padding:12px 16px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;' +
-      'display:flex;align-items:center;gap:8px;justify-content:center;font-family:inherit;transition:all .3s;border:1px solid var(--cyan);';
-  }
-}
-
 // ── MODAL GENÉRICO DE SETORES ─────────────────────────────────
-function _openSectorModal(currentSelected, callback) {
+function _openSectorModal(currentSelected, callback, availableSetores) {
   _sectorModalCallback = callback;
-  const setores = (typeof state !== 'undefined' && Array.isArray(state.setores))
-    ? state.setores : [];
+  const setores = availableSetores ||
+    ((typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : []);
   const list = document.getElementById('sector-modal-list');
   if (!list) return;
 
@@ -642,9 +660,6 @@ function openUserProfileModal() {
   const errEl = document.getElementById('profile-error');
   if (errEl) errEl.style.display = 'none';
 
-  _profileSetoresTemp = [...(user.setores || [])];
-  _updateProfileSetoresBtn();
-
   document.getElementById('modal-user-profile')?.classList.add('open');
   if (typeof closeSidebar === 'function') closeSidebar();
 }
@@ -653,45 +668,10 @@ function closeUserProfileModal() {
   document.getElementById('modal-user-profile')?.classList.remove('open');
 }
 
-function _updateProfileSetoresBtn() {
-  const btn = document.getElementById('btn-profile-setores');
-  if (!btn) return;
-  const n = _profileSetoresTemp.length;
-  const total = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores.length : 0;
-  const allSelected = n === 0 || (total > 0 && n >= total);
-  btn.innerHTML = allSelected
-    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-        style="width:15px;height:15px;"><polyline points="20 6 9 17 4 12"/></svg>
-       Todos os Setores`
-    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
-        style="width:15px;height:15px;"><polyline points="20 6 9 17 4 12"/></svg>
-       ${n} setor(es) selecionado(s)`;
-}
-
-function openProfileSectorModal() {
-  if (!currentSession) return;
-  const user = authState.users.find(u => u.id === currentSession.userId);
-  if (!user) return;
-  _profileSetoresTemp = [...(user.setores || [])];
-  _openSectorModal(_profileSetoresTemp, function (sel) {
-    _profileSetoresTemp = sel;
-    _updateProfileSetoresBtn();
-    // Se chamado diretamente (fora do modal de perfil), salva imediatamente
-    const updates = { setores: _profileSetoresTemp };
-    authUpdateUserProfile(currentSession.userId, updates);
-    if (typeof _updateSectorBadge === 'function') _updateSectorBadge();
-    if (typeof renderCards === 'function') renderCards();
-    if (typeof renderRotinasTable === 'function') renderRotinasTable();
-    if (typeof renderTarefasTable === 'function') renderTarefasTable();
-    if (typeof renderAtividadesTable === 'function') renderAtividadesTable();
-    if (typeof showToast === 'function') showToast('Setores atualizados.', 'success');
-  });
-}
-
 function saveUserProfile() {
   const newPwd  = document.getElementById('profile-new-password')?.value  || '';
   const confPwd = document.getElementById('profile-confirm-password')?.value || '';
-  const updates = { setores: _profileSetoresTemp };
+  const updates = {};
   if (newPwd) { updates.password = newPwd; updates.confirmPassword = confPwd; }
 
   const result = authUpdateUserProfile(currentSession.userId, updates);
@@ -699,7 +679,7 @@ function saveUserProfile() {
     document.getElementById('profile-error').style.display = 'none';
     closeUserProfileModal();
     _updateSidebarUser();
-    _updateSectorBadge();
+    _updateTopbarSectorBtn();
     if (typeof showToast === 'function')
       showToast('Perfil atualizado com sucesso!', 'success');
     if (typeof atualizarSelects   === 'function') atualizarSelects();
@@ -920,8 +900,8 @@ function doDeleteCargo(nome) {
 // ═══════════════════════════════════════════════════════════════
 
 let _userEditId          = null;
-let _userEditSetoresTemp = [];
 let _userEditIsAdmin     = false;
+let _userEditSetoresTemp = []; // [] = sem override (usa todos do grupo)
 let _usersFilter         = 'ativo';
 
 function toggleUserEditAdmin() {
@@ -1100,8 +1080,7 @@ function toggleAllowRegistration() {
 
 // ── Modal criar/editar usuário ───────────────────────────────
 function openUserEditModal(id) {
-  _userEditId          = id || null;
-  _userEditSetoresTemp = [];
+  _userEditId = id || null;
 
   const errEl = document.getElementById('user-edit-error');
   if (errEl) errEl.style.display = 'none';
@@ -1134,8 +1113,8 @@ function openUserEditModal(id) {
     document.getElementById('user-edit-confirm').value   = '';
     if (groupSel) { groupSel.value = u.grupoId || ''; }
     document.getElementById('user-edit-status').checked = u.ativo !== false;
-    _userEditSetoresTemp = [...(u.setores || [])];
     _userEditIsAdmin = !!u.isAdmin;
+    _userEditSetoresTemp = Array.isArray(u.setores) ? [...u.setores] : [];
   } else {
     ['user-edit-nome','user-edit-cpf','user-edit-cargo','user-edit-username',
      'user-edit-password','user-edit-confirm'].forEach(elId => {
@@ -1144,8 +1123,8 @@ function openUserEditModal(id) {
     });
     if (groupSel) groupSel.disabled = false;
     document.getElementById('user-edit-status').checked = true;
-    _userEditSetoresTemp = [];
     _userEditIsAdmin = false;
+    _userEditSetoresTemp = [];
   }
   updateUserEditStatusLabel();
   _updateUserEditSetoresBtn();
@@ -1157,30 +1136,57 @@ function closeUserEditModal() {
   document.getElementById('modal-user-edit')?.classList.remove('open');
 }
 
+// Retorna os setores disponíveis para o grupo selecionado no modal de edição
+function _getUserEditAvailableSetores() {
+  const all = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
+  const grupoId = document.getElementById('user-edit-grupo')?.value || '';
+  if (!grupoId) return all;
+  const g = authState.groups.find(g => g.id === grupoId);
+  if (g && Array.isArray(g.setoresPermitidos) && g.setoresPermitidos.length > 0) {
+    return all.filter(s => g.setoresPermitidos.includes(s));
+  }
+  return all;
+}
+
+function _onUserEditGrupoChange() {
+  // Ao trocar de grupo, zera o override para herdar os setores do novo grupo
+  _userEditSetoresTemp = [];
+  _updateUserEditSetoresBtn();
+}
+
+function openUserEditSectorModal() {
+  const available = _getUserEditAvailableSetores();
+  if (available.length === 0) {
+    if (typeof showToast === 'function') showToast('Selecione um grupo primeiro.', 'error');
+    return;
+  }
+  // Se não tem override, pré-seleciona todos os disponíveis
+  const current = _userEditSetoresTemp.length > 0
+    ? _userEditSetoresTemp.filter(s => available.includes(s))
+    : [...available];
+  _openSectorModal(current, function (sel) {
+    // Se selecionou todos, não guarda override (significa "todos do grupo")
+    _userEditSetoresTemp = sel.length === available.length ? [] : sel;
+    _updateUserEditSetoresBtn();
+  }, available);
+}
+
+function _updateUserEditSetoresBtn() {
+  const lbl = document.getElementById('user-edit-setores-label');
+  if (!lbl) return;
+  const available = _getUserEditAvailableSetores();
+  const n = _userEditSetoresTemp.length;
+  if (n === 0 || n >= available.length) {
+    lbl.textContent = available.length > 0 ? `Todos (${available.length})` : 'Todos do grupo';
+  } else {
+    lbl.textContent = `${n} de ${available.length} setores`;
+  }
+}
+
 function updateUserEditStatusLabel() {
   const t = document.getElementById('user-edit-status');
   const l = document.getElementById('user-edit-status-label');
   if (t && l) l.textContent = t.checked ? 'Ativo' : 'Inativo';
-}
-
-function openUserEditSectorModal() {
-  _openSectorModal(_userEditSetoresTemp, function (sel) {
-    _userEditSetoresTemp = sel;
-    _updateUserEditSetoresBtn();
-  });
-}
-
-function _updateUserEditSetoresBtn() {
-  const btn = document.getElementById('btn-user-edit-setores');
-  if (!btn) return;
-  const n = _userEditSetoresTemp.length;
-  const total = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores.length : 0;
-  const allSelected = n === 0 || (total > 0 && n >= total);
-  btn.innerHTML = allSelected
-    ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;">
-        <polyline points="20 6 9 17 4 12"/></svg> Todos os Setores`
-    : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;">
-        <polyline points="20 6 9 17 4 12"/></svg> ${n} setor(es)`;
 }
 
 function saveUserEdit() {
@@ -1209,7 +1215,8 @@ function saveUserEdit() {
     if (idx < 0) return;
     const u = authState.users[idx];
     u.nomeCompleto = nome; u.cpf = cpf; u.cargo = cargo; u.username = username;
-    u.setores = _userEditSetoresTemp.slice(); u.ativo = ativo;
+    u.setores = _userEditSetoresTemp.slice();
+    u.ativo = ativo;
     if (!u.isAdmin) {
       u.grupoId = grupoId || null;
       if (_userEditIsAdmin) u.isAdmin = true;
@@ -1219,8 +1226,10 @@ function saveUserEdit() {
     if (currentSession?.userId === _userEditId) {
       currentSession.nomeCompleto = nome; currentSession.cargo = cargo;
       currentSession.setores = _userEditSetoresTemp.slice();
+      if (grupoId) currentSession.grupoId = grupoId;
       localStorage.setItem('auth-session', JSON.stringify(currentSession));
       _updateSidebarUser();
+      _initTopbarSectorFilter(); // reinicializa filtro com novos setores
     }
   } else {
     authState.users.push({
@@ -1255,16 +1264,17 @@ function deleteUser(id) {
 // ═══════════════════════════════════════════════════════════════
 
 const PERM_STRUCTURE = {
-  ativos:     { label: 'Ativos',           keys: ['criar','editar','excluir'] },
-  rotinas:    { label: 'Rotinas',          keys: ['criar','editar','excluir'] },
+  ativos:     { label: 'Ativos',           keys: ['criar','editar','excluir','editarSetor','editarCategoria'] },
+  rotinas:    { label: 'Rotinas',          keys: ['criar','editar','excluir','editarTipo'] },
   tarefas:    { label: 'Tarefas',          keys: ['criar','editar','excluir','publicar'] },
-  atividades: { label: 'Atividades',       keys: ['editar','excluir'] },
+  atividades: { label: 'Atividades',       keys: ['editar','excluir','gerenciarAnexos'] },
   os:         { label: 'OS',               keys: ['criar','editar','excluir'] },
   config:     { label: 'Configurações',    keys: ['visualizarConfig','backup','criarUsuarios','editarUsuarios','deletarUsuarios','gerenciarGrupos'] }
 };
 
 const PERM_LABELS = {
-  criar:'Criar', editar:'Editar', excluir:'Excluir', publicar:'Publicar',
+  criar:'Criar', editar:'Editar', excluir:'Excluir', gerenciarAnexos:'Gerenciar Anexos', publicar:'Publicar',
+  editarSetor:'Editar setores', editarCategoria:'Editar categorias', editarTipo:'Editar tipos',
   visualizarConfig:'Visualizar configurações', backup:'Backup',
   criarUsuarios:'Criar usuários', editarUsuarios:'Editar usuários',
   deletarUsuarios:'Deletar usuários', gerenciarGrupos:'Gerenciar grupos'
@@ -1354,22 +1364,56 @@ function openGroupSectorModal(groupId) {
   } else {
     list.innerHTML = setores.map(s => {
       const checked = _groupSectorTemp.length === 0 || _groupSectorTemp.includes(s);
-      return `<label class="sector-item" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;cursor:pointer;border:1px solid var(--border);background:var(--bg-card);margin-bottom:6px;">
-        <input type="checkbox" value="${s}" ${checked ? 'checked' : ''} onchange="_onGroupSectorCheck()" style="accent-color:var(--cyan);width:15px;height:15px;">
-        <span style="font-size:13px;font-weight:500;">${s}</span>
+      const val = s.replace(/"/g, '&quot;');
+      return `<label class="sector-check-card${checked ? ' checked' : ''}">
+        <input type="checkbox" value="${val}" ${checked ? 'checked' : ''} onchange="_onGroupSectorCheck(this)">
+        <span class="sector-check-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+        </span>
+        <span class="sector-check-card-label">${s}</span>
       </label>`;
     }).join('');
   }
 
   const titleEl = document.getElementById('group-sector-modal-title');
   if (titleEl) titleEl.textContent = `Setores — ${g.nome}`;
+  _updateGroupSectorCount();
   document.getElementById('modal-group-sector')?.classList.add('open');
 }
 
-function _onGroupSectorCheck() {
+function _onGroupSectorCheck(cb) {
+  if (cb) {
+    const card = cb.closest('.sector-check-card');
+    if (card) card.classList.toggle('checked', cb.checked);
+  }
   const checkboxes = document.querySelectorAll('#group-sector-list input[type=checkbox]');
   const allChecked = [...checkboxes].every(c => c.checked);
   _groupSectorTemp = allChecked ? [] : [...checkboxes].filter(c => c.checked).map(c => c.value);
+  _updateGroupSectorCount();
+}
+
+function _updateGroupSectorCount() {
+  const checkboxes = [...document.querySelectorAll('#group-sector-list input[type=checkbox]')];
+  const n = checkboxes.filter(c => c.checked).length;
+  const total = checkboxes.length;
+  const countEl = document.getElementById('group-sector-count');
+  if (countEl) countEl.textContent = n === 0 ? 'Nenhum selecionado' : `${n} de ${total} selecionado${n !== 1 ? 's' : ''}`;
+  const btn = document.getElementById('btn-group-sector-all');
+  if (btn) {
+    const isAll = total > 0 && n === total;
+    btn.innerHTML = isAll
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Desmarcar todos`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;"><polyline points="20 6 9 17 4 12"/></svg> Selecionar todos`;
+  }
+}
+
+function _toggleGroupSectorAll() {
+  const checkboxes = document.querySelectorAll('#group-sector-list input[type=checkbox]');
+  const allChecked = [...checkboxes].every(c => c.checked);
+  checkboxes.forEach(c => { c.checked = !allChecked; });
+  _onGroupSectorCheck();
 }
 
 function saveGroupSectorModal() {
@@ -1380,10 +1424,26 @@ function saveGroupSectorModal() {
   const g = authState.groups.find(g => g.id === _groupSectorEditId);
   if (g) {
     g.setoresPermitidos = selected;
+
+    // Sincroniza user.setores: remove setores que o grupo não permite mais
+    authState.users
+      .filter(u => u.grupoId === _groupSectorEditId && Array.isArray(u.setores) && u.setores.length > 0)
+      .forEach(u => {
+        if (selected.length === 0) return; // grupo sem restrição: mantém tudo
+        u.setores = u.setores.filter(s => selected.includes(s));
+        // Atualiza sessão ativa se for o usuário logado
+        if (currentSession?.userId === u.id) {
+          currentSession.setores = u.setores;
+          localStorage.setItem('auth-session', JSON.stringify(currentSession));
+        }
+      });
+
     _saveAuth();
   }
   document.getElementById('modal-group-sector')?.classList.remove('open');
   renderGroupsTable();
+  // Se o grupo editado é o do usuário logado, reinicializa o filtro da topbar
+  if (currentSession?.grupoId === _groupSectorEditId) _initTopbarSectorFilter();
   if (typeof showToast === 'function') showToast('Setores do grupo atualizados.', 'success');
 }
 
@@ -1422,41 +1482,106 @@ function updateGroupEditDefaultLabel() {
     ? 'Grupo Padrão' : 'Não é padrão';
 }
 
+const PERM_ICONS = {
+  ativos:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2"/></svg>`,
+  rotinas:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,
+  tarefas:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
+  atividades: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
+  os:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 18.66l-1.41 1.41M19.07 19.07l-1.41-1.41M5.34 5.34L3.93 3.93M12 2v2m0 18v2m10-10h-2M4 12H2"/></svg>`,
+  config:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`
+};
+
 function _renderPermissions(permissoes) {
   const container = document.getElementById('group-perm-container');
   if (!container) return;
   container.innerHTML = Object.entries(PERM_STRUCTURE).map(([cat, { label, keys }]) => {
-    const allChecked = keys.every(k => permissoes[cat]?.[k]);
-    return `<div class="perm-category">
+    const activeCount = keys.filter(k => permissoes[cat]?.[k]).length;
+    const allChecked  = activeCount === keys.length;
+    return `<div class="perm-category" id="perm-cat-${cat}">
       <div class="perm-cat-header">
-        <label class="perm-cat-all-wrap" title="Marcar/desmarcar tudo">
-          <input type="checkbox" id="perm-all-${cat}" ${allChecked ? 'checked' : ''}
-            onchange="toggleAllCatPerms('${cat}')">
-          <span class="perm-cat-label">${label}</span>
-        </label>
+        <div class="perm-cat-header-left">
+          <div class="perm-cat-icon">${PERM_ICONS[cat] || ''}</div>
+          <div class="perm-cat-title-wrap">
+            <span class="perm-cat-label">${label}</span>
+            <span class="perm-cat-badge${activeCount > 0 ? ' has-active' : ''}" id="perm-badge-${cat}">
+              ${activeCount}/${keys.length}
+            </span>
+          </div>
+        </div>
+        <button type="button" class="perm-cat-toggle-btn${allChecked ? ' all-active' : ''}"
+          id="perm-all-btn-${cat}" onclick="toggleAllCatPerms('${cat}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:10px;height:10px;">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          ${allChecked ? 'Desmarcar todos' : 'Marcar todos'}
+        </button>
+        <input type="checkbox" id="perm-all-${cat}" ${allChecked ? 'checked' : ''} style="display:none;">
       </div>
-      ${keys.map(k => `
-        <label class="perm-row">
-          <input type="checkbox" id="perm-${cat}-${k}"
-            ${permissoes[cat]?.[k] ? 'checked' : ''}
-            onchange="updateCatAllCheck('${cat}')">
-          <span class="perm-row-label">${PERM_LABELS[k] || k}</span>
-        </label>`).join('')}
+      <div class="perm-rows">
+        ${keys.map(k => {
+          const on = !!permissoes[cat]?.[k];
+          return `<label class="perm-row${on ? ' active' : ''}" id="perm-row-${cat}-${k}"
+            onclick="_onPermRowClick(this,'${cat}','${k}')">
+            <input type="checkbox" id="perm-${cat}-${k}" ${on ? 'checked' : ''}>
+            <span class="perm-row-toggle"></span>
+            <span class="perm-row-label">${PERM_LABELS[k] || k}</span>
+          </label>`;
+        }).join('')}
+      </div>
     </div>`;
   }).join('');
 }
 
+function _onPermRowClick(rowEl, cat, k) {
+  const cb = document.getElementById(`perm-${cat}-${k}`);
+  if (!cb) return;
+  cb.checked = !cb.checked;
+  rowEl.classList.toggle('active', cb.checked);
+  updateCatAllCheck(cat);
+}
+
 function toggleAllCatPerms(cat) {
-  const all    = document.getElementById('perm-all-' + cat);
-  const keys   = PERM_STRUCTURE[cat]?.keys || [];
-  const state  = all?.checked;
-  keys.forEach(k => { const el = document.getElementById(`perm-${cat}-${k}`); if (el) el.checked = state; });
+  const keys    = PERM_STRUCTURE[cat]?.keys || [];
+  const allCb   = document.getElementById('perm-all-' + cat);
+  const newState = allCb ? !allCb.checked : true;
+  if (allCb) allCb.checked = newState;
+  keys.forEach(k => {
+    const cb  = document.getElementById(`perm-${cat}-${k}`);
+    const row = document.getElementById(`perm-row-${cat}-${k}`);
+    if (cb)  cb.checked = newState;
+    if (row) row.classList.toggle('active', newState);
+  });
+  _updateCatHeader(cat);
 }
 
 function updateCatAllCheck(cat) {
-  const keys  = PERM_STRUCTURE[cat]?.keys || [];
-  const allEl = document.getElementById('perm-all-' + cat);
-  if (allEl) allEl.checked = keys.every(k => document.getElementById(`perm-${cat}-${k}`)?.checked);
+  const keys    = PERM_STRUCTURE[cat]?.keys || [];
+  const allEl   = document.getElementById('perm-all-' + cat);
+  const allOn   = keys.every(k => document.getElementById(`perm-${cat}-${k}`)?.checked);
+  if (allEl) allEl.checked = allOn;
+  _updateCatHeader(cat);
+}
+
+function _updateCatHeader(cat) {
+  const keys        = PERM_STRUCTURE[cat]?.keys || [];
+  const activeCount = keys.filter(k => document.getElementById(`perm-${cat}-${k}`)?.checked).length;
+  const allOn       = activeCount === keys.length;
+
+  const badge = document.getElementById(`perm-badge-${cat}`);
+  if (badge) {
+    badge.textContent = `${activeCount}/${keys.length}`;
+    badge.classList.toggle('has-active', activeCount > 0);
+  }
+  const btn = document.getElementById(`perm-all-btn-${cat}`);
+  if (btn) {
+    btn.classList.toggle('all-active', allOn);
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:10px;height:10px;">
+      ${allOn
+        ? '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'
+        : '<polyline points="20 6 9 17 4 12"/>'}
+    </svg>
+    ${allOn ? 'Desmarcar todos' : 'Marcar todos'}`;
+  }
 }
 
 function _readPermissions() {

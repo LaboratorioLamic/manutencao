@@ -33,6 +33,7 @@
     renderTarefasTable();
     renderAtividadesTable();
     if (typeof _updateRotinaFiltroAtividadesDisplay === 'function') _updateRotinaFiltroAtividadesDisplay();
+    if (typeof window._agendaRefreshHook === 'function') window._agendaRefreshHook();
     updateNotifBadge();
 
     if (document.getElementById('notif-dropdown')?.classList.contains('open')) {
@@ -132,6 +133,7 @@
   }
   function calcProximaData(dateStr, rotina) {
     if (!dateStr || !rotina) return '';
+    if (rotina.frequencia === 'Sempre') return '';
     const d = new Date(dateStr + 'T12:00:00');
     const n = parseInt(rotina.fazerCada) || 1;
     switch (rotina.frequencia) {
@@ -196,7 +198,7 @@
   }
 
   // ── NAVEGAÇÃO ──
-  const TAB_TITLES = { inicio:'Início', ativos:'Ativos', rotina:'Rotina', os:'Ordens de Serviço', config:'Configurações' };
+  const TAB_TITLES = { inicio:'Início', ativos:'Ativos', rotina:'Rotina', os:'Ordens de Trabalho', config:'Configurações' };
   function switchTab(tabId) {
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -240,6 +242,7 @@
     renderTarefasTable();
     renderAtividadesTable();
     updateNotifBadge();
+    if (tab === 'agenda' && typeof renderAgendaCalendario === 'function') renderAgendaCalendario();
   }
 
   // ── CONFIG SUBTABS ──
@@ -504,6 +507,7 @@
       document.getElementById('tarefa-field-vezes').style.display = editing.repetir === 'Por' ? '' : 'none';
       document.getElementById('tarefa-status').checked = (editing.status || 'Ativo') === 'Ativo';
       updateTarefaStatusToggleLabel();
+      document.getElementById('tarefa-terceiro').checked = !!editing.realizadoPorTerceiro;
       document.getElementById('tarefa-anexo-obrigatorio').checked = !!editing.anexoObrigatorio;
       setProximaDataDisplay(editing.proximaData || '');
       document.getElementById('tarefa-proxima-data').value = editing.proximaData || '';
@@ -538,7 +542,10 @@
 
     // Inicializa checklist, toggle de anexo e responsáveis
     checklistTarefaTemp = editing ? JSON.parse(JSON.stringify(editing.checklistTarefa || [])) : [];
-    if (!editing) document.getElementById('tarefa-anexo-obrigatorio').checked = false;
+    if (!editing) {
+      document.getElementById('tarefa-terceiro').checked = false;
+      document.getElementById('tarefa-anexo-obrigatorio').checked = false;
+    }
     if (editing?.responsaveis) {
       _tarefaResponsaveis = { usuarios: [...(editing.responsaveis.usuarios || [])], grupos: [...(editing.responsaveis.grupos || [])] };
     }
@@ -1057,6 +1064,7 @@
     const repetir    = isSempre ? 'Sempre' : document.getElementById('tarefa-repetir').value;
     const vezes      = (!isSempre && repetir === 'Por') ? parseInt(document.getElementById('tarefa-vezes').value) : null;
     const diasSemana = isDiaSemana ? [..._diasSemanaSelected] : [];
+    const realizadoPorTerceiro = document.getElementById('tarefa-terceiro').checked;
     const anexoObrigatorio = document.getElementById('tarefa-anexo-obrigatorio').checked;
 
     if (!titulo)            { showToast('Informe o título da tarefa.', 'error'); return; }
@@ -1083,7 +1091,7 @@
       lembrete: isSempre ? null : lembrete,
       status, observacoes: obs,
       checklistTarefa: checklistTarefaTemp.slice(),
-      anexoObrigatorio,
+      anexoObrigatorio, realizadoPorTerceiro,
       responsaveis: { usuarios: [..._tarefaResponsaveis.usuarios], grupos: [..._tarefaResponsaveis.grupos] },
       autoInativada: existente?.autoInativada || false,
       _historico: existente?._historico || []
@@ -1104,7 +1112,8 @@
   // ══════════════════════════════════════════
   // ── TABELA DE TAREFAS ──
   // ══════════════════════════════════════════
-  function renderTarefasTable() {
+  function renderTarefasTable(page) {
+    if (page !== undefined) _tarefasPage = page;
     const tbody = document.getElementById('tarefas-tbody');
     if (!tbody) return;
 
@@ -1112,7 +1121,8 @@
     const fRotinaId  = state._rotinaFiltroTarefasId ?? null;
     const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
-    const list = state.tarefas.filter(t => {
+    const { col: tSCol, dir: tSDir } = _tarefasSort;
+    const allList = state.tarefas.filter(t => {
       if (visSetores) {
         const ativo = state.ativos[t.equipamentoIdx];
         if (!ativo || !visSetores.includes(ativo.setor)) return false;
@@ -1126,14 +1136,37 @@
         if (!myUser && !myGroup) return false;
       }
       return tarefaPassesStatusFilter(t, 'main');
+    }).sort((a, b) => {
+      let ka, kb;
+      if (tSCol === 'rotina') {
+        const ra = state.rotinas.find(r => r.id === a.rotinaId);
+        const rb = state.rotinas.find(r => r.id === b.rotinaId);
+        ka = ra?.nome?.toLowerCase() || ''; kb = rb?.nome?.toLowerCase() || '';
+      } else if (tSCol === 'equipamento') {
+        ka = state.ativos[a.equipamentoIdx]?.nome?.toLowerCase() || '';
+        kb = state.ativos[b.equipamentoIdx]?.nome?.toLowerCase() || '';
+      } else if (tSCol === 'dataTarefa') {
+        ka = a.dataTarefa || ''; kb = b.dataTarefa || '';
+      } else if (tSCol === 'proximaData') {
+        ka = a.proximaData || ''; kb = b.proximaData || '';
+      } else if (tSCol === 'titulo') {
+        ka = a.titulo?.toLowerCase() || ''; kb = b.titulo?.toLowerCase() || '';
+      } else { ka = kb = ''; }
+      const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+      return tSDir === 'asc' ? cmp : -cmp;
     });
 
-    if (list.length === 0) {
+    const totalPages = Math.max(1, Math.ceil(allList.length / PER_PAGE));
+    if (_tarefasPage >= totalPages) _tarefasPage = totalPages - 1;
+    const list = allList.slice(_tarefasPage * PER_PAGE, (_tarefasPage + 1) * PER_PAGE);
+
+    if (allList.length === 0) {
       tbody.innerHTML = `<tr><td colspan="7"><div class="data-table-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         <strong>Nenhuma tarefa encontrada</strong>
         <p>Ajuste o filtro de ativo ou crie uma nova tarefa</p>
       </div></td></tr>`;
+      _renderPagination('tarefas-pagination', '#rpanel-tarefas', 0, 1, 0, 'renderTarefasTable');
       return;
     }
 
@@ -1167,6 +1200,12 @@
         <td>${statusChip}${nPubs > 0 ? `<span class="chip chip-cyan" style="margin-left:6px;">${nPubs} pub.</span>` : ''}</td>
       </tr>`;
     }).join('');
+    document.querySelectorAll('#tarefas-thead-row .th-sortable').forEach(th => {
+      const col = th.dataset.sortCol;
+      th.dataset.sortArrow = col === tSCol ? (tSDir === 'asc' ? ' ↑' : ' ↓') : '';
+      th.classList.toggle('th-sort-active', col === tSCol);
+    });
+    _renderPagination('tarefas-pagination', '#rpanel-tarefas', _tarefasPage, totalPages, allList.length, 'renderTarefasTable');
   }
 
   // ══════════════════════════════════════════
@@ -1354,21 +1393,49 @@
   let pubChecklistState = {};
   let pubAnexos = [];
 
-  function addPubAnexo() {
-    const tituloEl = document.getElementById('pub-anexo-titulo');
-    const urlEl    = document.getElementById('pub-anexo-input');
-    const url   = urlEl.value.trim();
-    const titulo = tituloEl.value.trim() || `Anexo ${pubAnexos.length + 1}`;
-    if (!url) { showToast('Informe o link do anexo.', 'error'); return; }
-    pubAnexos.push({ titulo, url });
-    tituloEl.value = '';
-    urlEl.value = '';
+  function _getUploadPrefixo(ctx) {
+    let tarefaId = null;
+    if (ctx === 'pub') {
+      tarefaId = tarefaDetalheId;
+    } else if (ctx === 'edit-pub') {
+      tarefaId = document.getElementById('edit-pub-id')?.value || null;
+      // edit-pub-id guarda o pubId; precisamos do tarefaId da publicação
+      const pub = tarefaId ? state.publicacoes.find(p => p.id === tarefaId) : null;
+      tarefaId = pub?.tarefaId || null;
+    }
+    const tarefa = tarefaId ? state.tarefas.find(t => t.id === tarefaId) : null;
+    const rotina = tarefa ? state.rotinas.find(r => r.id === tarefa.rotinaId) : null;
+    const ativo  = tarefa ? state.ativos[tarefa.equipamentoIdx] : null;
+    const partes = [ativo?.nome, rotina?.nome, tarefa?.titulo].filter(Boolean);
+    return partes.join(', ');
+  }
+
+  function addPubAnexoFromUpload(anexo) {
+    pubAnexos.push(anexo);
     renderPubAnexos();
   }
 
+  let _excluirAnexoCtx = null; // { ctx: 'pub'|'edit-pub', idx }
+
   function removePubAnexo(idx) {
-    pubAnexos.splice(idx, 1);
-    renderPubAnexos();
+    const a = pubAnexos[idx];
+    if (!a) return;
+    _excluirAnexoCtx = { ctx: 'pub', idx };
+    const nomeEl = document.getElementById('excluir-anexo-nome');
+    if (nomeEl) nomeEl.textContent = a.titulo;
+    openModal('modal-confirmar-excluir-anexo');
+  }
+
+  let _renomearAnexoCtx = null; // { ctx: 'pub'|'edit-pub', idx }
+
+  function renamePubAnexo(idx) {
+    const a = pubAnexos[idx];
+    if (!a) return;
+    _renomearAnexoCtx = { ctx: 'pub', idx };
+    const input = document.getElementById('renomear-anexo-input');
+    if (input) input.value = a.titulo;
+    openModal('modal-renomear-anexo');
+    setTimeout(() => input?.select(), 80);
   }
 
   function renderPubAnexos() {
@@ -1377,18 +1444,28 @@
     if (pubAnexos.length === 0) { list.innerHTML = ''; return; }
     list.innerHTML = pubAnexos.map((a, i) => `
       <div class="anexo-item">
-        <div class="anexo-icon">
+        <a class="anexo-icon" href="${a.url}" target="_blank" title="Abrir anexo" style="cursor:pointer;text-decoration:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        </div>
+        </a>
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${a.titulo}</div>
-          <a class="anexo-link" href="${a.url}" target="_blank" title="${a.url}" style="font-size:11px;">${a.url}</a>
         </div>
-        <button class="anexo-del" onclick="removePubAnexo(${i})" title="Remover">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+        <div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="anexo-del" onclick="renamePubAnexo(${i})" title="Renomear"
+            style="color:var(--cyan);border-color:rgba(0,168,204,.3);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:11px;height:11px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+          </button>
+          <button class="anexo-del" onclick="removePubAnexo(${i})" title="Remover">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
       </div>`).join('');
   }
+
+  window.openPublicarModalDireto = function (tarefaId) {
+    tarefaDetalheId = tarefaId;
+    openPublicarModal();
+  };
 
   function openPublicarModal() {
     const t = state.tarefas.find(t => t.id === tarefaDetalheId);
@@ -1396,16 +1473,30 @@
     if (t.status === 'Inativo') { showToast('Tarefas inativas não podem ser publicadas.', 'error'); return; }
     const rotina = state.rotinas.find(r => r.id === t.rotinaId);
 
+    const ativo = state.ativos[t.equipamentoIdx];
+    const ativoNome  = ativo ? (ativo.codigo ? `${ativo.nome} · ${ativo.codigo}` : ativo.nome) : '—';
+    const rotinaNome = rotina?.nome || '—';
+    const tarefaNome = t.titulo || '—';
+    const infoAtivoVal  = document.getElementById('pub-info-ativo-val');
+    const infoRotinaVal = document.getElementById('pub-info-rotina-val');
+    const infoTarefaVal = document.getElementById('pub-info-tarefa-val');
+    if (infoAtivoVal)  infoAtivoVal.textContent  = ativoNome;
+    if (infoRotinaVal) infoRotinaVal.textContent = rotinaNome;
+    if (infoTarefaVal) infoTarefaVal.textContent = tarefaNome;
+
     const now = new Date();
     document.getElementById('pub-data-realizada').value = now.toISOString().split('T')[0];
     document.getElementById('pub-hora-realizada').value =
       String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     document.getElementById('pub-notas').value = '';
+    document.getElementById('pub-empresa-responsavel').value = '';
+    document.getElementById('pub-tecnico-responsavel').value = '';
+    const terceiroSection = document.getElementById('pub-terceiro-section');
+    if (terceiroSection) terceiroSection.style.display = t.realizadoPorTerceiro ? '' : 'none';
     pubChecklistState = {};
     pubAnexos = [];
-    const _ai = document.getElementById('pub-anexo-input');   if (_ai) _ai.value = '';
-    const _at = document.getElementById('pub-anexo-titulo');  if (_at) _at.value = '';
     renderPubAnexos();
+    if (typeof resetUploadZone === 'function') resetUploadZone('pub');
 
     // Seção de anexos
     const anexoSection = document.getElementById('pub-anexo-section');
@@ -1456,6 +1547,33 @@
     openModal('modal-publicar');
   }
 
+  function cancelarPublicacao() {
+    // Bloqueia se houver qualquer anexo enviado pendente de salvamento
+    if (pubAnexos.length > 0) {
+      openModal('modal-aviso-anexo-pendente');
+      return;
+    }
+    if (typeof resetUploadZone === 'function') resetUploadZone('pub');
+    closeModal('modal-publicar');
+  }
+
+  function cancelarEdicaoPublicacao() {
+    // Bloqueia se houver anexos novos adicionados nesta sessão pendentes de salvamento
+    const idsOriginais = new Set(_editPubAnexosOriginais);
+    const urlsOriginais = new Set(
+      (state.publicacoes.find(p => p.id === document.getElementById('edit-pub-id')?.value)?.anexos || [])
+        .map(a => typeof a === 'string' ? a : a.url)
+    );
+    const temNovos = _editPubAnexos.some(a => !idsOriginais.has(a.fileId) && !urlsOriginais.has(a.url));
+    if (temNovos) {
+      openModal('modal-aviso-anexo-pendente');
+      return;
+    }
+    _editPubAnexosOriginais = [];
+    if (typeof resetUploadZone === 'function') resetUploadZone('edit-pub');
+    closeModal('modal-editar-pub');
+  }
+
   function togglePubCheck(itemId, total) {
     pubChecklistState[itemId] = !pubChecklistState[itemId];
     const el = document.getElementById('pcheck-' + itemId);
@@ -1470,6 +1588,8 @@
   }
 
   function publicarTarefa() {
+    if (typeof _uploadsInProgress !== 'undefined' && _uploadsInProgress['pub']) { showToast('Aguarde o término do envio do arquivo.', 'info'); return; }
+    if (typeof _uploadQueues !== 'undefined' && _uploadQueues['pub']?.file) { showToast('Envie o arquivo selecionado antes de publicar.', 'error'); return; }
     if (!_can('tarefas.publicar')) { showToast('Sem permissão para publicar tarefas.', 'error'); return; }
     const t = state.tarefas.find(t => t.id === tarefaDetalheId);
     if (!t) return;
@@ -1504,6 +1624,8 @@
       dataPublicacao: new Date().toISOString().split('T')[0],
       checklistMarcado: checkItems.map(it => it.id),
       notas: document.getElementById('pub-notas').value.trim(),
+      empresaResponsavel: t.realizadoPorTerceiro ? (document.getElementById('pub-empresa-responsavel').value.trim() || null) : null,
+      tecnicoResponsavel: t.realizadoPorTerceiro ? (document.getElementById('pub-tecnico-responsavel').value.trim() || null) : null,
       anexos: pubAnexos.slice(),
       publicadoPorId:   _sess?.userId       || null,
       publicadoPorNome: _sess?.nomeCompleto || _sess?.username || null
@@ -1550,6 +1672,8 @@
     const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
     document.getElementById('historico-title').textContent =
       t?.titulo ? `Histórico — ${t.titulo}` : (rotina ? `Histórico — ${rotina.nome}` : 'Histórico de Publicações');
+    _historicoSort = { col: 'dataRealizada', dir: 'desc' };
+    _historicoPage = 0;
     renderHistoricoTable(tarefaId);
     openModal('modal-historico');
   }
@@ -1558,6 +1682,16 @@
 
   const HISTORICO_PER_PAGE = 25;
   let _historicoPage = 0;
+  let _historicoSort = { col: 'dataRealizada', dir: 'desc' };
+
+  function sortHistoricoBy(col) {
+    if (_historicoSort.col === col) {
+      _historicoSort.dir = _historicoSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      _historicoSort = { col, dir: col === 'dataRealizada' || col === 'dataPublicacao' ? 'desc' : 'asc' };
+    }
+    renderHistoricoTable(_historicoTarefaId, 0);
+  }
 
   function renderHistoricoTable(tarefaId, page) {
     _historicoTarefaId = tarefaId;
@@ -1565,8 +1699,17 @@
     const tbody       = document.getElementById('historico-tbody');
     const canEditAtiv = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
     const canDelAtiv  = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
+    const { col: sCol, dir: sDir } = _historicoSort;
     const allPubs = state.publicacoes.filter(p => p.tarefaId === tarefaId)
-      .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)));
+      .sort((a, b) => {
+        let ka, kb;
+        if (sCol === 'dataRealizada')  { ka = dataRealizadaSortKey(a.dataRealizada); kb = dataRealizadaSortKey(b.dataRealizada); }
+        else if (sCol === 'dataPublicacao') { ka = a.dataPublicacao || ''; kb = b.dataPublicacao || ''; }
+        else if (sCol === 'publicadoPor')   { ka = a.publicadoPorNome?.toLowerCase() || ''; kb = b.publicadoPorNome?.toLowerCase() || ''; }
+        else { ka = kb = ''; }
+        const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+        return sDir === 'asc' ? cmp : -cmp;
+      });
 
     const totalPages = Math.max(1, Math.ceil(allPubs.length / HISTORICO_PER_PAGE));
     if (_historicoPage >= totalPages) _historicoPage = totalPages - 1;
@@ -1598,6 +1741,13 @@
         </td>
       </tr>`;
     }).join('');
+
+    document.querySelectorAll('#historico-thead-row .th-sortable').forEach(th => {
+      const col = th.dataset.sortCol;
+      th.dataset.sortArrow = col === sCol ? (sDir === 'asc' ? ' ↑' : ' ↓') : '';
+      th.classList.toggle('th-sort-active', col === sCol);
+    });
+
     _renderHistoricoPagination(_historicoPage, totalPages, allPubs.length);
   }
 
@@ -1625,39 +1775,144 @@
   }
 
   let _editPubAnexos = [];
+  let _editPubAnexosOriginais = []; // fileIds que existiam antes de abrir o modal
 
   function _renderEditPubAnexos() {
     const list = document.getElementById('edit-pub-anexo-list');
     if (!list) return;
     if (_editPubAnexos.length === 0) { list.innerHTML = ''; return; }
+    const canManageAnexos = _can('atividades.gerenciarAnexos');
     list.innerHTML = _editPubAnexos.map((a, i) => `
       <div class="anexo-item">
-        <div class="anexo-icon">
+        <a class="anexo-icon" href="${a.url}" target="_blank" title="Abrir anexo" style="cursor:pointer;text-decoration:none;">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        </div>
+        </a>
         <div style="flex:1;min-width:0;">
           <div style="font-size:13px;font-weight:600;color:var(--text-primary);">${a.titulo}</div>
-          <a class="anexo-link" href="${a.url}" target="_blank" style="font-size:11px;">${a.url}</a>
         </div>
-        <button class="anexo-del" onclick="_removeEditPubAnexo(${i})" title="Remover">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
+        ${canManageAnexos ? `<div style="display:flex;gap:4px;flex-shrink:0;">
+          <button class="anexo-del" onclick="_renameEditPubAnexo(${i})" title="Renomear"
+            style="color:var(--cyan);border-color:rgba(0,168,204,.3);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:11px;height:11px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+          </button>
+          <button class="anexo-del" onclick="_removeEditPubAnexo(${i})" title="Remover">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>` : ''}
       </div>`).join('');
   }
 
-  function addEditPubAnexo() {
-    const titulo = document.getElementById('edit-pub-anexo-titulo').value.trim() || `Anexo ${_editPubAnexos.length + 1}`;
-    const url    = document.getElementById('edit-pub-anexo-url').value.trim();
-    if (!url) { showToast('Informe o link do anexo.', 'error'); return; }
-    _editPubAnexos.push({ titulo, url });
-    document.getElementById('edit-pub-anexo-titulo').value = '';
-    document.getElementById('edit-pub-anexo-url').value = '';
+  function addEditPubAnexoFromUpload(anexo) {
+    _editPubAnexos.push(anexo);
     _renderEditPubAnexos();
   }
 
+  async function _confirmarExcluirAnexo() {
+    if (!_excluirAnexoCtx) return;
+    const { ctx, idx } = _excluirAnexoCtx;
+
+    const btnConfirmar = document.getElementById('btn-confirmar-excluir-anexo');
+    const btnCancelar  = document.getElementById('btn-cancelar-excluir-anexo');
+
+    // Estado loading
+    if (btnConfirmar) {
+      btnConfirmar.disabled = true;
+      btnConfirmar.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"
+          style="width:14px;height:14px;animation:spin 1s linear infinite;">
+          <path d="M21 12a9 9 0 11-18 0 9 9 0 0118 0"/>
+        </svg> Excluindo...`;
+    }
+    if (btnCancelar) btnCancelar.disabled = true;
+
+    const a = ctx === 'pub' ? pubAnexos[idx] : _editPubAnexos[idx];
+
+    try {
+      if (a?.fileId && typeof driveDelete === 'function') {
+        await driveDelete(a.fileId);
+      }
+      if (ctx === 'pub') {
+        pubAnexos.splice(idx, 1);
+        renderPubAnexos();
+        if (typeof showToast === 'function') showToast('Arquivo removido do Drive.', 'success');
+      } else {
+        _editPubAnexos.splice(idx, 1);
+        _renderEditPubAnexos();
+        // Salva automaticamente a publicação com a lista de anexos atualizada
+        const pubId = document.getElementById('edit-pub-id')?.value;
+        const pubIdx = pubId ? state.publicacoes.findIndex(p => p.id === pubId) : -1;
+        if (pubIdx >= 0) {
+          state.publicacoes[pubIdx].anexos = _editPubAnexos.slice();
+          saveState();
+          if (typeof showToast === 'function') showToast('Anexo removido e publicação atualizada.', 'success');
+        } else {
+          if (typeof showToast === 'function') showToast('Arquivo removido do Drive.', 'success');
+        }
+      }
+    } catch (err) {
+      if (typeof showToast === 'function') showToast('Erro ao remover: ' + (err.message || err), 'error');
+    } finally {
+      _excluirAnexoCtx = null;
+      closeModal('modal-confirmar-excluir-anexo');
+      // Restaura botões para próximo uso
+      if (btnConfirmar) {
+        btnConfirmar.disabled = false;
+        btnConfirmar.innerHTML = `
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" style="width:15px;height:15px;">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+          </svg> Excluir`;
+      }
+      if (btnCancelar) btnCancelar.disabled = false;
+    }
+  }
+
   function _removeEditPubAnexo(idx) {
-    _editPubAnexos.splice(idx, 1);
-    _renderEditPubAnexos();
+    const a = _editPubAnexos[idx];
+    if (!a) return;
+    _excluirAnexoCtx = { ctx: 'edit-pub', idx };
+    const nomeEl = document.getElementById('excluir-anexo-nome');
+    if (nomeEl) nomeEl.textContent = a.titulo;
+    openModal('modal-confirmar-excluir-anexo');
+  }
+
+
+
+  function _renameEditPubAnexo(idx) {
+    const a = _editPubAnexos[idx];
+    if (!a) return;
+    _renomearAnexoCtx = { ctx: 'edit-pub', idx };
+    const input = document.getElementById('renomear-anexo-input');
+    if (input) input.value = a.titulo;
+    openModal('modal-renomear-anexo');
+    setTimeout(() => input?.select(), 80);
+  }
+
+  function _confirmarRenomearAnexo() {
+    const input = document.getElementById('renomear-anexo-input');
+    const novo = input?.value?.trim();
+    if (!novo) { input?.focus(); return; }
+    closeModal('modal-renomear-anexo');
+    if (!_renomearAnexoCtx) return;
+    const { ctx, idx } = _renomearAnexoCtx;
+    _renomearAnexoCtx = null;
+    if (ctx === 'pub') {
+      const a = pubAnexos[idx];
+      if (!a || novo === a.titulo) return;
+      if (a.fileId && typeof renameAnexoDrive === 'function') {
+        renameAnexoDrive(a.fileId, novo, () => { pubAnexos[idx].titulo = novo; renderPubAnexos(); });
+      } else {
+        pubAnexos[idx].titulo = novo; renderPubAnexos();
+      }
+    } else {
+      const a = _editPubAnexos[idx];
+      if (!a || novo === a.titulo) return;
+      if (a.fileId && typeof renameAnexoDrive === 'function') {
+        renameAnexoDrive(a.fileId, novo, () => { _editPubAnexos[idx].titulo = novo; _renderEditPubAnexos(); });
+      } else {
+        _editPubAnexos[idx].titulo = novo; _renderEditPubAnexos();
+      }
+    }
   }
 
   function abrirEditarPublicacao(pubId) {
@@ -1669,17 +1924,24 @@
     document.getElementById('edit-pub-data').value = date;
     document.getElementById('edit-pub-hora').value = time || '00:00';
     document.getElementById('edit-pub-notas').value = p.notas || '';
+    const tEdit = state.tarefas.find(t => t.id === p.tarefaId);
+    const editTerceiroSection = document.getElementById('edit-pub-terceiro-section');
+    if (editTerceiroSection) editTerceiroSection.style.display = tEdit?.realizadoPorTerceiro ? '' : 'none';
+    document.getElementById('edit-pub-empresa').value = p.empresaResponsavel || '';
+    document.getElementById('edit-pub-tecnico').value = p.tecnicoResponsavel || '';
     // Carrega anexos existentes — normaliza formato legado
     _editPubAnexos = (p.anexos || []).map((a, i) =>
       typeof a === 'string' ? { titulo: `Anexo ${i + 1}`, url: a } : { ...a }
     );
-    document.getElementById('edit-pub-anexo-titulo').value = '';
-    document.getElementById('edit-pub-anexo-url').value = '';
+    _editPubAnexosOriginais = _editPubAnexos.map(a => a.fileId).filter(Boolean);
     _renderEditPubAnexos();
+    if (typeof resetUploadZone === 'function') resetUploadZone('edit-pub');
     openModal('modal-editar-pub');
   }
 
   function salvarEdicaoPublicacao() {
+    if (typeof _uploadsInProgress !== 'undefined' && _uploadsInProgress['edit-pub']) { showToast('Aguarde o término do envio do arquivo.', 'info'); return; }
+    if (typeof _uploadQueues !== 'undefined' && _uploadQueues['edit-pub']?.file) { showToast('Envie o arquivo selecionado antes de salvar.', 'error'); return; }
     const pubId = document.getElementById('edit-pub-id').value;
     const data  = document.getElementById('edit-pub-data').value;
     const hora  = document.getElementById('edit-pub-hora').value;
@@ -1690,15 +1952,29 @@
     if (idx < 0) return;
     state.publicacoes[idx].dataRealizada = buildDataRealizada(data, hora);
     state.publicacoes[idx].notas = notas;
+    const tSave = state.tarefas.find(t => t.id === state.publicacoes[idx].tarefaId);
+    if (tSave?.realizadoPorTerceiro) {
+      state.publicacoes[idx].empresaResponsavel = document.getElementById('edit-pub-empresa').value.trim() || null;
+      state.publicacoes[idx].tecnicoResponsavel = document.getElementById('edit-pub-tecnico').value.trim() || null;
+    }
     state.publicacoes[idx].anexos = _editPubAnexos.slice();
     saveState();
     closeModal('modal-editar-pub');
     showToast('Publicação atualizada!', 'success');
   }
 
+  let _pubExcluirId = null;
+
   function excluirPublicacao(pubId) {
     if (!_can('atividades.excluir')) { showToast('Sem permissão para excluir publicações.', 'error'); return; }
-    if (!confirm('Excluir este registro de publicação?')) return;
+    _pubExcluirId = pubId;
+    openModal('modal-confirmar-excluir-pub');
+  }
+
+  function _confirmarExcluirPublicacao() {
+    const pubId = _pubExcluirId;
+    _pubExcluirId = null;
+    closeModal('modal-confirmar-excluir-pub');
     const p = state.publicacoes.find(p => p.id === pubId);
     state.publicacoes = state.publicacoes.filter(p => p.id !== pubId);
 
@@ -1822,6 +2098,15 @@
         </div>
       </div>
 
+      ${(p.empresaResponsavel || p.tecnicoResponsavel) ? `
+        <div style="margin-top:14px;background:var(--bg);border:1.2px solid var(--border);border-radius:8px;padding:12px;">
+          <div class="form-section-title" style="margin-bottom:8px;">Terceiro Responsável</div>
+          <div style="display:flex;gap:18px;flex-wrap:wrap;">
+            ${p.empresaResponsavel ? `<div><div class="detail-label">Empresa Responsável</div><div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">${p.empresaResponsavel}</div></div>` : ''}
+            ${p.tecnicoResponsavel ? `<div><div class="detail-label">Técnico Responsável</div><div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">${p.tecnicoResponsavel}</div></div>` : ''}
+          </div>
+        </div>` : ''}
+
       ${checkListHtml(rotinaChecklist, 'Checklist Geral Verificado')}
       ${checkListHtml(tarefaChecklist, 'Checklist da Tarefa Verificado')}
       ${anexosHtml}
@@ -1840,8 +2125,28 @@
   // ══════════════════════════════════════════
   // ── TABELA DE ATIVIDADES ──
   // ══════════════════════════════════════════
-  const ATIVIDADES_PER_PAGE = 25;
+  const PER_PAGE = 20;
+  const ATIVIDADES_PER_PAGE = PER_PAGE;
   let _atividadesPage = 0;
+  let _rotinasPage    = 0;
+  let _tarefasPage    = 0;
+  let _atividadesSort = { col: 'dataRealizada', dir: 'desc' };
+  let _rotinasSort    = { col: 'nome', dir: 'asc' };
+  let _tarefasSort    = { col: 'dataTarefa', dir: 'asc' };
+
+  function sortRotinasBy(col) {
+    _rotinasSort = _rotinasSort.col === col
+      ? { col, dir: _rotinasSort.dir === 'asc' ? 'desc' : 'asc' }
+      : { col, dir: 'asc' };
+    renderRotinasTable(0);
+  }
+
+  function sortTarefasBy(col) {
+    _tarefasSort = _tarefasSort.col === col
+      ? { col, dir: _tarefasSort.dir === 'asc' ? 'desc' : 'asc' }
+      : { col, dir: col === 'dataTarefa' || col === 'proximaData' ? 'asc' : 'asc' };
+    renderTarefasTable(0);
+  }
 
   function renderAtividadesTable(page) {
     if (page !== undefined) _atividadesPage = page;
@@ -1854,9 +2159,9 @@
     const canEdit   = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
     const canDelete = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
+    const { col: sCol, dir: sDir } = _atividadesSort;
     const allPubs = state.publicacoes
       .slice()
-      .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)))
       .filter(p => {
         if (_minhasAtividadesAtivo && _sess && p.publicadoPorId !== _sess.userId) return false;
         const t = state.tarefas.find(t => t.id === p.tarefaId);
@@ -1868,6 +2173,39 @@
         if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
         if (fRotinaId !== null && t.rotinaId !== fRotinaId) return false;
         return true;
+      })
+      .sort((a, b) => {
+        const ta = state.tarefas.find(t => t.id === a.tarefaId);
+        const tb = state.tarefas.find(t => t.id === b.tarefaId);
+        let ka, kb;
+        if (sCol === 'dataRealizada') {
+          ka = dataRealizadaSortKey(a.dataRealizada);
+          kb = dataRealizadaSortKey(b.dataRealizada);
+        } else if (sCol === 'dataPublicacao') {
+          ka = a.dataPublicacao || '';
+          kb = b.dataPublicacao || '';
+        } else if (sCol === 'rotina') {
+          const ra = ta ? state.rotinas.find(r => r.id === ta.rotinaId) : null;
+          const rb = tb ? state.rotinas.find(r => r.id === tb.rotinaId) : null;
+          ka = ra?.nome?.toLowerCase() || '';
+          kb = rb?.nome?.toLowerCase() || '';
+        } else if (sCol === 'equipamento') {
+          ka = (ta ? state.ativos[ta.equipamentoIdx]?.nome : null)?.toLowerCase() || '';
+          kb = (tb ? state.ativos[tb.equipamentoIdx]?.nome : null)?.toLowerCase() || '';
+        } else if (sCol === 'setor') {
+          ka = (ta ? state.ativos[ta.equipamentoIdx]?.setor : null)?.toLowerCase() || '';
+          kb = (tb ? state.ativos[tb.equipamentoIdx]?.setor : null)?.toLowerCase() || '';
+        } else if (sCol === 'categoria') {
+          ka = (ta ? state.ativos[ta.equipamentoIdx]?.categoria : null)?.toLowerCase() || '';
+          kb = (tb ? state.ativos[tb.equipamentoIdx]?.categoria : null)?.toLowerCase() || '';
+        } else if (sCol === 'publicadoPor') {
+          ka = a.publicadoPorNome?.toLowerCase() || '';
+          kb = b.publicadoPorNome?.toLowerCase() || '';
+        } else {
+          ka = kb = '';
+        }
+        const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+        return sDir === 'asc' ? cmp : -cmp;
       });
 
     const totalPages = Math.max(1, Math.ceil(allPubs.length / ATIVIDADES_PER_PAGE));
@@ -1909,6 +2247,14 @@
         </td>
       </tr>`;
     }).join('');
+
+    document.querySelectorAll('#atividades-thead-row .th-sortable').forEach(th => {
+      const col = th.dataset.sortCol;
+      const arrow = col === sCol ? (sDir === 'asc' ? ' ↑' : ' ↓') : '';
+      th.dataset.sortArrow = arrow;
+      th.classList.toggle('th-sort-active', col === sCol);
+    });
+
     _renderAtividadesPagination(_atividadesPage, totalPages, allPubs.length);
   }
 
@@ -1933,6 +2279,15 @@
       <button class="btn btn-outline btn-icon" onclick="renderAtividadesTable(${page + 1})" ${page >= totalPages - 1 ? 'disabled' : ''} style="padding:5px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="9 18 15 12 9 6"/></svg>
       </button>`;
+  }
+
+  function sortAtividadesBy(col) {
+    if (_atividadesSort.col === col) {
+      _atividadesSort.dir = _atividadesSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      _atividadesSort = { col, dir: col === 'dataRealizada' || col === 'dataPublicacao' ? 'desc' : 'asc' };
+    }
+    renderAtividadesTable(0);
   }
 
   // ══════════════════════════════════════════
@@ -1973,6 +2328,7 @@
 
   function setRotinaStatusFilter(val) {
     _rotinaStatusFilter = val;
+    _rotinasPage = 0;
     ['ativo','inativo','ambos'].forEach(v => {
       const btn = document.getElementById('sfbtn-rotina-' + v);
       if (!btn) return;
@@ -2010,7 +2366,7 @@
 
     if (ctx === 'rv') renderRotinaViewTarefas();
     else if (ctx === 'av') _renderAtivoTarefas();
-    else renderTarefasTable();
+    else { _tarefasPage = 0; renderTarefasTable(); }
     updateNotifBadge();
   }
 
@@ -2029,7 +2385,31 @@
   // ══════════════════════════════════════════
   // ── RENDER TABELA DE ROTINAS ──
   // ══════════════════════════════════════════
-  function renderRotinasTable() {
+  function _renderPagination(elId, panelSelector, page, totalPages, total, onPage) {
+    let el = document.getElementById(elId);
+    if (!el) {
+      const wrapper = document.querySelector(panelSelector + ' .data-table-wrapper');
+      if (!wrapper) return;
+      el = document.createElement('div');
+      el.id = elId;
+      el.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:12px 0 0;flex-shrink:0;';
+      wrapper.after(el);
+    }
+    if (totalPages <= 1) { el.innerHTML = ''; return; }
+    const start = page * PER_PAGE + 1;
+    const end   = Math.min((page + 1) * PER_PAGE, total);
+    el.innerHTML = `
+      <span style="font-size:12px;color:var(--text-muted);">${start}–${end} de ${total}</span>
+      <button class="btn btn-outline btn-icon" onclick="${onPage}(${page - 1})" ${page === 0 ? 'disabled' : ''} style="padding:5px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="btn btn-outline btn-icon" onclick="${onPage}(${page + 1})" ${page >= totalPages - 1 ? 'disabled' : ''} style="padding:5px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>`;
+  }
+
+  function renderRotinasTable(page) {
+    if (page !== undefined) _rotinasPage = page;
     const tbody = document.getElementById('rotinas-tbody');
     if (!tbody) return;
     const fTipo   = document.getElementById('filter-tipo')?.value || '';
@@ -2038,7 +2418,8 @@
     const fAtivoIdx = state._ativoFiltroIdx ?? null;
     const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
 
-    const list = state.rotinas.filter(r => {
+    const { col: rSCol, dir: rSDir } = _rotinasSort;
+    const allList = state.rotinas.filter(r => {
       const ativo = state.ativos[r.equipamentoIdx];
       if (!ativo) return false;
       if (visSetores && !visSetores.includes(ativo.setor)) return false;
@@ -2046,19 +2427,35 @@
       if (fTipo && r.tipo !== fTipo) return false;
       if (fSetor && ativo.setor !== fSetor) return false;
       if (fCat && ativo.categoria !== fCat) return false;
-      // Filtro de status
       const rStatus = r.status || 'Ativo';
       if (_rotinaStatusFilter === 'ativo' && rStatus !== 'Ativo') return false;
       if (_rotinaStatusFilter === 'inativo' && rStatus !== 'Inativo') return false;
       return true;
+    }).sort((a, b) => {
+      const ativoA = state.ativos[a.equipamentoIdx];
+      const ativoB = state.ativos[b.equipamentoIdx];
+      let ka, kb;
+      if (rSCol === 'nome')       { ka = a.nome?.toLowerCase() || '';          kb = b.nome?.toLowerCase() || ''; }
+      else if (rSCol === 'equipamento') { ka = ativoA?.nome?.toLowerCase() || ''; kb = ativoB?.nome?.toLowerCase() || ''; }
+      else if (rSCol === 'tipo')  { ka = a.tipo?.toLowerCase() || '';           kb = b.tipo?.toLowerCase() || ''; }
+      else if (rSCol === 'setor') { ka = ativoA?.setor?.toLowerCase() || '';    kb = ativoB?.setor?.toLowerCase() || ''; }
+      else if (rSCol === 'categoria') { ka = ativoA?.categoria?.toLowerCase() || ''; kb = ativoB?.categoria?.toLowerCase() || ''; }
+      else { ka = kb = ''; }
+      const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+      return rSDir === 'asc' ? cmp : -cmp;
     });
 
-    if (list.length === 0) {
+    const totalPages = Math.max(1, Math.ceil(allList.length / PER_PAGE));
+    if (_rotinasPage >= totalPages) _rotinasPage = totalPages - 1;
+    const list = allList.slice(_rotinasPage * PER_PAGE, (_rotinasPage + 1) * PER_PAGE);
+
+    if (allList.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6"><div class="data-table-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <strong>Nenhuma rotina encontrada</strong>
         <p>Ajuste os filtros ou cadastre uma nova rotina com o botão "+"</p>
       </div></td></tr>`;
+      _renderPagination('rotinas-pagination', '#rpanel-rotinas', 0, 1, 0, 'renderRotinasTable');
       return;
     }
 
@@ -2100,6 +2497,12 @@
           : '<span style="color:var(--text-muted);font-size:12px;">—</span>'}</td>
       </tr>`;
     }).join('');
+    document.querySelectorAll('#rotinas-thead-row .th-sortable').forEach(th => {
+      const col = th.dataset.sortCol;
+      th.dataset.sortArrow = col === rSCol ? (rSDir === 'asc' ? ' ↑' : ' ↓') : '';
+      th.classList.toggle('th-sort-active', col === rSCol);
+    });
+    _renderPagination('rotinas-pagination', '#rpanel-rotinas', _rotinasPage, totalPages, allList.length, 'renderRotinasTable');
     updateNotifBadge();
   }
 
@@ -2129,6 +2532,7 @@
     const catEl   = document.getElementById('filter-cat-rotina');
     if (setorEl) setorEl.style.display = ativo ? 'none' : '';
     if (catEl)   catEl.style.display   = ativo ? 'none' : '';
+    _rotinasPage = 0;
     renderRotinasTable();
     updateNotifBadge();
     closeModal('modal-ativo-selector');
@@ -2154,6 +2558,7 @@
         </button>`;
       }
     }
+    _tarefasPage = 0;
     _updateRotinaFiltroTarefasWrap();
     renderTarefasTable();
     updateNotifBadge();
@@ -2199,6 +2604,7 @@
 
   function setRotinaFiltroTarefas(rotinaId) {
     state._rotinaFiltroTarefasId = rotinaId ?? null;
+    _tarefasPage = 0;
     _updateRotinaFiltroTarefasDisplay();
     renderTarefasTable();
     updateNotifBadge();
@@ -2212,10 +2618,13 @@
   let _rotinaSelectorCtx = 'tarefas';
   function openRotinaSelectorCtx(ctx) {
     _rotinaSelectorCtx = ctx;
-    const isAtiv = ctx === 'atividades';
+    const isAtiv   = ctx === 'atividades';
+    const isAgenda = ctx === 'agenda';
     const fAtivoIdx = isAtiv
       ? (state._ativoFiltroAtividadesIdx ?? null)
-      : (state._ativoFiltroTarefasIdx ?? null);
+      : isAgenda
+        ? (state._ativoFiltroAgendaIdx ?? null)
+        : (state._ativoFiltroTarefasIdx ?? null);
 
     const rotinas = state.rotinas.filter(r => {
       if (fAtivoIdx !== null) {
@@ -2228,9 +2637,9 @@
       return true;
     });
 
-    const setFn  = isAtiv ? `setRotinaFiltroAtividades` : `setRotinaFiltroTarefas`;
-    const listId = isAtiv ? 'rotina-selector-atividades-list' : 'rotina-selector-tarefas-list';
-    const modalId = isAtiv ? 'modal-rotina-selector-atividades' : 'modal-rotina-selector-tarefas';
+    const setFn  = isAtiv ? `setRotinaFiltroAtividades` : isAgenda ? `setRotinaFiltroAgenda` : `setRotinaFiltroTarefas`;
+    const listId  = isAtiv ? 'rotina-selector-atividades-list' : isAgenda ? 'rotina-selector-agenda-list' : 'rotina-selector-tarefas-list';
+    const modalId = isAtiv ? 'modal-rotina-selector-atividades' : isAgenda ? 'modal-rotina-selector-agenda' : 'modal-rotina-selector-tarefas';
 
     const list = document.getElementById(listId);
     if (!list) return;
@@ -2285,9 +2694,10 @@
     _minhasTarefasAtivo = !_minhasTarefasAtivo;
     const btn = document.getElementById('btn-minhas-tarefas');
     if (btn) {
-      btn.style.background    = _minhasTarefasAtivo ? 'var(--cyan)' : '';
-      btn.style.color         = _minhasTarefasAtivo ? '#fff' : '';
-      btn.style.borderColor   = _minhasTarefasAtivo ? 'var(--cyan)' : '';
+      btn.style.background  = _minhasTarefasAtivo ? 'var(--night)' : '';
+      btn.style.color       = _minhasTarefasAtivo ? '#fff' : '';
+      btn.style.borderColor = _minhasTarefasAtivo ? 'var(--night)' : '';
+      btn.style.boxShadow   = _minhasTarefasAtivo ? '0 3px 10px rgba(14,22,40,0.25)' : '';
     }
     renderTarefasTable();
   }
@@ -2299,9 +2709,10 @@
     _minhasAtividadesAtivo = !_minhasAtividadesAtivo;
     const btn = document.getElementById('btn-minhas-atividades');
     if (btn) {
-      btn.style.background  = _minhasAtividadesAtivo ? 'var(--cyan)' : '';
+      btn.style.background  = _minhasAtividadesAtivo ? 'var(--night)' : '';
       btn.style.color       = _minhasAtividadesAtivo ? '#fff' : '';
-      btn.style.borderColor = _minhasAtividadesAtivo ? 'var(--cyan)' : '';
+      btn.style.borderColor = _minhasAtividadesAtivo ? 'var(--night)' : '';
+      btn.style.boxShadow   = _minhasAtividadesAtivo ? '0 3px 10px rgba(14,22,40,0.25)' : '';
     }
     _atividadesPage = 0;
     renderAtividadesTable();
@@ -2312,6 +2723,7 @@
     state._ativoFiltroAtividadesIdx = (idx !== undefined) ? idx : null;
     const ativo = idx !== undefined ? state.ativos[idx] : null;
     const display = document.getElementById('ativo-selector-display-atividades');
+    const rotinaWrap = document.getElementById('rotina-filter-atividades-wrap');
     if (display) {
       if (ativo) {
         display.innerHTML = `<div class="ativo-selecionado-chip" onclick="limparAtivoFiltroAtividades()">
@@ -2324,6 +2736,17 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           Filtrar por Ativo
         </button>`;
+      }
+    }
+    // Mostra o filtro de rotina apenas quando há ativo selecionado
+    if (rotinaWrap) {
+      if (ativo) {
+        rotinaWrap.style.display = '';
+      } else {
+        rotinaWrap.style.display = 'none';
+        // Limpa o filtro de rotina ao desselecionar o ativo
+        state._rotinaFiltroAtividadesId = null;
+        _updateRotinaFiltroAtividadesDisplay();
       }
     }
     renderAtividadesTable();
@@ -2378,6 +2801,7 @@
     if (_ativoSelectorCtx === 'rotinas') setAtivoFiltro(idx);
     else if (_ativoSelectorCtx === 'tarefas') setAtivoFiltroTarefas(idx);
     else if (_ativoSelectorCtx === 'atividades') setAtivoFiltroAtividades(idx);
+    else if (_ativoSelectorCtx === 'agenda' && typeof setAtivoFiltroAgenda === 'function') setAtivoFiltroAgenda(idx);
   }
 
   // ══════════════════════════════════════════
@@ -2759,7 +3183,7 @@
         const isAlert = flag.cls === 'flag-danger' || flag.cls === 'flag-warning';
         return `<div class="list-item-row" style="cursor:pointer;${isAlert ? 'border-left:3px solid ' + (flag.cls === 'flag-danger' ? 'var(--red)' : 'var(--amber)') + ';' : ''}" onclick="openTarefaDetalhe('${t.id}')">
           <div style="display:flex;flex-direction:column;gap:4px;flex:1;">
-            <div style="font-weight:600;font-size:13px;">Rotina: ${rotina?.nome || '—'}</div>
+            <div style="font-weight:600;font-size:13px;">${t.titulo || rotina?.nome || '—'}</div>
             <div style="font-size:11px;color:var(--text-muted);">${ativo?.nome || '—'}${ativo?.codigo ? ' · ' + ativo.codigo : ''}</div>
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px;">
               <span class="task-flag ${flag.cls}" style="font-size:11px;">${flag.label}</span>
@@ -2779,7 +3203,11 @@
     const rotina = state.rotinas.find(r => r.id === rotinaViewId);
     const pubs = state.publicacoes
       .filter(p => tarefaIds.includes(p.tarefaId))
-      .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)));
+      .sort((a, b) => {
+        const ka = dataRealizadaSortKey(a.dataRealizada) || a.dataPublicacao || '';
+        const kb = dataRealizadaSortKey(b.dataRealizada) || b.dataPublicacao || '';
+        return kb > ka ? 1 : kb < ka ? -1 : 0;
+      });
     if (pubs.length === 0) {
       container.innerHTML = `<div class="data-table-empty" style="padding:32px 16px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -3097,6 +3525,7 @@
               <span class="task-flag ${flag.cls}" style="font-size:11px;">${flag.label}</span>
               ${nPubs > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${nPubs} pub.</span>` : ''}
             </div>
+            ${t.titulo ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:1px;">Tarefa: ${t.titulo}</div>` : ''}
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Data: ${formatDate(t.dataTarefa)} · Próxima: ${t.proximaData ? formatDate(t.proximaData) : '—'}</div>
           </div>
           <span class="chip ${t.status==='Ativo'?'chip-green':'chip-gray'}">${t.status}</span>
@@ -3110,7 +3539,11 @@
     const tarefaIds = state.tarefas.filter(t => t.equipamentoIdx === idx).map(t => t.id);
     const pubs = state.publicacoes
       .filter(p => tarefaIds.includes(p.tarefaId))
-      .sort((a, b) => dataRealizadaSortKey(b).localeCompare(dataRealizadaSortKey(a)));
+      .sort((a, b) => {
+        const ka = dataRealizadaSortKey(a.dataRealizada) || a.dataPublicacao || '';
+        const kb = dataRealizadaSortKey(b.dataRealizada) || b.dataPublicacao || '';
+        return kb > ka ? 1 : kb < ka ? -1 : 0;
+      });
     if (pubs.length === 0) {
       container.innerHTML = `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><strong>Nenhuma atividade registrada</strong><p>As atividades aparecem após publicar tarefas deste ativo</p></div>`;
       return;
@@ -3305,11 +3738,39 @@
     showToast('Ativo salvo com sucesso!', 'success');
   }
 
+  function _normalizeSearch(str) {
+    return (str || '').toLowerCase()
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9]/g, '');
+  }
+
+  let _ativosSearchOpen = false;
+
+  function toggleAtivosSearch() {
+    _ativosSearchOpen = !_ativosSearchOpen;
+    const field = document.getElementById('ativos-search-field');
+    const input = document.getElementById('ativos-search-input');
+    const btn   = document.getElementById('btn-ativos-search');
+    if (_ativosSearchOpen) {
+      field.style.display = '';
+      // Trigger reflow para animar width
+      requestAnimationFrame(() => { field.style.width = 'auto'; });
+      input?.focus();
+      btn?.classList.add('active');
+    } else {
+      field.style.display = 'none';
+      if (input) input.value = '';
+      btn?.classList.remove('active');
+      renderCards();
+    }
+  }
+
   function renderCards() {
     const grid = document.getElementById('assets-grid');
     const fSetor = document.getElementById('main-sector-filter').value;
     const fCat = document.getElementById('main-category-filter').value;
     const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
+    const fBusca = _normalizeSearch(document.getElementById('ativos-search-input')?.value);
 
     const filtrados = state.ativos
       .map((item, index) => ({ item, index }))
@@ -3317,7 +3778,12 @@
         if (visSetores && !visSetores.includes(item.setor)) return false;
         const matchSetor = fSetor === 'todos' || item.setor === fSetor;
         const matchCat = fCat === 'todas' || item.categoria === fCat;
-        return matchSetor && matchCat;
+        if (!matchSetor || !matchCat) return false;
+        if (fBusca) {
+          const haystack = _normalizeSearch(item.nome + item.codigo + item.marca + item.modelo + item.serie + item.fornecedor);
+          if (!haystack.includes(fBusca)) return false;
+        }
+        return true;
       });
 
     if (filtrados.length === 0) {
