@@ -63,6 +63,7 @@ const OT_SEV_CFG = {
 };
 
 const OT_PUB_CFG = {
+  comentario:    { label: 'Comentário',   bg: 'rgba(113,128,150,0.12)', color: '#718096'  },
   atualizacao:   { label: 'Atualização',  bg: 'rgba(0,168,204,0.12)',   color: '#00a8cc'  },
   evidencia:     { label: 'Evidência',    bg: 'rgba(244,162,97,0.12)',  color: '#b45309'  },
   transferencia: { label: 'Transferência',bg: 'rgba(139,92,246,0.1)',   color: '#7c3aed'  },
@@ -115,6 +116,13 @@ let _otPubAnexos = [];   // anexos da publicação em progresso
 let _otFilterTipo = '';
 let _otFilterSev  = '';
 let _otSearchQ    = '';
+let _otFilterAtivoIdx = null;
+let _otFilterMyOTs    = false;
+let _otFilterDate     = { mode: null, mes: null, ano: null, de: null, ate: null };
+let _otViewMode       = 'kanban'; // kanban | calendario | lista
+let _otCalYear        = new Date().getFullYear();
+let _otCalMonth       = new Date().getMonth();
+let _otListSort       = { col: 'criadoEm', dir: -1 };
 
 // ── DRAG & DROP STATE ─────────────────────────────────────────
 let _dragOtId      = null;
@@ -151,16 +159,41 @@ function _otInitTab() {
   tabEl.dataset.otInit = '1';
   tabEl.innerHTML = _otBuildTabHTML();
   _otBindToolbar();
-  _otRenderKanban();
+  _otRenderView_mode();
 }
 
 function _otBuildTabHTML() {
   return `
 <div class="ot-wrapper">
+  <!-- Abas de modo de visualização -->
+  <div class="ot-view-tabs">
+    <button class="ot-view-tab-btn active" id="ot-vtab-kanban" onclick="otSetViewMode('kanban')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="18" rx="1"/><rect x="14" y="3" width="7" height="10" rx="1"/><rect x="14" y="17" width="7" height="4" rx="1"/></svg>
+      Kanban
+    </button>
+    <button class="ot-view-tab-btn" id="ot-vtab-calendario" onclick="otSetViewMode('calendario')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      Calendário
+    </button>
+    <button class="ot-view-tab-btn" id="ot-vtab-lista" onclick="otSetViewMode('lista')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.5" fill="currentColor"/><circle cx="3" cy="12" r="1.5" fill="currentColor"/><circle cx="3" cy="18" r="1.5" fill="currentColor"/></svg>
+      Lista
+    </button>
+    <div style="flex:1;"></div>
+  </div>
+  <!-- Toolbar de filtros -->
   <div class="ot-toolbar">
     <div class="ot-search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       <input type="text" id="ot-search-input" placeholder="Buscar OT..." oninput="otSearchChange(this.value)">
+    </div>
+    <!-- Filtro de Ativo com botão de seleção -->
+    <div style="display:flex;align-items:center;gap:4px;">
+      <div id="ot-filter-ativo-wrap" class="ot-filter-ativo-wrap" onclick="otOpenFilterAtivoSearch()" title="Selecionar ativo" style="cursor:pointer;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <span id="ot-filter-ativo-label">Selecionar ativo</span>
+      </div>
+      <button class="ot-filter-ativo-btn" id="ot-filter-ativo-clear" onclick="otClearFilterAtivo()" title="Limpar ativo" style="display:none;">×</button>
     </div>
     <select class="ot-filter-select" id="ot-filter-tipo" onchange="otFilterChange()">
       <option value="">Todos os tipos</option>
@@ -176,9 +209,55 @@ function _otBuildTabHTML() {
       <option value="media">Média</option>
       <option value="baixa">Baixa</option>
     </select>
+    <!-- Botão de filtro de data (calendário) -->
+    <div class="ot-date-filter-wrap" id="ot-date-filter-wrap">
+      <button class="ot-date-filter-btn" id="ot-date-filter-btn" onclick="otToggleDatePicker()" title="Filtrar por período">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        <span id="ot-date-filter-label">Período</span>
+      </button>
+      <div class="ot-date-picker-popup" id="ot-date-picker-popup" style="display:none;">
+        <div class="ot-date-picker-tabs">
+          <button class="ot-dp-tab active" data-mode="mes" onclick="otDpSetMode('mes')">Mês</button>
+          <button class="ot-dp-tab" data-mode="ano" onclick="otDpSetMode('ano')">Ano</button>
+          <button class="ot-dp-tab" data-mode="custom" onclick="otDpSetMode('custom')">Personalizado</button>
+        </div>
+        <div id="ot-dp-mes-panel" class="ot-dp-panel">
+          <div class="ot-dp-row">
+            <select id="ot-dp-mes-sel" class="field-select" style="flex:1;">
+              ${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((m,i)=>`<option value="${i}" ${i===new Date().getMonth()?'selected':''}>${m}</option>`).join('')}
+            </select>
+            <select id="ot-dp-mes-ano-sel" class="field-select" style="width:90px;">
+              ${Array.from({length:6},(_,k)=>new Date().getFullYear()-2+k).map(y=>`<option value="${y}" ${y===new Date().getFullYear()?'selected':''}>${y}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div id="ot-dp-ano-panel" class="ot-dp-panel" style="display:none;">
+          <select id="ot-dp-ano-sel" class="field-select" style="width:100%;">
+            ${Array.from({length:6},(_,k)=>new Date().getFullYear()-2+k).map(y=>`<option value="${y}" ${y===new Date().getFullYear()?'selected':''}>${y}</option>`).join('')}
+          </select>
+        </div>
+        <div id="ot-dp-custom-panel" class="ot-dp-panel" style="display:none;">
+          <div class="ot-dp-row">
+            <div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">De</label>
+              <input type="date" id="ot-dp-de" class="field-input" style="width:100%;"></div>
+            <div style="flex:1;"><label style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:3px;">Até</label>
+              <input type="date" id="ot-dp-ate" class="field-input" style="width:100%;"></div>
+          </div>
+        </div>
+        <div class="ot-dp-actions">
+          <button class="btn btn-outline" style="font-size:12px;padding:5px 10px;" onclick="otClearDateFilter()">Limpar</button>
+          <button class="btn btn-primary" style="font-size:12px;padding:5px 12px;" onclick="otApplyDateFilter()">Aplicar</button>
+        </div>
+      </div>
+    </div>
     <div class="ot-toolbar-spacer"></div>
+    <!-- Botão Minhas OTs -->
+    <button class="ot-my-ots-btn" id="ot-my-ots-btn" onclick="otToggleMyOTs()" title="Minhas OTs">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+      Minhas OTs
+    </button>
   </div>
-  <div class="ot-board" id="ot-board"></div>
+  <div id="ot-main-content" style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;"></div>
   <button class="ot-fab" onclick="otOpenForm(null)" title="Nova OT">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
   </button>
@@ -188,41 +267,235 @@ function _otBuildTabHTML() {
 function _otBindToolbar() {
   document.getElementById('ot-search-input')?.addEventListener('input', e => {
     _otSearchQ = e.target.value.toLowerCase();
-    _otRenderKanban();
+    _otRenderView_mode();
   });
+  // Fecha date picker ao clicar fora
+  if (!window._otDatePickerBound) {
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#ot-date-filter-wrap')) {
+        document.getElementById('ot-date-picker-popup')?.style && (document.getElementById('ot-date-picker-popup').style.display = 'none');
+      }
+    });
+    window._otDatePickerBound = true;
+  }
+  // Fecha modal de busca de ativo de filtro ao clicar fora
+  if (!window._otFilterAtivoModalBound) {
+    document.addEventListener('click', e => {
+      if (!e.target.closest('#modal-ot-filter-ativo')) {
+        // handled by modal overlay
+      }
+    });
+    window._otFilterAtivoModalBound = true;
+  }
 }
 
-function otSearchChange(v) { _otSearchQ = v.toLowerCase(); _otRenderKanban(); }
+function otSearchChange(v) { _otSearchQ = v.toLowerCase(); _otRenderView_mode(); }
 function otFilterChange() {
   _otFilterTipo = document.getElementById('ot-filter-tipo')?.value || '';
   _otFilterSev  = document.getElementById('ot-filter-sev')?.value  || '';
-  _otRenderKanban();
+  _otRenderView_mode();
 }
 
-// ── KANBAN RENDER ─────────────────────────────────────────────
-function _otRenderKanban() {
-  const board = document.getElementById('ot-board');
-  if (!board) return;
+// ── MODO DE VISUALIZAÇÃO ──────────────────────────────────────
+function otSetViewMode(mode) {
+  _otViewMode = mode;
+  ['kanban','calendario','lista'].forEach(m => {
+    document.getElementById('ot-vtab-' + m)?.classList.toggle('active', m === mode);
+  });
+  // Esconde fab original no modo kanban (já tem o inline), mostra nos outros
+  const fab = document.querySelector('.ot-fab:not(.ot-fab-inline)');
+  if (fab) fab.style.display = mode === 'kanban' ? 'flex' : 'flex';
+  // Oculta filtro de data no calendário
+  const dfWrap = document.getElementById('ot-date-filter-wrap');
+  if (dfWrap) dfWrap.style.display = mode === 'calendario' ? 'none' : '';
+  _otRenderView_mode();
+}
 
-  const filtered = otState.ordens.filter(o => {
-    // Filtro de setor: topbar + permissão de grupo
+function _otRenderView_mode() {
+  if (_otViewMode === 'kanban') _otRenderKanban();
+  else if (_otViewMode === 'calendario') _otRenderCalendario();
+  else if (_otViewMode === 'lista') _otRenderLista();
+}
+
+// ── FILTRO DE ATIVO ───────────────────────────────────────────
+function otOpenFilterAtivoSearch() {
+  const input = document.getElementById('ot-filter-ativo-search-input');
+  if (input) input.value = '';
+  _otRenderFilterAtivoList('');
+  otOpenModal('modal-ot-filter-ativo');
+  setTimeout(() => input?.focus(), 80);
+}
+
+function otFilterAtivoSearchInput(q) { _otRenderFilterAtivoList(q.toLowerCase()); }
+
+function _otRenderFilterAtivoList(q) {
+  const list = document.getElementById('ot-filter-ativo-search-list');
+  if (!list || typeof state === 'undefined') return;
+
+  // Coleta os índices de ativo que aparecem nas OTs considerando todos os filtros EXCETO o filtro de ativo
+  const savedAtivoIdx = _otFilterAtivoIdx;
+  _otFilterAtivoIdx = null;
+  const otsVisiveis = _otGetFiltered();
+  _otFilterAtivoIdx = savedAtivoIdx;
+
+  const idxComOTs = new Set(otsVisiveis.map(o => o.ativoIdx).filter(i => i !== null && i !== undefined));
+
+  const ativos = state.ativos.map((a, i) => ({ ...a, _idx: i }))
+    .filter(a => {
+      if (!idxComOTs.has(a._idx)) return false;
+      return !q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q);
+    });
+
+  if (ativos.length === 0) {
+    list.innerHTML = '<div class="autocomplete-empty">Nenhum ativo encontrado</div>'; return;
+  }
+  list.innerHTML = ativos.slice(0, 40).map(a => `
+    <div class="ativo-search-card" onclick="otSelectFilterAtivo(${a._idx})">
+      <div class="ativo-search-card-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+      </div>
+      <div>
+        <div class="ativo-search-card-name">${_escHtml(a.nome)}</div>
+        <div class="ativo-search-card-meta">${a.codigo ? a.codigo + ' · ' : ''}${a.setor || ''}${idxComOTs.has(a._idx) ? ` · ${otsVisiveis.filter(o => o.ativoIdx === a._idx).length} OT(s)` : ''}</div>
+      </div>
+    </div>`).join('');
+}
+
+function otSelectFilterAtivo(idx) {
+  _otFilterAtivoIdx = idx;
+  otCloseModal('modal-ot-filter-ativo');
+  const ativo = typeof state !== 'undefined' ? state.ativos[idx] : null;
+  const label = document.getElementById('ot-filter-ativo-label');
+  if (label) label.textContent = ativo ? _escHtml(ativo.nome) : 'Selecionar ativo';
+  const clearBtn = document.getElementById('ot-filter-ativo-clear');
+  if (clearBtn) clearBtn.style.display = ativo ? '' : 'none';
+  const wrap = document.getElementById('ot-filter-ativo-wrap');
+  if (wrap) wrap.classList.toggle('active', !!ativo);
+  _otRenderView_mode();
+}
+
+function otClearFilterAtivo() {
+  _otFilterAtivoIdx = null;
+  const label = document.getElementById('ot-filter-ativo-label');
+  if (label) label.textContent = 'Selecionar ativo';
+  const clearBtn = document.getElementById('ot-filter-ativo-clear');
+  if (clearBtn) clearBtn.style.display = 'none';
+  const wrap = document.getElementById('ot-filter-ativo-wrap');
+  if (wrap) wrap.classList.remove('active');
+  _otRenderView_mode();
+}
+
+// ── FILTRO MINHAS OTs ─────────────────────────────────────────
+function otToggleMyOTs() {
+  _otFilterMyOTs = !_otFilterMyOTs;
+  document.getElementById('ot-my-ots-btn')?.classList.toggle('active', _otFilterMyOTs);
+  _otRenderView_mode();
+}
+
+// ── FILTRO DE DATA ────────────────────────────────────────────
+let _otDpCurrentMode = 'mes';
+
+function otToggleDatePicker() {
+  const popup = document.getElementById('ot-date-picker-popup');
+  if (!popup) return;
+  popup.style.display = popup.style.display === 'none' ? 'block' : 'none';
+}
+
+function otDpSetMode(mode) {
+  _otDpCurrentMode = mode;
+  document.querySelectorAll('.ot-dp-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
+  ['mes','ano','custom'].forEach(m => {
+    const panel = document.getElementById(`ot-dp-${m}-panel`);
+    if (panel) panel.style.display = m === mode ? '' : 'none';
+  });
+}
+
+function otApplyDateFilter() {
+  const mode = _otDpCurrentMode;
+  if (mode === 'mes') {
+    const mes = parseInt(document.getElementById('ot-dp-mes-sel')?.value);
+    const ano = parseInt(document.getElementById('ot-dp-mes-ano-sel')?.value);
+    _otFilterDate = { mode: 'mes', mes, ano, de: null, ate: null };
+    const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+    document.getElementById('ot-date-filter-label').textContent = `${meses[mes]}/${ano}`;
+  } else if (mode === 'ano') {
+    const ano = parseInt(document.getElementById('ot-dp-ano-sel')?.value);
+    _otFilterDate = { mode: 'ano', mes: null, ano, de: null, ate: null };
+    document.getElementById('ot-date-filter-label').textContent = String(ano);
+  } else {
+    const de  = document.getElementById('ot-dp-de')?.value;
+    const ate = document.getElementById('ot-dp-ate')?.value;
+    if (!de && !ate) { showToast('Informe ao menos uma data.', 'error'); return; }
+    _otFilterDate = { mode: 'custom', mes: null, ano: null, de, ate };
+    document.getElementById('ot-date-filter-label').textContent = `${de ? _fmtDate(de) : '...'} – ${ate ? _fmtDate(ate) : '...'}`;
+  }
+  document.getElementById('ot-date-filter-btn')?.classList.add('active');
+  document.getElementById('ot-date-picker-popup').style.display = 'none';
+  _otRenderView_mode();
+}
+
+function otClearDateFilter() {
+  _otFilterDate = { mode: null, mes: null, ano: null, de: null, ate: null };
+  document.getElementById('ot-date-filter-label').textContent = 'Período';
+  document.getElementById('ot-date-filter-btn')?.classList.remove('active');
+  document.getElementById('ot-date-picker-popup').style.display = 'none';
+  _otRenderView_mode();
+}
+
+function _otPassesDateFilter(o) {
+  if (!_otFilterDate.mode) return true;
+  const dataRef = o.prazo || o.criadoEm?.split('T')[0] || '';
+  if (!dataRef) return true;
+  const d = new Date(dataRef + (dataRef.length === 10 ? 'T00:00:00' : ''));
+  if (_otFilterDate.mode === 'mes') {
+    return d.getFullYear() === _otFilterDate.ano && d.getMonth() === _otFilterDate.mes;
+  } else if (_otFilterDate.mode === 'ano') {
+    return d.getFullYear() === _otFilterDate.ano;
+  } else {
+    const de  = _otFilterDate.de  ? new Date(_otFilterDate.de  + 'T00:00:00') : null;
+    const ate = _otFilterDate.ate ? new Date(_otFilterDate.ate + 'T23:59:59') : null;
+    if (de  && d < de)  return false;
+    if (ate && d > ate) return false;
+    return true;
+  }
+}
+
+// ── FILTRO CENTRAL ────────────────────────────────────────────
+function _otGetFiltered() {
+  const sess = typeof currentSession !== 'undefined' ? currentSession : null;
+  return otState.ordens.filter(o => {
     const ativo = (o.ativoIdx !== null && o.ativoIdx !== undefined && typeof state !== 'undefined')
       ? state.ativos[o.ativoIdx] : null;
     if (ativo) {
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
     } else if (o.setor) {
-      // OT sem ativo vinculado mas com setor salvo: aplica filtro de grupo
       const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
       if (visSetores && !visSetores.includes(o.setor)) return false;
     }
+    if (_otFilterAtivoIdx !== null && o.ativoIdx !== _otFilterAtivoIdx) return false;
+    if (_otFilterMyOTs && sess) {
+      if (o.responsavelId !== sess.userId) return false;
+    }
+    if (!_otPassesDateFilter(o)) return false;
     if (_otFilterTipo && o.tipo !== _otFilterTipo) return false;
-    if (_otFilterSev  && o.severidade !== _otFilterSev)  return false;
+    if (_otFilterSev  && o.severidade !== _otFilterSev) return false;
     if (_otSearchQ) {
       const hay = `${o.numero} ${o.titulo} ${o.responsavelNome} ${o.solicitanteNome}`.toLowerCase();
       if (!hay.includes(_otSearchQ)) return false;
     }
     return true;
   });
+}
+
+// ── KANBAN RENDER ─────────────────────────────────────────────
+function _otRenderKanban() {
+  const content = document.getElementById('ot-main-content');
+  if (!content) return;
+  content.innerHTML = `<div class="ot-board" id="ot-board"></div>`;
+  const board = document.getElementById('ot-board');
+  if (!board) return;
+
+  const filtered = _otGetFiltered();
 
   board.innerHTML = OT_STATUSES.map(status => {
     const cfg   = OT_STATUS_CFG[status];
@@ -247,6 +520,21 @@ function _otRenderKanban() {
   }).join('');
 }
 
+function _otCardDeadlineInfo(o) {
+  if (!o.prazo) return { diff: null, alertLimit: 2, cls: '', txt: '' };
+  const today = new Date(); today.setHours(0,0,0,0);
+  const d = new Date(o.prazo + 'T00:00:00');
+  const diff = Math.ceil((d - today) / 86400000);
+  let alertLimit = 2;
+  if (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null) {
+    const parsed = parseInt(o.prazoAlertaDias, 10);
+    if (!Number.isNaN(parsed) && parsed >= 0) alertLimit = parsed;
+  }
+  const cls = diff < 0 ? 'ot-card-overdue' : (diff <= alertLimit ? 'ot-card-warning' : '');
+  const txt = diff < 0 ? `Vencida ${Math.abs(diff)}d` : (diff === 0 ? 'Vence hoje' : _fmtDate(o.prazo));
+  return { diff, alertLimit, cls, txt };
+}
+
 function _otCardHTML(o) {
   const tipoCfg = OT_TIPO_CFG[o.tipo] || {};
   const sevCfg  = OT_SEV_CFG[o.severidade]  || {};
@@ -258,28 +546,21 @@ function _otCardHTML(o) {
   const subTotal = sub.length;
   const pct      = subTotal > 0 ? Math.round((subDone / subTotal) * 100) : 0;
 
-  const today = new Date(); today.setHours(0,0,0,0);
-  let prazoHtml = '';
-  if (o.prazo) {
-    const d    = new Date(o.prazo + 'T00:00:00');
-    const diff = Math.ceil((d - today) / 86400000);
-    let alertLimit = 2;
-    if (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null) {
-      const parsed = parseInt(o.prazoAlertaDias, 10);
-      if (!Number.isNaN(parsed) && parsed >= 0) alertLimit = parsed;
-    }
-    const cls  = diff < 0 ? 'ot-card-overdue' : (diff <= alertLimit ? 'ot-card-warning' : '');
-    const txt  = diff < 0 ? `Vencida ${Math.abs(diff)}d` : (diff === 0 ? 'Vence hoje' : _fmtDate(o.prazo));
-    prazoHtml = `<div class="ot-card-meta-row">
+  const { diff, alertLimit, cls: prazoClass, txt: prazoTxt } = _otCardDeadlineInfo(o);
+
+  const prazoHtml = o.prazo ? `<div class="ot-card-meta-row">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-      <span class="${cls}">${txt}</span>
-    </div>`;
-  }
+      <span class="${prazoClass}">${prazoTxt}</span>
+    </div>` : '';
+
+  // Cor da barra lateral: vermelho=vencida, laranja=em alerta, senão usa severidade
+  const deadlineSide = diff !== null && diff < 0 ? 'ot-card-side-overdue'
+    : (diff !== null && diff <= alertLimit ? 'ot-card-side-warning' : '');
 
   const terceiroHtml = o.terceirizado
     ? `<span class="ot-badge ot-badge-terceiro">Terceirizado</span>` : '';
 
-  return `<div class="ot-card" data-sev="${o.severidade}"
+  return `<div class="ot-card ${deadlineSide}" data-sev="${deadlineSide ? '' : o.severidade}"
   draggable="true"
   ondragstart="otDragStart(event,'${o.id}','${o.status}')"
   ondragend="otDragEnd(event)"
@@ -319,6 +600,190 @@ function _otCardHTML(o) {
     </div>
   </div>` : ''}
 </div>`;
+}
+
+// ── CALENDÁRIO RENDER ─────────────────────────────────────────
+function _otRenderCalendario() {
+  const content = document.getElementById('ot-main-content');
+  if (!content) return;
+  const filtered = _otGetFiltered();
+  const year = _otCalYear, month = _otCalMonth;
+  const firstDay = new Date(year, month, 1).getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+  // Agrupa OTs por dia de prazo
+  const byDay = {};
+  filtered.forEach(o => {
+    if (!o.prazo) return;
+    const d = new Date(o.prazo + 'T00:00:00');
+    if (d.getFullYear() !== year || d.getMonth() !== month) return;
+    const day = d.getDate();
+    if (!byDay[day]) byDay[day] = [];
+    byDay[day].push(o);
+  });
+
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+  let cells = '';
+  const startBlank = firstDay === 0 ? 6 : firstDay - 1; // segunda = 0
+  for (let i = 0; i < startBlank; i++) cells += `<div class="ot-cal-cell ot-cal-blank"></div>`;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dayStr = `${year}-${String(month+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    const isToday = dayStr === todayStr;
+    const ots = byDay[d] || [];
+    const maxShow = 3;
+    cells += `<div class="ot-cal-cell${isToday ? ' ot-cal-today' : ''}">
+      <span class="ot-cal-day-num">${d}</span>
+      <div class="ot-cal-ots">
+        ${ots.slice(0, maxShow).map(o => {
+          const { cls } = _otCardDeadlineInfo(o);
+          return `<div class="ot-cal-ot-pill ${cls ? 'ot-cal-pill-' + (cls.includes('overdue') ? 'overdue' : 'warning') : ''}" onclick="otOpenView('${o.id}')" title="${_escHtml(o.titulo)}">
+            <span class="ot-cal-pill-dot ot-cal-dot-${o.tipo}"></span>
+            ${_escHtml(o.titulo.length > 20 ? o.titulo.slice(0,20)+'…' : o.titulo)}
+          </div>`;
+        }).join('')}
+        ${ots.length > maxShow ? `<div class="ot-cal-more">+${ots.length - maxShow} mais</div>` : ''}
+      </div>
+    </div>`;
+  }
+
+  content.innerHTML = `
+<div class="ot-cal-wrapper">
+  <div class="ot-cal-header">
+    <div class="ot-cal-nav-group">
+      <button class="ot-cal-nav-btn" onclick="otCalNav(-1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="ot-cal-title" onclick="otCalOpenPicker()" title="Selecionar mês/ano">${meses[month]} ${year}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;margin-left:4px;opacity:0.6;"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <button class="ot-cal-nav-btn" onclick="otCalNav(1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+    <div id="ot-cal-picker" class="ot-cal-picker" style="display:none;"></div>
+  </div>
+  <div class="ot-cal-grid">
+    <div class="ot-cal-dow">Seg</div><div class="ot-cal-dow">Ter</div><div class="ot-cal-dow">Qua</div>
+    <div class="ot-cal-dow">Qui</div><div class="ot-cal-dow">Sex</div><div class="ot-cal-dow">Sáb</div><div class="ot-cal-dow">Dom</div>
+    ${cells}
+  </div>
+</div>`;
+}
+
+function otCalNav(dir) {
+  _otCalMonth += dir;
+  if (_otCalMonth < 0) { _otCalMonth = 11; _otCalYear--; }
+  if (_otCalMonth > 11) { _otCalMonth = 0; _otCalYear++; }
+  _otRenderCalendario();
+}
+
+let _otCalPickerYear = null;
+function otCalOpenPicker() {
+  const picker = document.getElementById('ot-cal-picker');
+  if (!picker) return;
+  if (picker.style.display !== 'none') { picker.style.display = 'none'; return; }
+  _otCalPickerYear = _otCalYear;
+  otCalRenderPicker();
+  picker.style.display = 'block';
+  const close = (e) => { if (!picker.contains(e.target) && !e.target.closest('.ot-cal-title')) { picker.style.display = 'none'; document.removeEventListener('mousedown', close); } };
+  setTimeout(() => document.addEventListener('mousedown', close), 0);
+}
+function otCalRenderPicker() {
+  const picker = document.getElementById('ot-cal-picker');
+  if (!picker) return;
+  const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  picker.innerHTML = `
+    <div class="ot-cal-picker-header">
+      <button class="ot-cal-nav-btn" onclick="otCalPickerYearNav(-1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <span class="ot-cal-picker-year">${_otCalPickerYear}</span>
+      <button class="ot-cal-nav-btn" onclick="otCalPickerYearNav(1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+    <div class="ot-cal-picker-grid">
+      ${meses.map((m, i) => `<button class="ot-cal-picker-month${_otCalPickerYear === _otCalYear && i === _otCalMonth ? ' active' : ''}" onclick="otCalPickerSelect(${i})">${m}</button>`).join('')}
+    </div>`;
+}
+function otCalPickerYearNav(dir) {
+  _otCalPickerYear += dir;
+  otCalRenderPicker();
+}
+function otCalPickerSelect(month) {
+  _otCalMonth = month;
+  _otCalYear = _otCalPickerYear;
+  const picker = document.getElementById('ot-cal-picker');
+  if (picker) picker.style.display = 'none';
+  _otRenderCalendario();
+}
+
+// ── LISTA RENDER ──────────────────────────────────────────────
+const OT_LIST_COLS = [
+  { key: 'numero',         label: 'Número'      },
+  { key: 'titulo',         label: 'Título'       },
+  { key: 'tipo',           label: 'Tipo'         },
+  { key: 'severidade',     label: 'Severidade'   },
+  { key: 'status',         label: 'Status'       },
+  { key: 'responsavelNome',label: 'Responsável'  },
+  { key: 'prazo',          label: 'Prazo'        },
+  { key: 'criadoEm',       label: 'Criada em'    },
+];
+
+function _otRenderLista() {
+  const content = document.getElementById('ot-main-content');
+  if (!content) return;
+  const filtered = _otGetFiltered();
+  const { col, dir } = _otListSort;
+  const sorted = [...filtered].sort((a, b) => {
+    let va = a[col] || '', vb = b[col] || '';
+    if (col === 'criadoEm' || col === 'prazo') {
+      va = va || ''; vb = vb || '';
+    }
+    return va < vb ? -dir : va > vb ? dir : 0;
+  });
+
+  const headerCols = OT_LIST_COLS.map(c => `
+    <th class="ot-list-th${c.key === col ? ' sorted' : ''}" onclick="otListSort('${c.key}')">
+      ${c.label}
+      ${c.key === col ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;margin-left:3px;">${dir === 1 ? '<polyline points="18 15 12 9 6 15"/>' : '<polyline points="6 9 12 15 18 9"/>'}</svg>` : ''}
+    </th>`).join('');
+
+  const rows = sorted.length === 0
+    ? `<tr><td colspan="${OT_LIST_COLS.length}" style="text-align:center;padding:32px;color:var(--text-muted);">Nenhuma OT encontrada</td></tr>`
+    : sorted.map(o => {
+        const tipoCfg = OT_TIPO_CFG[o.tipo] || {};
+        const sevCfg  = OT_SEV_CFG[o.severidade] || {};
+        const stCfg   = OT_STATUS_CFG[o.status] || {};
+        const { cls: prazoClass, txt: prazoTxt } = _otCardDeadlineInfo(o);
+        return `<tr class="ot-list-row" onclick="otOpenView('${o.id}')">
+          <td><span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-muted);">${_escHtml(o.numero)}</span></td>
+          <td style="font-weight:600;color:var(--text-primary);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(o.titulo)}</td>
+          <td><span class="ot-badge ${tipoCfg.cls}">${tipoCfg.label}</span></td>
+          <td><span class="ot-badge ${sevCfg.cls}">${sevCfg.label}</span></td>
+          <td><span class="ot-status-badge ot-status-${o.status}" style="font-size:11px;padding:2px 8px;">${stCfg.label}</span></td>
+          <td style="font-size:13px;color:var(--text-secondary);">${_escHtml(o.responsavelNome || '—')}</td>
+          <td><span class="${prazoClass || ''}" style="font-size:12.5px;">${prazoTxt || (o.prazo ? _fmtDate(o.prazo) : '—')}</span></td>
+          <td style="font-size:12px;color:var(--text-muted);">${_fmtDate(o.criadoEm?.split('T')[0] || '')}</td>
+        </tr>`;
+      }).join('');
+
+  content.innerHTML = `
+<div class="ot-list-wrapper">
+  <table class="ot-list-table">
+    <thead><tr>${headerCols}</tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+</div>`;
+}
+
+function otListSort(col) {
+  if (_otListSort.col === col) _otListSort.dir *= -1;
+  else { _otListSort.col = col; _otListSort.dir = -1; }
+  _otRenderLista();
 }
 
 // ── DRAG & DROP ───────────────────────────────────────────────
@@ -432,6 +897,33 @@ function _otSetStatus(otId, newStatus, pubTipo, texto) {
   showToast(`OT movida para ${OT_STATUS_CFG[newStatus]?.label}.`, 'success');
 }
 
+// ── EXCLUIR OT ────────────────────────────────────────────────
+let _otDeleteId = null;
+function otOpenDeleteConfirm(id) {
+  _otDeleteId = id;
+  const o = otState.ordens.find(x => x.id === id);
+  if (!o) return;
+  const el = document.getElementById('ot-delete-title-display');
+  if (el) el.textContent = o.titulo;
+  const input = document.getElementById('ot-delete-confirm-input');
+  if (input) input.value = '';
+  otOpenModal('modal-ot-delete');
+}
+function otConfirmDelete() {
+  const o = otState.ordens.find(x => x.id === _otDeleteId);
+  if (!o) return;
+  const input = document.getElementById('ot-delete-confirm-input')?.value.trim();
+  if (input !== o.titulo) { showToast('O título digitado não corresponde.', 'error'); return; }
+  otState.ordens = otState.ordens.filter(x => x.id !== _otDeleteId);
+  otState.publicacoes = otState.publicacoes.filter(p => p.otId !== _otDeleteId);
+  otSave();
+  otCloseModal('modal-ot-delete');
+  otCloseModal('modal-ot-view');
+  _otRenderView_mode();
+  showToast('OT excluída.', 'success');
+  _otDeleteId = null;
+}
+
 // ── MODAL CANCELAMENTO ────────────────────────────────────────
 let _otCancelId = null;
 function _otOpenCancelModal(otId) {
@@ -490,7 +982,8 @@ function otOpenForm(id) {
   _otFormSetField('ot-f-descricao',  o?.descricao   || '');
   _otFormSetField('ot-f-severidade', o?.severidade  || 'media');
   _otFormSetField('ot-f-prazo',      o?.prazo       || '');
-  _otFormSetField('ot-f-prazo-alerta', o?.prazoAlertaDias ?? 2);
+  // Alerta padrão em branco para novas OTs; preserva valor existente ao editar
+  _otFormSetField('ot-f-prazo-alerta', (o?.prazoAlertaDias !== undefined && o?.prazoAlertaDias !== null) ? o.prazoAlertaDias : '');
   _otFormSetField('ot-f-resp',       o?.responsavelId || '');
   _otFormSetField('ot-f-tipo-falha', o?.tipoFalha   || '');
   _otFormSetField('ot-f-causa',      o?.causaRaiz   || '');
@@ -806,9 +1299,13 @@ function otLoadSubTemplate() {
 // ── SALVAR OT ─────────────────────────────────────────────────
 function otSaveForm() {
   const titulo = document.getElementById('ot-f-titulo')?.value.trim();
-  if (!titulo) { showToast('Informe o título da OT.', 'error'); return; }
+  if (!titulo) { showToast('Informe o título da OT.', 'error'); otSwitchFormTab('dados'); return; }
   const tipo = document.getElementById('ot-f-tipo')?.value;
   if (!tipo)  { showToast('Selecione o tipo da OT.', 'error'); return; }
+  if (_otAtivoIdx === null) { showToast('Vincule um ativo à OT.', 'error'); otSwitchFormTab('dados'); return; }
+  const prazo = document.getElementById('ot-f-prazo')?.value;
+  if (!prazo) { showToast('Informe o prazo da OT.', 'error'); otSwitchFormTab('dados'); return; }
+  if (!_otRespId) { showToast('Selecione o responsável técnico.', 'error'); otSwitchFormTab('dados'); return; }
 
   const respId  = _otRespId || '';
   const respUser = respId && typeof authState !== 'undefined'
@@ -834,8 +1331,10 @@ function otSaveForm() {
       responsavelId:   respId,
       responsavelNome: respUser?.nomeCompleto || '',
       prazoAlertaDias: (() => {
-        const v = parseInt(document.getElementById('ot-f-prazo-alerta')?.value, 10);
-        return Number.isNaN(v) || v < 0 ? 2 : v;
+        const raw = document.getElementById('ot-f-prazo-alerta')?.value;
+        if (raw === '' || raw === null || raw === undefined) return null;
+        const v = parseInt(raw, 10);
+        return Number.isNaN(v) || v < 0 ? null : v;
       })(),
       terceirizado,
       empresa:     terceirizado ? (document.getElementById('ot-f-empresa')?.value.trim()      || '') : '',
@@ -868,8 +1367,10 @@ function otSaveForm() {
       responsavelId:   respId,
       responsavelNome: respUser?.nomeCompleto || '',
       prazoAlertaDias: (() => {
-        const v = parseInt(document.getElementById('ot-f-prazo-alerta')?.value, 10);
-        return Number.isNaN(v) || v < 0 ? 2 : v;
+        const raw = document.getElementById('ot-f-prazo-alerta')?.value;
+        if (raw === '' || raw === null || raw === undefined) return null;
+        const v = parseInt(raw, 10);
+        return Number.isNaN(v) || v < 0 ? null : v;
       })(),
       terceirizado,
       empresa:     terceirizado ? (document.getElementById('ot-f-empresa')?.value.trim()      || '') : '',
@@ -910,7 +1411,6 @@ function _otRenderView(o) {
     ? state.ativos[o.ativoIdx] : null;
   const tipoCfg = OT_TIPO_CFG[o.tipo] || {};
   const sevCfg  = OT_SEV_CFG[o.severidade]  || {};
-  const statusCfg = OT_STATUS_CFG[o.status] || {};
 
   const sub = o.subtarefas || [];
   const subDone = sub.filter(s => s.concluida).length;
@@ -924,6 +1424,30 @@ function _otRenderView(o) {
   const el = document.getElementById('ot-view-body');
   if (!el) return;
 
+  const OT_STATUS_ICONS = {
+    pendente:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
+    em_processo: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,
+    em_revisao:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
+    concluida:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><polyline points="20 6 9 17 4 12"/></svg>`,
+    cancelada:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+  };
+
+  // Publicações por tipo para sub-abas
+  // conclusao, transferencia, cancelamento e devolucao são agrupados em 'atualizacao'
+  const PUB_TABS = [
+    { key: 'comentario',  label: 'Comentários', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>` },
+    { key: 'evidencia',   label: 'Evidências',  icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>` },
+    { key: 'atualizacao', label: 'Atualizações', icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>` },
+  ];
+  const ATUALIZACAO_TIPOS = new Set(['atualizacao','conclusao','transferencia','cancelamento','devolucao']);
+
+  const pubsByTipo = {
+    comentario:  pubs.filter(p => p.tipo === 'comentario'),
+    evidencia:   pubs.filter(p => p.tipo === 'evidencia'),
+    atualizacao: pubs.filter(p => ATUALIZACAO_TIPOS.has(p.tipo)),
+  };
+  const firstTabWithPubs = PUB_TABS.find(t => pubsByTipo[t.key]?.length > 0)?.key || 'comentario';
+
   el.innerHTML = `
 <div class="ot-view-hero">
   <div class="ot-view-hero-num">${_escHtml(o.numero)} · Aberta em ${_fmtDate(o.dataAbertura)}</div>
@@ -931,15 +1455,23 @@ function _otRenderView(o) {
   <div class="ot-view-hero-badges">
     <span class="ot-view-hero-badge"><span class="ot-badge ${tipoCfg.cls}" style="font-size:11px;">${tipoCfg.label}</span></span>
     <span class="ot-view-hero-badge"><span class="ot-badge ${sevCfg.cls}" style="font-size:11px;">${sevCfg.label}</span></span>
-    <span class="ot-status-badge ot-status-${o.status}">${statusCfg.label}</span>
-    ${o.terceirizado ? `<span class="ot-view-hero-badge"><span class="ot-badge ot-badge-terceiro" style="font-size:11px;">Terceirizado</span></span>` : ''}
+    ${o.terceirizado ? `<span class="ot-view-hero-badge"><span class="ot-badge ot-badge-terceiro" style="font-size:11px;color:#fff;background:rgba(139,92,246,0.35);border-color:rgba(139,92,246,0.55);">Terceirizado</span></span>` : ''}
   </div>
 </div>
 
 <div class="ot-modal-tabs" style="margin-bottom:16px;">
-  <button class="ot-modal-tab-btn active" data-tab="ordem" onclick="otSwitchViewTab('ordem')">Informações</button>
-  <button class="ot-modal-tab-btn" data-tab="subtarefas" onclick="otSwitchViewTab('subtarefas')">Subtarefas <span class="ot-modal-tab-badge">${sub.length}</span></button>
-  <button class="ot-modal-tab-btn" data-tab="publicacoes" onclick="otSwitchViewTab('publicacoes')">Publicações <span class="ot-modal-tab-badge">${pubs.length}</span></button>
+  <button class="ot-modal-tab-btn active" data-tab="ordem" onclick="otSwitchViewTab('ordem')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    Informações
+  </button>
+  <button class="ot-modal-tab-btn" data-tab="subtarefas" onclick="otSwitchViewTab('subtarefas')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+    Subtarefas <span class="ot-modal-tab-badge">${sub.length}</span>
+  </button>
+  <button class="ot-modal-tab-btn" data-tab="publicacoes" onclick="otSwitchViewTab('publicacoes')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+    Publicações <span class="ot-modal-tab-badge">${pubs.length}</span>
+  </button>
 </div>
 
 <div class="ot-modal-tab-panel active" data-tab="ordem">
@@ -964,21 +1496,19 @@ function _otRenderView(o) {
     <div class="detail-label">Prazo</div>
     <div class="detail-value">${o.prazo ? _fmtDate(o.prazo) : '—'}</div>
   </div>
-  <div class="detail-card">
+  ${o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null ? `<div class="detail-card">
     <div class="detail-label">Alerta</div>
-    <div class="detail-value">${o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null ? _escHtml(String(o.prazoAlertaDias)) + ' dia(s)' : '2 dia(s)'}</div>
-  </div>
+    <div class="detail-value">${_escHtml(String(o.prazoAlertaDias))} dia(s)</div>
+  </div>` : ''}
   ${o.dataConclusao ? `<div class="detail-card">
     <div class="detail-label">Data de Conclusão</div>
     <div class="detail-value">${_fmtDate(o.dataConclusao)}</div>
   </div>` : ''}
 </div>
-
 ${o.descricao ? `<div class="detail-note" style="margin-bottom:16px;">
   <div class="detail-label" style="margin-bottom:6px;">Descrição</div>
   <div style="font-size:13px;color:var(--text-primary);line-height:1.6;">${_escHtml(o.descricao)}</div>
 </div>` : ''}
-
 ${o.ativoFalhou && o.tipo === 'corretiva' ? `
 <div class="form-section-title" style="margin-bottom:12px;">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -990,17 +1520,31 @@ ${o.ativoFalhou && o.tipo === 'corretiva' ? `
   <div class="detail-card"><div class="detail-label">Método de Detecção</div><div class="detail-value">${_escHtml(o.metodoDetec || '—')}</div></div>
   <div class="detail-card"><div class="detail-label">Tipo de Dano</div><div class="detail-value">${_escHtml(o.tipoDano || '—')}</div></div>
 </div>` : ''}
-
 ${o.terceirizado ? `
 <div class="form-section-title" style="margin-bottom:12px;">
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a7 7 0 0114 0v2"/><line x1="21" y1="8" x2="21" y2="14"/><line x1="18" y1="11" x2="24" y2="11"/></svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a7 7 0 0114 0v2"/></svg>
   Dados do Terceirizado
 </div>
 <div class="detail-grid" style="margin-bottom:16px;">
-  ${o.empresa     ? `<div class="detail-card"><div class="detail-label">Empresa / Prestador</div><div class="detail-value">${_escHtml(o.empresa)}</div></div>` : ''}
-  ${o.respEmpresa ? `<div class="detail-card"><div class="detail-label">Responsável pela empresa</div><div class="detail-value">${_escHtml(o.respEmpresa)}</div></div>` : ''}
+  ${o.empresa ? (() => {
+    const emp = typeof empState !== 'undefined' ? empState.empresas.find(e => e.nome === o.empresa) : null;
+    const respObj = emp?.responsaveis?.find(r => r.nome === o.respEmpresa);
+    const whatsHtml = respObj?.contato
+      ? `<a href="https://wa.me/${respObj.contato.replace(/\D/g,'')}" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:#25d366;color:#fff;text-decoration:none;margin-left:4px;" onclick="event.stopPropagation()"><svg viewBox="0 0 24 24" fill="currentColor" style="width:11px;height:11px;"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.124.557 4.12 1.528 5.852L0 24l6.335-1.507A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.79 9.79 0 01-5.012-1.376l-.36-.213-3.757.893.946-3.656-.235-.376A9.79 9.79 0 012.182 12C2.182 6.565 6.565 2.182 12 2.182S21.818 6.565 21.818 12 17.435 21.818 12 21.818z"/></svg></a>` : '';
+    return `<div class="detail-card"><div class="detail-label">Empresa / Prestador</div>
+      <div class="detail-value">${_escHtml(o.empresa)}
+        ${emp?.email ? `<div style="font-size:11px;color:var(--text-muted);">${_escHtml(emp.email)}</div>` : ''}
+        ${(emp?.contatos||[]).filter(c=>c.tipo==='WhatsApp').map(c=>`<div style="font-size:11px;color:var(--cyan);display:flex;align-items:center;gap:4px;">${_escHtml(c.valor)}<a href="https://wa.me/${c.valor.replace(/\D/g,'')}" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;background:#25d366;color:#fff;text-decoration:none;" onclick="event.stopPropagation()"><svg viewBox="0 0 24 24" fill="currentColor" style="width:9px;height:9px;"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.124.557 4.12 1.528 5.852L0 24l6.335-1.507A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.79 9.79 0 01-5.012-1.376l-.36-.213-3.757.893.946-3.656-.235-.376A9.79 9.79 0 012.182 12C2.182 6.565 6.565 2.182 12 2.182S21.818 6.565 21.818 12 17.435 21.818 12 21.818z"/></svg></a></div>`).join('')}
+      </div>
+    </div>
+    ${o.respEmpresa ? `<div class="detail-card"><div class="detail-label">Responsável pela empresa</div>
+      <div class="detail-value" style="display:flex;align-items:center;gap:6px;">
+        ${_escHtml(o.respEmpresa)}${whatsHtml}
+        ${respObj?.contato ? `<div style="font-size:11px;color:var(--cyan);">${_escHtml(respObj.contato)}</div>` : ''}
+      </div>
+    </div>` : ''}`;
+  })() : ''}
 </div>` : ''}
-
 ${o.motivoCancelamento ? `<div class="detail-note" style="border-left-color:var(--red);margin-bottom:16px;">
   <div class="detail-label" style="margin-bottom:6px;color:var(--red);">Motivo do Cancelamento</div>
   <div style="font-size:13px;">${_escHtml(o.motivoCancelamento)}</div>
@@ -1014,102 +1558,118 @@ ${o.motivoCancelamento ? `<div class="detail-note" style="border-left-color:var(
     Subtarefas — ${subDone}/${sub.length} (${pct}%)
   </div>
   <div class="ot-sub-list" style="margin-bottom:16px;">
-  ${sub.map((s, i) => `
-    <div class="ot-sub-item${s.concluida ? ' done' : ''}" style="cursor:${canEdit ? 'pointer' : 'default'}" onclick="${canEdit ? `otViewToggleSub('${o.id}',${i})` : ''}">
-      <div class="ot-sub-check${s.concluida ? ' checked' : ''}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+  ${sub.map((s, i) => {
+    const evPubs = otState.publicacoes.filter(p => p.otId === o.id && p.tipo === 'evidencia' && p.subtarefaId === s.id);
+    const hasEvidence = evPubs.length > 0;
+    const blocked = s.exigeEvidencia && !hasEvidence && !s.concluida && canEdit;
+    return `<div class="ot-sub-item${s.concluida ? ' done' : ''}" style="cursor:${canEdit && !blocked ? 'pointer' : 'default'}" onclick="${canEdit && !blocked ? `otViewToggleSub('${o.id}',${i})` : blocked ? `showToast('Adicione uma publicação de evidência vinculada a esta subtarefa antes de concluir.','error')` : ''}">
+      <div class="ot-sub-check${s.concluida ? ' checked' : ''}${blocked ? ' blocked' : ''}">
+        ${blocked ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;color:#b45309;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`
+          : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>`}
       </div>
       <div class="ot-sub-body">
         <div class="ot-sub-desc">${_escHtml(s.descricao)}</div>
         <div class="ot-sub-meta">
-          ${s.exigeEvidencia ? `<span class="ot-sub-ev-badge">Exige evidência</span>` : ''}
+          ${s.exigeEvidencia ? `<span class="ot-sub-ev-badge">${hasEvidence ? '✓ Evidência vinculada' : 'Exige evidência'}</span>` : ''}
           ${s.concluidoPorNome ? `<span>✓ ${_escHtml(s.concluidoPorNome)} · ${s.concluidoEm ? _fmtDateTime(s.concluidoEm) : ''}</span>` : ''}
         </div>
       </div>
-    </div>`).join('')}
+    </div>`;
+  }).join('')}
   </div>` : `<div class="checklist-empty-tip">Nenhuma subtarefa ainda.</div>`}
 </div>
 
 <div class="ot-modal-tab-panel" data-tab="publicacoes">
-  <div class="form-section-title" style="margin-bottom:10px;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-    Publicações e Evidências
-    ${canEdit ? `<button class="btn btn-outline" style="margin-left:auto;padding:5px 12px;font-size:12px;" onclick="otOpenPubModal()">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+    <div style="font-size:14px;font-weight:700;color:var(--text-primary);">Publicações</div>
+    ${canEdit ? `<button class="btn btn-primary" style="padding:6px 14px;font-size:12px;" onclick="otOpenPubModal()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:13px;height:13px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Nova Publicação
     </button>` : ''}
   </div>
-  ${pubs.length === 0
-    ? `<div class="checklist-empty-tip">Nenhuma publicação ainda.</div>`
-    : `<div class="ot-pub-log">${pubs.map(p => _otPubEntryHTML(p)).join('')}</div>`}
+  <!-- Sub-abas de publicação -->
+  <div class="ot-pub-subtabs" id="ot-pub-subtabs">
+    ${PUB_TABS.map(t => {
+      const count = pubsByTipo[t.key]?.length || 0;
+      return `<button class="ot-pub-subtab-btn${t.key === firstTabWithPubs ? ' active' : ''}" data-pubtab="${t.key}" onclick="otSwitchPubTab('${t.key}')">
+        ${t.icon}
+        <span>${t.label}</span>
+        ${count > 0 ? `<span class="ot-pub-subtab-count">${count}</span>` : ''}
+      </button>`;
+    }).join('')}
+  </div>
+  ${PUB_TABS.map(t => {
+    const tPubs = pubsByTipo[t.key] || [];
+    return `<div class="ot-pub-subtab-panel${t.key === firstTabWithPubs ? ' active' : ''}" data-pubtab="${t.key}">
+      ${tPubs.length === 0
+        ? `<div class="checklist-empty-tip">Nenhuma publicação de ${t.label.toLowerCase()} ainda.</div>`
+        : `<div class="ot-pub-log">${tPubs.map(p => _otPubEntryHTML(p)).join('')}</div>`}
+    </div>`;
+  }).join('')}
 </div>
 `;
 
-  // Build a compact Status button in the header with a dropdown menu
+  // Status dropdown moderno com ícones e cores
   const hdrRight = document.querySelector('#modal-ot-view .modal-header > div:nth-child(2)');
   if (hdrRight) {
-    // remove any existing status wrap
     const existing = hdrRight.querySelector('.ot-status-wrap');
     if (existing) existing.remove();
+    const curCfg = OT_STATUS_CFG[o.status] || {};
     const wrapHtml = `
       <div class="ot-status-wrap" style="position:relative;margin-right:8px;">
-        <button class="btn btn-outline" id="ot-status-btn">Status</button>
+        <button class="ot-status-dropdown-btn ot-status-btn-${o.status}" id="ot-status-btn">
+          ${OT_STATUS_ICONS[o.status] || ''}
+          <span>${curCfg.label || 'Status'}</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;margin-left:4px;"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
       </div>`;
     hdrRight.insertAdjacentHTML('afterbegin', wrapHtml);
     const btn = hdrRight.querySelector('#ot-status-btn');
     if (btn) {
-      // create menu appended to body to avoid clipping by modal stacking contexts
       const existingMenu = document.getElementById('ot-status-menu');
       if (existingMenu) existingMenu.remove();
       const menu = document.createElement('div');
       menu.id = 'ot-status-menu';
-      menu.className = 'ot-status-menu';
-      Object.assign(menu.style, {
-        display: 'none', position: 'absolute', background: '#fff', border: '1px solid rgba(0,0,0,0.08)',
-        boxShadow: '0 8px 24px rgba(11,22,30,0.08)', zIndex: '20002', minWidth: '180px', borderRadius: '6px', padding: '6px 6px'
-      });
-      const statuses = OT_STATUSES.filter(s => s !== o.status);
-      menu.innerHTML = statuses.map(s => `
-        <div class="ot-status-item" style="padding:8px 10px;cursor:pointer;border-radius:4px;margin:2px 0;font-size:13px;color:var(--text-primary);">${OT_STATUS_CFG[s]?.label || s}</div>
-      `).join('');
-      // attach click handlers to menu items
-      menu.addEventListener('click', (ev) => {
-        const item = ev.target.closest('.ot-status-item');
-        if (!item) return;
-        const idx = Array.from(menu.querySelectorAll('.ot-status-item')).indexOf(item);
-        const status = statuses[idx];
-        if (status) otChangeStatusFromView(o.id, status);
-        menu.style.display = 'none';
-      });
+      menu.className = 'ot-status-menu-dropdown';
       document.body.appendChild(menu);
-
-      btn.onclick = (ev) => {
+      const statuses = OT_STATUSES.filter(s => s !== o.status);
+      menu.innerHTML = `<div class="ot-status-menu-header">Alterar Status</div>` + statuses.map(s => {
+        const cfg = OT_STATUS_CFG[s] || {};
+        return `<div class="ot-status-menu-item ot-status-item-${s}" data-status="${s}">
+          ${OT_STATUS_ICONS[s] || ''}
+          <span>${cfg.label || s}</span>
+        </div>`;
+      }).join('');
+      menu.addEventListener('click', ev => {
+        const item = ev.target.closest('.ot-status-menu-item');
+        if (!item) return;
+        const status = item.dataset.status;
+        if (status) otChangeStatusFromView(o.id, status);
+        menu.classList.remove('open');
+      });
+      btn.onclick = ev => {
         ev.stopPropagation();
-        // hide other menus
-        document.querySelectorAll('.ot-status-menu').forEach(m => { if (m !== menu) m.style.display = 'none'; });
-        if (menu.style.display === 'block') { menu.style.display = 'none'; return; }
-        // position menu under the button
+        document.querySelectorAll('.ot-status-menu-dropdown').forEach(m => { if (m !== menu) m.classList.remove('open'); });
+        if (menu.classList.contains('open')) { menu.classList.remove('open'); return; }
         const rect = btn.getBoundingClientRect();
-        menu.style.display = 'block';
-        // allow browser to compute width
-        const mw = menu.offsetWidth;
-        let left = rect.right - mw;
-        if (left < 6) left = rect.left;
-        menu.style.left = `${left}px`;
-        menu.style.top = `${rect.bottom + 6}px`;
+        menu.style.minWidth = Math.max(rect.width, 180) + 'px';
+        menu.style.top  = (rect.bottom + 6) + 'px';
+        menu.style.left = (rect.right - Math.max(rect.width, 180)) + 'px';
+        menu.classList.add('open');
       };
-
-      // close when clicking outside (bind once)
       if (!window._otStatusMenuBound) {
-        document.addEventListener('click', (e) => {
-          if (!e.target.closest('#ot-status-menu') && !e.target.closest('.ot-status-wrap')) {
-            document.querySelectorAll('.ot-status-menu').forEach(m => m.style.display = 'none');
-          }
+        document.addEventListener('click', () => {
+          document.querySelectorAll('.ot-status-menu-dropdown').forEach(m => m.classList.remove('open'));
         });
         window._otStatusMenuBound = true;
       }
     }
   }
+}
+
+function otSwitchPubTab(key) {
+  document.querySelectorAll('.ot-pub-subtab-btn').forEach(b => b.classList.toggle('active', b.dataset.pubtab === key));
+  document.querySelectorAll('.ot-pub-subtab-panel').forEach(p => p.classList.toggle('active', p.dataset.pubtab === key));
 }
 
 // Helper to change status from within the view and keep the same tab open
@@ -1131,7 +1691,7 @@ function otChangeStatusFromView(otId, targetStatus) {
 function _otPubEntryHTML(p) {
   const cfg = OT_PUB_CFG[p.tipo] || OT_PUB_CFG.atualizacao;
   const anexos = p.anexos || [];
-  return `<div class="ot-pub-entry">
+  return `<div class="ot-pub-entry ot-pub-entry-clickable" onclick="otOpenPubView('${p.id}')">
   <div class="ot-pub-timeline">
     <div class="ot-pub-dot ot-pub-dot-${p.tipo}"></div>
   </div>
@@ -1141,12 +1701,8 @@ function _otPubEntryHTML(p) {
       <span class="ot-pub-autor">${_escHtml(p.autorNome || '—')}</span>
       <span class="ot-pub-data">${_fmtDateTime(p.data)}</span>
     </div>
-    ${p.texto ? `<div class="ot-pub-texto">${_escHtml(p.texto)}</div>` : ''}
-    ${anexos.length > 0 ? `<div class="ot-pub-anexos">${anexos.map(a => `
-      <a class="ot-pub-anexo-chip" href="${a.url}" target="_blank">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-        ${_escHtml(a.titulo)}
-      </a>`).join('')}</div>` : ''}
+    ${p.texto ? `<div class="ot-pub-texto">${_escHtml(p.texto.length > 120 ? p.texto.slice(0,120)+'…' : p.texto)}</div>` : ''}
+    ${anexos.length > 0 ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${anexos.length} anexo(s)</div>` : ''}
   </div>
 </div>`;
 }
@@ -1176,12 +1732,79 @@ function otViewToggleSub(otId, i) {
 
 // ── PUBLICAÇÃO DA OT ──────────────────────────────────────────
 function otOpenPubModal() {
+  _otPubReturnTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'publicacoes';
+  _otEditPubId = null;
   _otPubAnexos = [];
-  document.getElementById('ot-pub-tipo').value   = 'evidencia';
-  document.getElementById('ot-pub-texto').value  = '';
+  const tipoSel = document.getElementById('ot-pub-tipo');
+  if (tipoSel) tipoSel.value = 'comentario';
+  const texto = document.getElementById('ot-pub-texto');
+  if (texto) texto.value = '';
+  _otUpdatePubCharCount();
   _otRenderPubAnexos();
+  _otRenderPubSubtarefaSelect();
   if (typeof resetUploadZone === 'function') resetUploadZone('ot-pub');
+  const titleEl = document.getElementById('ot-pub-modal-title');
+  if (titleEl) titleEl.textContent = 'Nova Publicação';
+  const subEl = document.getElementById('ot-pub-modal-subtitle');
+  if (subEl) subEl.textContent = 'Registre comentário, atualização ou evidência';
+  const btnEl = document.getElementById('btn-ot-confirmar-pub');
+  if (btnEl) btnEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><polyline points="20 6 9 17 4 12"/></svg> Confirmar Publicação`;
   otOpenModal('modal-ot-pub');
+}
+
+function otOpenEditPub(pubId) {
+  const p = otState.publicacoes.find(x => x.id === pubId);
+  if (!p) return;
+  _otPubReturnTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'publicacoes';
+  _otEditPubId = pubId;
+  _otPubAnexos = (p.anexos || []).slice();
+
+  const tipoSel = document.getElementById('ot-pub-tipo');
+  if (tipoSel) { tipoSel.value = p.tipo; }
+  const texto = document.getElementById('ot-pub-texto');
+  if (texto) texto.value = p.texto || '';
+  _otUpdatePubCharCount();
+  _otRenderPubAnexos();
+  _otRenderPubSubtarefaSelect();
+  // pré-selecionar subtarefa
+  const subSel = document.getElementById('ot-pub-subtarefa-sel');
+  if (subSel && p.subtarefaId) subSel.value = p.subtarefaId;
+  otPubTipoChange();
+  if (typeof resetUploadZone === 'function') resetUploadZone('ot-pub');
+  const titleEl = document.getElementById('ot-pub-modal-title');
+  if (titleEl) titleEl.textContent = 'Editar Publicação';
+  const subEl = document.getElementById('ot-pub-modal-subtitle');
+  if (subEl) subEl.textContent = 'Atualize o conteúdo desta publicação';
+  const btnEl = document.getElementById('btn-ot-confirmar-pub');
+  if (btnEl) btnEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><polyline points="20 6 9 17 4 12"/></svg> Salvar Alterações`;
+  otCloseModal('modal-ot-pub-view');
+  otOpenModal('modal-ot-pub');
+}
+
+function _otUpdatePubCharCount() {
+  const texto = document.getElementById('ot-pub-texto');
+  const counter = document.getElementById('ot-pub-char-count');
+  if (!texto || !counter) return;
+  const max = 1000;
+  const len = texto.value.length;
+  counter.textContent = `${len}/${max}`;
+  counter.style.color = len > max * 0.9 ? 'var(--red)' : 'var(--text-muted)';
+  if (len > max) texto.value = texto.value.slice(0, max);
+}
+
+function otPubTipoChange() {
+  const tipo = document.getElementById('ot-pub-tipo')?.value;
+  const subRow = document.getElementById('ot-pub-subtarefa-row');
+  if (subRow) subRow.style.display = tipo === 'evidencia' ? '' : 'none';
+}
+
+function _otRenderPubSubtarefaSelect() {
+  const sel = document.getElementById('ot-pub-subtarefa-sel');
+  if (!sel) return;
+  const o = _otViewId ? otState.ordens.find(x => x.id === _otViewId) : null;
+  const subs = (o?.subtarefas || []).filter(s => s.exigeEvidencia);
+  sel.innerHTML = `<option value="">— Nenhuma (publicação geral) —</option>` +
+    subs.map(s => `<option value="${s.id}">${_escHtml(s.descricao)}</option>`).join('');
 }
 
 function otAddPubAnexo(anexo) {
@@ -1218,13 +1841,40 @@ function otConfirmPub() {
     showToast('Envie o arquivo selecionado antes de confirmar.', 'error'); return;
   }
   const texto = document.getElementById('ot-pub-texto')?.value.trim();
-  const tipo  = document.getElementById('ot-pub-tipo')?.value || 'atualizacao';
+  const tipo  = document.getElementById('ot-pub-tipo')?.value || 'comentario';
   if (!texto && _otPubAnexos.length === 0) {
     showToast('Informe uma descrição ou adicione um anexo.', 'error'); return;
   }
+  const subtarefaId = tipo === 'evidencia'
+    ? (document.getElementById('ot-pub-subtarefa-sel')?.value || null)
+    : null;
+
+  // Modo edição: atualiza publicação existente
+  if (_otEditPubId) {
+    const idx = otState.publicacoes.findIndex(x => x.id === _otEditPubId);
+    if (idx !== -1) {
+      otState.publicacoes[idx] = {
+        ...otState.publicacoes[idx],
+        tipo, texto, subtarefaId: subtarefaId || null,
+        anexos: _otPubAnexos.slice(),
+        editadoEm: new Date().toISOString(),
+      };
+      otSave();
+      otCloseModal('modal-ot-pub');
+      if (typeof resetUploadZone === 'function') resetUploadZone('ot-pub');
+      _otPubAnexos = [];
+      _otEditPubId = null;
+      const o = otState.ordens.find(x => x.id === _otViewId);
+      if (o) { _otRenderView(o); otSwitchViewTab(_otPubReturnTab); }
+      showToast('Publicação atualizada.', 'success');
+    }
+    return;
+  }
+
   const sess = typeof currentSession !== 'undefined' ? currentSession : null;
   const pub = {
     id: _otUid(), otId: _otViewId, tipo, texto,
+    subtarefaId: subtarefaId || null,
     autorId: sess?.userId || null, autorNome: sess?.nomeCompleto || sess?.username || null,
     data: new Date().toISOString(), anexos: _otPubAnexos.slice(),
     statusAntes: null, statusDepois: null,
@@ -1234,14 +1884,81 @@ function otConfirmPub() {
   otCloseModal('modal-ot-pub');
   if (typeof resetUploadZone === 'function') resetUploadZone('ot-pub');
   _otPubAnexos = [];
-  // preserve current active tab in view when adding publication
-  const currentTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'publicacoes';
   const o = otState.ordens.find(x => x.id === _otViewId);
   if (o) {
     _otRenderView(o);
-    otSwitchViewTab(currentTab);
+    otSwitchViewTab(_otPubReturnTab);
+    otSwitchPubTab('publicacoes');
   }
   showToast('Publicação registrada.', 'success');
+}
+
+// ── EXCLUIR PUBLICAÇÃO ────────────────────────────────────────
+let _otDeletePubId = null;
+function otOpenDeletePub(pubId) {
+  _otDeletePubId = pubId;
+  otOpenModal('modal-ot-delete-pub');
+}
+function otConfirmDeletePub() {
+  if (!_otDeletePubId) return;
+  otState.publicacoes = otState.publicacoes.filter(p => p.id !== _otDeletePubId);
+  otSave();
+  otCloseModal('modal-ot-delete-pub');
+  otCloseModal('modal-ot-pub-view');
+  const currentTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'publicacoes';
+  const o = otState.ordens.find(x => x.id === _otViewId);
+  if (o) { _otRenderView(o); otSwitchViewTab(currentTab); }
+  showToast('Publicação excluída.', 'success');
+  _otDeletePubId = null;
+}
+
+// ── VER PUBLICAÇÃO ────────────────────────────────────────────
+let _otViewPubId  = null;
+let _otEditPubId  = null; // null = nova publicação, string = editando
+let _otPubReturnTab = 'publicacoes'; // aba ativa ao abrir modal de publicação
+function otOpenPubView(pubId) {
+  _otViewPubId = pubId;
+  const p = otState.publicacoes.find(x => x.id === pubId);
+  if (!p) return;
+  const cfg = OT_PUB_CFG[p.tipo] || OT_PUB_CFG.atualizacao;
+  const anexos = p.anexos || [];
+  const o = _otViewId ? otState.ordens.find(x => x.id === _otViewId) : null;
+  const sub = p.subtarefaId ? o?.subtarefas?.find(s => s.id === p.subtarefaId) : null;
+
+  const iconMap = {
+    pdf:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:32px;height:32px;color:#e63946;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>`,
+    img:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:32px;height:32px;color:#00a8cc;"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`,
+    other: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:32px;height:32px;color:#718096;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+  };
+  const getIcon = (a) => {
+    const ext = (a.titulo || '').split('.').pop().toLowerCase();
+    if (ext === 'pdf') return iconMap.pdf;
+    if (['jpg','jpeg','png','gif','webp','svg'].includes(ext)) return iconMap.img;
+    return iconMap.other;
+  };
+
+  const el = document.getElementById('ot-pub-view-body');
+  if (el) el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;">
+      <span class="ot-pub-tipo-badge" style="background:${cfg.bg};color:${cfg.color};font-size:12px;padding:3px 10px;">${cfg.label}</span>
+      <span style="font-size:12px;color:var(--text-muted);">${_escHtml(p.autorNome || '—')} · ${_fmtDateTime(p.data)}</span>
+    </div>
+    ${sub ? `<div style="font-size:12px;color:var(--amber);margin-bottom:10px;display:flex;align-items:center;gap:5px;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><polyline points="9 11 12 14 22 4"/></svg>
+      Subtarefa: ${_escHtml(sub.descricao)}
+    </div>` : ''}
+    ${p.texto ? `<textarea readonly style="width:100%;box-sizing:border-box;font-size:14px;color:var(--text-primary);line-height:1.6;margin-bottom:14px;background:var(--bg);border:1.5px solid var(--border);border-radius:var(--radius);padding:10px 12px;resize:none;font-family:inherit;min-height:180px;max-height:400px;overflow-y:auto;word-break:break-word;cursor:default;">${_escHtml(p.texto)}</textarea>` : ''}
+    ${anexos.length > 0 ? `
+      <div style="font-size:12px;font-weight:700;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px;">Anexos</div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;">
+        ${anexos.map(a => `
+          <a href="${a.url}" target="_blank" style="display:flex;flex-direction:column;align-items:center;gap:6px;text-decoration:none;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:14px 16px;min-width:80px;transition:box-shadow .15s;cursor:pointer;" onmouseover="this.style.boxShadow='0 4px 12px rgba(0,0,0,.1)'" onmouseout="this.style.boxShadow=''">
+            ${getIcon(a)}
+            <span style="font-size:11px;color:var(--text-secondary);font-weight:600;text-align:center;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_escHtml(a.titulo)}</span>
+          </a>`).join('')}
+      </div>` : ''}
+  `;
+  otOpenModal('modal-ot-pub-view');
 }
 
 // ── CARD MENU (ações rápidas) ─────────────────────────────────
@@ -1455,7 +2172,7 @@ function _otModalsHTML() {
             </div>
             <div class="form-field">
               <label class="field-label">Alerta (Dias)</label>
-              <input type="number" id="ot-f-prazo-alerta" class="field-input" min="0" max="365" placeholder="2">
+              <input type="number" id="ot-f-prazo-alerta" class="field-input" min="0" max="365" placeholder="Dias para alerta de prazo">
             </div>
           </div>
         </div>
@@ -1550,10 +2267,6 @@ function _otModalsHTML() {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/></svg>
             Subtarefas
           </div>
-          <button class="btn btn-outline" onclick="otLoadSubTemplate()" style="font-size:12px;padding:6px 12px;">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-            Usar Template
-          </button>
         </div>
         <div id="ot-sub-list" class="ot-sub-list"></div>
         <div class="ot-sub-add-row" style="margin-top:12px;">
@@ -1604,7 +2317,11 @@ function _otModalsHTML() {
       </div>
     </div>
     <div class="modal-body" id="ot-view-body"></div>
-    <div class="modal-footer">
+    <div class="modal-footer" style="justify-content:space-between;">
+      <button class="btn btn-outline" style="color:var(--red);border-color:rgba(230,57,70,0.3);" onclick="otOpenDeleteConfirm(_otViewId)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+        Excluir OT
+      </button>
       <button class="btn btn-outline" onclick="otCloseModal('modal-ot-view')">Fechar</button>
     </div>
   </div>
@@ -1618,8 +2335,8 @@ function _otModalsHTML() {
         <div class="modal-header-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
         </div>
-        <div><div class="modal-title">Nova Publicação / Evidência</div>
-          <div class="modal-subtitle">Registre atualização ou evidência fotográfica</div></div>
+        <div><div class="modal-title" id="ot-pub-modal-title">Nova Publicação</div>
+          <div class="modal-subtitle" id="ot-pub-modal-subtitle">Registre comentário, atualização ou evidência</div></div>
       </div>
       <button class="modal-close" onclick="otCloseModal('modal-ot-pub')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -1628,16 +2345,24 @@ function _otModalsHTML() {
     <div class="modal-body">
       <div class="form-field">
         <label class="field-label">Tipo de Publicação</label>
-        <select id="ot-pub-tipo" class="field-select">
+        <select id="ot-pub-tipo" class="field-select" onchange="otPubTipoChange()">
+          <option value="comentario">Comentário</option>
           <option value="evidencia">Evidência</option>
           <option value="atualizacao">Atualização</option>
           <option value="conclusao">Conclusão</option>
           <option value="transferencia">Transferência</option>
         </select>
       </div>
+      <div class="form-field" id="ot-pub-subtarefa-row" style="display:none;">
+        <label class="field-label">Subtarefa Vinculada</label>
+        <select id="ot-pub-subtarefa-sel" class="field-select"></select>
+      </div>
       <div class="form-field">
-        <label class="field-label">Descrição</label>
-        <textarea id="ot-pub-texto" class="field-textarea" placeholder="Descreva o que foi realizado, observações..." style="min-height:90px;"></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <label class="field-label" style="margin-bottom:0;">Descrição</label>
+          <span id="ot-pub-char-count" style="font-size:11px;color:var(--text-muted);">0/1000</span>
+        </div>
+        <textarea id="ot-pub-texto" class="field-textarea" placeholder="Descreva o que foi realizado, observações..." style="min-height:90px;" oninput="_otUpdatePubCharCount()"></textarea>
       </div>
       <div class="form-section-title" style="margin-bottom:10px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
@@ -1812,6 +2537,128 @@ function _otModalsHTML() {
           oninput="otAtivoSearchInput(this.value)">
       </div>
       <div id="ot-ativo-search-list" class="ativo-search-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL FILTRO ATIVO ══ -->
+<div class="modal-overlay" id="modal-ot-filter-ativo" style="z-index:750;">
+  <div class="modal sm">
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-header-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </div>
+        <div><div class="modal-title">Filtrar por Ativo</div></div>
+      </div>
+      <button class="modal-close" onclick="otCloseModal('modal-ot-filter-ativo')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <div class="ativo-search-input-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="text" class="field-input" id="ot-filter-ativo-search-input" placeholder="Buscar por nome, código ou setor..."
+          oninput="otFilterAtivoSearchInput(this.value)">
+      </div>
+      <div id="ot-filter-ativo-search-list" class="ativo-search-list"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL EXCLUIR OT ══ -->
+<div class="modal-overlay modal-ot-sm" id="modal-ot-delete" style="z-index:740;">
+  <div class="modal sm">
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-header-icon" style="background:rgba(230,57,70,0.15);border-color:rgba(230,57,70,0.3);color:var(--red);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+        </div>
+        <div><div class="modal-title" style="color:var(--red);">Excluir OT</div>
+          <div class="modal-subtitle">Esta ação é irreversível</div></div>
+      </div>
+      <button class="modal-close" onclick="otCloseModal('modal-ot-delete')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="background:rgba(230,57,70,0.04);border-radius:0 0 var(--radius-lg) var(--radius-lg);">
+      <div style="display:flex;align-items:center;gap:8px;background:rgba(230,57,70,0.08);border:1px solid rgba(230,57,70,0.2);border-radius:var(--radius);padding:10px 12px;margin-bottom:14px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;flex-shrink:0;color:var(--red);"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span style="font-size:13px;color:var(--red);font-weight:600;">Todos os dados e publicações desta OT serão excluídos permanentemente.</span>
+      </div>
+      <div class="form-field">
+        <label class="field-label">Para confirmar, digite o título da OT:</label>
+        <div style="font-size:13px;color:var(--text-muted);margin-bottom:6px;font-style:italic;" id="ot-delete-title-display"></div>
+        <input type="text" id="ot-delete-confirm-input" class="field-input" placeholder="Digite o título exato..." style="border-color:rgba(230,57,70,0.4);">
+      </div>
+    </div>
+    <div class="modal-footer" style="border-top:1px solid rgba(230,57,70,0.15);">
+      <button class="btn btn-outline" onclick="otCloseModal('modal-ot-delete')">Cancelar</button>
+      <button class="btn btn-primary" onclick="otConfirmDelete()" style="background:var(--red);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+        Excluir OT
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL VER PUBLICAÇÃO ══ -->
+<div class="modal-overlay" id="modal-ot-pub-view" style="z-index:730;">
+  <div class="modal md">
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-header-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <div><div class="modal-title">Publicação</div></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <button class="modal-close" onclick="otCloseModal('modal-ot-pub-view')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="modal-body" id="ot-pub-view-body"></div>
+    <div class="modal-footer" style="justify-content:space-between;">
+      <button class="btn btn-outline" style="color:var(--red);border-color:rgba(230,57,70,0.3);" onclick="otOpenDeletePub(_otViewPubId)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+        Excluir
+      </button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-outline" style="color:var(--cyan);border-color:rgba(0,168,204,0.3);" onclick="otOpenEditPub(_otViewPubId)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Editar
+        </button>
+        <button class="btn btn-outline" onclick="otCloseModal('modal-ot-pub-view')">Fechar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL EXCLUIR PUBLICAÇÃO ══ -->
+<div class="modal-overlay" id="modal-ot-delete-pub" style="z-index:750;">
+  <div class="modal sm">
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-header-icon" style="background:rgba(230,57,70,0.15);border-color:rgba(230,57,70,0.3);color:var(--red);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+        </div>
+        <div><div class="modal-title">Excluir Publicação</div>
+          <div class="modal-subtitle">Esta ação é irreversível</div></div>
+      </div>
+      <button class="modal-close" onclick="otCloseModal('modal-ot-delete-pub')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13.5px;color:var(--text-secondary);line-height:1.6;">Deseja excluir esta publicação permanentemente?</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="otCloseModal('modal-ot-delete-pub')">Cancelar</button>
+      <button class="btn btn-primary" onclick="otConfirmDeletePub()" style="background:var(--red);">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
+        Excluir
+      </button>
     </div>
   </div>
 </div>

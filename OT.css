@@ -198,6 +198,7 @@
   font-size: 13.5px; font-weight: 600; color: var(--text-primary);
   margin-bottom: 8px; line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  line-clamp: 2;
   overflow: hidden;
 }
 .ot-card-badges {
@@ -437,7 +438,7 @@
 }
 .ot-pub-autor { font-size: 12px; color: var(--text-muted); }
 .ot-pub-data  { font-size: 11px; color: var(--text-muted); margin-left: auto; flex-shrink: 0; }
-.ot-pub-texto { font-size: 13px; color: var(--text-primary); line-height: 1.5; }
+.ot-pub-texto { font-size: 13px; color: var(--text-primary); line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; word-break: break-word; }
 .ot-pub-anexos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .ot-pub-anexo-chip {
   display: inline-flex; align-items: center; gap: 5px;
@@ -568,6 +569,294 @@
 .ot-fab:active {
   transform: scale(0.95);
 }
+
+/* Barra lateral de prazo (sobrescreve severidade quando há alerta) */
+.ot-card-side-overdue::before  { background: var(--red) !important; }
+.ot-card-side-warning::before  { background: var(--amber) !important; }
+.ot-card-side-overdue { border-color: rgba(230,57,70,0.25); }
+.ot-card-side-warning { border-color: rgba(244,162,97,0.25); }
+
+/* Checkbox bloqueado por falta de evidência */
+.ot-sub-check.blocked {
+  border-color: var(--amber); background: rgba(244,162,97,0.1);
+  cursor: not-allowed;
+}
+
+/* ── Abas de modo de visualização ── */
+.ot-view-tabs {
+  display: flex; align-items: center; gap: 4px;
+  padding: 10px 24px 0;
+  background: var(--bg-card);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.ot-view-tab-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 9px 16px; font-size: 13px; font-weight: 600;
+  color: var(--text-muted); background: transparent;
+  border: none; border-bottom: 2.5px solid transparent;
+  cursor: pointer; transition: var(--transition);
+  margin-bottom: -1px; font-family: inherit;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+.ot-view-tab-btn svg { width: 14px; height: 14px; }
+.ot-view-tab-btn:hover { color: var(--text-primary); background: var(--bg); }
+.ot-view-tab-btn.active { color: var(--cyan); border-bottom-color: var(--cyan); background: transparent; }
+
+/* Botão inline de nova OT nas abas */
+.ot-fab-inline {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px; font-size: 12.5px; font-weight: 600;
+  background: var(--cyan); color: #fff; border: none;
+  border-radius: var(--radius); cursor: pointer;
+  transition: var(--transition); font-family: inherit;
+  margin-bottom: 4px;
+}
+.ot-fab-inline svg { width: 14px; height: 14px; }
+.ot-fab-inline:hover { background: var(--cyan-hover); }
+
+/* ── Filtro de ativo na toolbar ── */
+.ot-filter-ativo-wrap {
+  display: flex; align-items: center; gap: 5px;
+  padding: 7px 10px; border: none;
+  border-radius: var(--radius); font-size: 12.5px;
+  color: #fff; background: var(--night);
+  cursor: pointer; max-width: 160px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  transition: var(--transition); font-weight: 600;
+}
+.ot-filter-ativo-wrap:hover { background: var(--night-mid); box-shadow: 0 3px 10px rgba(14,22,40,0.25); }
+.ot-filter-ativo-wrap.active { background: var(--night-mid); border: 1.5px solid var(--cyan); color: #fff; }
+.ot-filter-ativo-wrap svg { width: 13px; height: 13px; flex-shrink: 0; }
+.ot-filter-ativo-btn {
+  width: 28px; height: 34px; border: 1.5px solid var(--border);
+  border-radius: var(--radius); background: var(--bg);
+  cursor: pointer; color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  transition: var(--transition); font-size: 14px;
+}
+.ot-filter-ativo-btn:hover { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-light); }
+.ot-filter-ativo-btn svg { width: 13px; height: 13px; }
+
+/* ── Botão Minhas OTs ── */
+.ot-my-ots-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px; font-size: 12.5px; font-weight: 600;
+  color: var(--text-muted); background: var(--bg);
+  border: 1.5px solid var(--border); border-radius: var(--radius);
+  cursor: pointer; transition: var(--transition); font-family: inherit;
+}
+.ot-my-ots-btn svg { width: 14px; height: 14px; }
+.ot-my-ots-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.ot-my-ots-btn.active { background: var(--cyan); color: #fff; border-color: var(--cyan); }
+
+/* ── Filtro de data ── */
+.ot-date-filter-wrap { position: relative; }
+.ot-date-filter-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 12px; font-size: 12.5px; font-weight: 600;
+  color: var(--text-muted); background: var(--bg);
+  border: 1.5px solid var(--border); border-radius: var(--radius);
+  cursor: pointer; transition: var(--transition); font-family: inherit;
+}
+.ot-date-filter-btn svg { width: 14px; height: 14px; }
+.ot-date-filter-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.ot-date-filter-btn.active { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-light); }
+.ot-date-picker-popup {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  background: var(--bg-card); border: 1.5px solid var(--border);
+  border-radius: var(--radius-lg); box-shadow: 0 8px 24px rgba(11,22,30,0.12);
+  z-index: 1000; min-width: 280px; padding: 14px;
+}
+.ot-date-picker-tabs {
+  display: flex; gap: 4px; margin-bottom: 12px;
+  background: var(--bg); border-radius: var(--radius);
+  padding: 3px;
+}
+.ot-dp-tab {
+  flex: 1; padding: 5px 8px; font-size: 12px; font-weight: 600;
+  border: none; border-radius: calc(var(--radius) - 2px);
+  cursor: pointer; color: var(--text-muted); background: transparent;
+  transition: var(--transition); font-family: inherit;
+}
+.ot-dp-tab.active { background: var(--bg-card); color: var(--cyan); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.ot-dp-panel { margin-bottom: 8px; }
+.ot-dp-row { display: flex; gap: 8px; }
+.ot-dp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+/* ── Status dropdown melhorado ── */
+.ot-status-dropdown-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; font-size: 12.5px; font-weight: 700;
+  border-radius: var(--radius); border: 1.5px solid; cursor: pointer;
+  transition: var(--transition); font-family: inherit;
+}
+.ot-status-btn-pendente    { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.35); color: #e2e8f0; }
+.ot-status-btn-em_processo { background: rgba(0,168,204,0.25);   border-color: rgba(0,168,204,0.6);    color: #7ee8ff; }
+.ot-status-btn-em_revisao  { background: rgba(244,162,97,0.25);  border-color: rgba(244,162,97,0.6);   color: #fdd5a0; }
+.ot-status-btn-concluida   { background: rgba(42,157,143,0.25);  border-color: rgba(42,157,143,0.6);   color: #7edad0; }
+.ot-status-btn-cancelada   { background: rgba(230,57,70,0.25);   border-color: rgba(230,57,70,0.6);    color: #ffb3ba; }
+.ot-status-dropdown-btn:hover { filter: brightness(0.9); box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+
+.ot-status-menu-dropdown {
+  display: none; position: fixed;
+  background: var(--bg-card); border: 1.5px solid var(--border);
+  box-shadow: 0 8px 24px rgba(11,22,30,0.12); z-index: 20002;
+  border-radius: var(--radius-lg); padding: 6px;
+  min-width: 180px;
+}
+.ot-status-menu-dropdown.open { display: block; animation: ot-fade-in 0.15s ease; }
+.ot-status-menu-header {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .6px; color: var(--text-muted);
+  padding: 4px 8px 8px;
+}
+.ot-status-menu-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 10px; cursor: pointer; border-radius: var(--radius);
+  font-size: 13px; font-weight: 600; transition: var(--transition);
+}
+.ot-status-menu-item:hover { background: var(--bg); }
+.ot-status-item-pendente    { color: #718096; }
+.ot-status-item-em_processo { color: var(--cyan); }
+.ot-status-item-em_revisao  { color: #b45309; }
+.ot-status-item-concluida   { color: var(--green); }
+.ot-status-item-cancelada   { color: var(--red); }
+
+/* ── Publicações sub-abas ── */
+.ot-pub-subtabs {
+  display: flex; gap: 4px; flex-wrap: wrap;
+  margin-bottom: 14px; padding: 4px;
+  background: var(--bg); border-radius: var(--radius-lg);
+}
+.ot-pub-subtab-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 6px 11px; font-size: 11.5px; font-weight: 600;
+  border: none; border-radius: var(--radius);
+  cursor: pointer; color: var(--text-muted);
+  background: transparent; transition: var(--transition);
+  font-family: inherit; white-space: nowrap;
+}
+.ot-pub-subtab-btn svg { width: 12px; height: 12px; }
+.ot-pub-subtab-btn:hover { background: var(--bg-card); color: var(--text-primary); }
+.ot-pub-subtab-btn.active { background: var(--bg-card); color: var(--cyan); box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+.ot-pub-subtab-count {
+  background: var(--cyan-light); color: var(--cyan);
+  font-size: 10px; font-weight: 700; padding: 1px 5px;
+  border-radius: 10px; border: 1px solid rgba(0,168,204,0.2);
+}
+.ot-pub-subtab-panel { display: none; }
+.ot-pub-subtab-panel.active { display: block; }
+
+/* Publicação clicável */
+.ot-pub-entry-clickable { cursor: pointer; border-radius: var(--radius); transition: var(--transition); }
+.ot-pub-entry-clickable:hover { background: var(--bg); }
+
+/* ── Calendário OT ── */
+.ot-cal-wrapper {
+  flex: 1; display: flex; flex-direction: column;
+  padding: 16px 24px; overflow: auto;
+}
+.ot-cal-header {
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 14px; position: relative;
+}
+.ot-cal-nav-group { display: flex; align-items: center; gap: 4px; }
+.ot-cal-title {
+  font-size: 16px; font-weight: 700; color: var(--text-primary);
+  display: flex; align-items: center; padding: 4px 10px;
+  border-radius: var(--radius); cursor: pointer; border: none;
+  background: transparent; font-family: inherit; transition: var(--transition);
+}
+.ot-cal-title:hover { background: var(--bg); color: var(--cyan); }
+.ot-cal-picker {
+  position: absolute; top: calc(100% + 6px); left: 50%; transform: translateX(-50%);
+  background: var(--bg-card); border: 1.5px solid var(--border);
+  border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+  padding: 12px; z-index: 200; min-width: 220px;
+}
+.ot-cal-picker-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.ot-cal-picker-year { font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.ot-cal-picker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.ot-cal-picker-month {
+  padding: 7px 4px; border-radius: var(--radius); border: 1.5px solid transparent;
+  background: transparent; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  color: var(--text-secondary); font-family: inherit; transition: var(--transition);
+}
+.ot-cal-picker-month:hover { background: var(--bg); border-color: var(--border); color: var(--text-primary); }
+.ot-cal-picker-month.active { background: var(--cyan-light); border-color: var(--cyan); color: var(--cyan); }
+.ot-cal-nav-btn {
+  width: 32px; height: 32px; border-radius: var(--radius);
+  border: 1.5px solid var(--border); background: var(--bg);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  color: var(--text-muted); transition: var(--transition);
+}
+.ot-cal-nav-btn svg { width: 16px; height: 16px; }
+.ot-cal-nav-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.ot-cal-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 4px; flex: 1;
+}
+.ot-cal-dow {
+  text-align: center; font-size: 11px; font-weight: 700;
+  color: var(--text-muted); text-transform: uppercase;
+  padding: 6px 0; letter-spacing: .4px;
+}
+.ot-cal-cell {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 6px 7px;
+  min-height: 80px; position: relative;
+  transition: var(--transition);
+}
+.ot-cal-cell:hover { border-color: var(--cyan); }
+.ot-cal-blank { background: transparent; border-color: transparent; }
+.ot-cal-today { border-color: var(--cyan); background: rgba(0,168,204,0.04); }
+.ot-cal-day-num {
+  font-size: 12px; font-weight: 700; color: var(--text-muted);
+  display: block; margin-bottom: 4px;
+}
+.ot-cal-today .ot-cal-day-num {
+  color: var(--cyan); background: var(--cyan); color: #fff;
+  border-radius: 50%; width: 20px; height: 20px;
+  display: flex; align-items: center; justify-content: center; font-size: 11px;
+}
+.ot-cal-ots { display: flex; flex-direction: column; gap: 2px; }
+.ot-cal-ot-pill {
+  font-size: 10.5px; font-weight: 600; padding: 2px 5px;
+  border-radius: 4px; cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+  background: rgba(0,168,204,0.1); color: var(--cyan);
+  border: 1px solid rgba(0,168,204,0.2);
+  transition: var(--transition); display: flex; align-items: center; gap: 4px;
+}
+.ot-cal-ot-pill:hover { filter: brightness(0.9); }
+.ot-cal-pill-overdue { background: rgba(230,57,70,0.1); color: var(--red); border-color: rgba(230,57,70,0.2); }
+.ot-cal-pill-warning { background: rgba(244,162,97,0.12); color: #b45309; border-color: rgba(244,162,97,0.25); }
+.ot-cal-pill-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.ot-cal-dot-corretiva   { background: var(--red); }
+.ot-cal-dot-implantacao { background: var(--green); }
+.ot-cal-dot-melhoria    { background: #b45309; }
+.ot-cal-dot-alteracao   { background: #7c3aed; }
+.ot-cal-more { font-size: 10px; color: var(--text-muted); font-weight: 600; padding: 1px 4px; }
+
+/* ── Lista OT ── */
+.ot-list-wrapper { flex: 1; overflow: auto; padding: 16px 24px; }
+.ot-list-table {
+  width: 100%; border-collapse: collapse; font-size: 13px;
+}
+.ot-list-th {
+  padding: 10px 12px; text-align: left; font-size: 11.5px;
+  font-weight: 700; color: var(--text-muted); text-transform: uppercase;
+  letter-spacing: .4px; border-bottom: 2px solid var(--border);
+  cursor: pointer; user-select: none; white-space: nowrap;
+  background: var(--bg-card); position: sticky; top: 0; z-index: 1;
+  transition: var(--transition);
+}
+.ot-list-th:hover { color: var(--cyan); }
+.ot-list-th.sorted { color: var(--cyan); }
+.ot-list-row { border-bottom: 1px solid var(--border); cursor: pointer; transition: var(--transition); }
+.ot-list-row:hover { background: var(--bg); }
+.ot-list-row td { padding: 11px 12px; vertical-align: middle; }
 
 /* Animações */
 @keyframes ot-fade-in {

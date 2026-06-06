@@ -1668,9 +1668,25 @@
               <div class="toggle-sub">Solicita empresa e técnico responsável ao publicar</div>
             </div>
             <label class="toggle-switch" style="flex-shrink:0;margin-left:14px;">
-              <input type="checkbox" id="tarefa-terceiro">
+              <input type="checkbox" id="tarefa-terceiro" onchange="onTarefaTerceiroChange()">
               <span class="toggle-slider"></span>
             </label>
+          </div>
+        </div>
+        <div id="tarefa-terceiro-section" style="display:none;margin-bottom:12px;">
+          <div class="form-row">
+            <div class="form-field" style="margin-bottom:0;">
+              <label class="field-label">Empresa Padrão</label>
+              <select id="tarefa-empresa-padrao" class="field-select" onchange="empPopulateTecnicoSelect('tarefa-resp-padrao','tarefa-empresa-padrao')">
+                <option value="">— Selecione a empresa —</option>
+              </select>
+            </div>
+            <div class="form-field" style="margin-bottom:0;">
+              <label class="field-label">Responsável Padrão</label>
+              <select id="tarefa-resp-padrao" class="field-select">
+                <option value="">— Selecione o responsável —</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -1967,14 +1983,14 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
           Editar
         </button>
-        <button class="modal-close" onclick="closeModal('modal-pub-view')">
+        <button class="modal-close" onclick="closePubView()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>
     </div>
     <div class="modal-body" id="pub-view-body"></div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('modal-pub-view')">Fechar</button>
+      <button class="btn btn-outline" onclick="closePubView()">Fechar</button>
     </div>
   </div>
 </div>

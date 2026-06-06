@@ -510,6 +510,11 @@
       updateTarefaStatusToggleLabel();
       document.getElementById('tarefa-terceiro').checked = !!editing.realizadoPorTerceiro;
       document.getElementById('tarefa-anexo-obrigatorio').checked = !!editing.anexoObrigatorio;
+      const _terceiroSec = document.getElementById('tarefa-terceiro-section');
+      if (_terceiroSec) _terceiroSec.style.display = editing.realizadoPorTerceiro ? '' : 'none';
+      if (editing.realizadoPorTerceiro && typeof empPopulateBothSelects === 'function') {
+        empPopulateBothSelects('tarefa-empresa-padrao', 'tarefa-resp-padrao', editing.empresaPadrao || '', editing.respPadrao || '');
+      }
       setProximaDataDisplay(editing.proximaData || '');
       document.getElementById('tarefa-proxima-data').value = editing.proximaData || '';
       _diasSemanaSelected = [...(editing.diasSemana || [])];
@@ -546,6 +551,8 @@
     if (!editing) {
       document.getElementById('tarefa-terceiro').checked = false;
       document.getElementById('tarefa-anexo-obrigatorio').checked = false;
+      const _sec = document.getElementById('tarefa-terceiro-section');
+      if (_sec) _sec.style.display = 'none';
     }
     if (editing?.responsaveis) {
       _tarefaResponsaveis = { usuarios: [...(editing.responsaveis.usuarios || [])], grupos: [...(editing.responsaveis.grupos || [])] };
@@ -558,6 +565,15 @@
     document.getElementById('right-drawer-tarefa').classList.add('open');
     document.getElementById('drawer-backdrop').classList.add('open');
   }
+
+  window.onTarefaTerceiroChange = function () {
+    const checked = document.getElementById('tarefa-terceiro').checked;
+    const sec = document.getElementById('tarefa-terceiro-section');
+    if (sec) sec.style.display = checked ? '' : 'none';
+    if (checked && typeof empPopulateBothSelects === 'function') {
+      empPopulateBothSelects('tarefa-empresa-padrao', 'tarefa-resp-padrao', '', '');
+    }
+  };
 
   function updateTarefaStatusToggleLabel() {
     const toggle = document.getElementById('tarefa-status');
@@ -1066,6 +1082,8 @@
     const vezes      = (!isSempre && repetir === 'Por') ? parseInt(document.getElementById('tarefa-vezes').value) : null;
     const diasSemana = isDiaSemana ? [..._diasSemanaSelected] : [];
     const realizadoPorTerceiro = document.getElementById('tarefa-terceiro').checked;
+    const empresaPadrao = realizadoPorTerceiro ? (document.getElementById('tarefa-empresa-padrao')?.value.trim() || '') : '';
+    const respPadrao    = realizadoPorTerceiro ? (document.getElementById('tarefa-resp-padrao')?.value.trim()    || '') : '';
     const anexoObrigatorio = document.getElementById('tarefa-anexo-obrigatorio').checked;
 
     if (!titulo)            { showToast('Informe o título da tarefa.', 'error'); return; }
@@ -1092,7 +1110,7 @@
       lembrete: isSempre ? null : lembrete,
       status, observacoes: obs,
       checklistTarefa: checklistTarefaTemp.slice(),
-      anexoObrigatorio, realizadoPorTerceiro,
+      anexoObrigatorio, realizadoPorTerceiro, empresaPadrao, respPadrao,
       responsaveis: { usuarios: [..._tarefaResponsaveis.usuarios], grupos: [..._tarefaResponsaveis.grupos] },
       autoInativada: existente?.autoInativada || false,
       _historico: existente?._historico || []
@@ -1491,10 +1509,10 @@
       String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     document.getElementById('pub-notas').value = '';
     if (typeof empPopulateBothSelects === 'function') {
-      empPopulateBothSelects('pub-empresa-responsavel', 'pub-tecnico-responsavel', '', '');
+      empPopulateBothSelects('pub-empresa-responsavel', 'pub-tecnico-responsavel', t.empresaPadrao || '', t.respPadrao || '');
     } else {
-      document.getElementById('pub-empresa-responsavel').value = '';
-      document.getElementById('pub-tecnico-responsavel').value = '';
+      document.getElementById('pub-empresa-responsavel').value = t.empresaPadrao || '';
+      document.getElementById('pub-tecnico-responsavel').value = t.respPadrao || '';
     }
     const terceiroSection = document.getElementById('pub-terceiro-section');
     if (terceiroSection) terceiroSection.style.display = t.realizadoPorTerceiro ? '' : 'none';
@@ -2005,6 +2023,24 @@
   }
 
   let _pubViewId = null;
+  let _pubViewFromAgenda = false;
+
+  window.closePubView = function () {
+    closeModal('modal-pub-view');
+    const overlay = document.getElementById('modal-pub-view');
+    if (overlay) overlay.style.zIndex = '';
+    if (_pubViewFromAgenda) {
+      _pubViewFromAgenda = false;
+      openModal('modal-agenda-dia');
+    }
+  };
+
+  window.viewPublicacaoFromAgenda = function (pubId) {
+    _pubViewFromAgenda = true;
+    const overlay = document.getElementById('modal-pub-view');
+    if (overlay) overlay.style.zIndex = '600';
+    window.viewPublicacao(pubId);
+  };
 
   function editarPubView() {
     if (!_pubViewId) return;
@@ -2012,7 +2048,7 @@
     abrirEditarPublicacao(_pubViewId);
   }
 
-  function viewPublicacao(pubId) {
+  window.viewPublicacao = function viewPublicacao(pubId) {
     _pubViewId = pubId;
     const p = state.publicacoes.find(p => p.id === pubId);
     if (!p) return;
@@ -2107,14 +2143,25 @@
         </div>
       </div>
 
-      ${(p.empresaResponsavel || p.tecnicoResponsavel) ? `
-        <div style="margin-top:14px;background:var(--bg);border:1.2px solid var(--border);border-radius:8px;padding:12px;">
+      ${(p.empresaResponsavel || p.tecnicoResponsavel) ? (() => {
+        const empObj = typeof empState !== 'undefined' ? empState.empresas.find(e => e.nome === p.empresaResponsavel) : null;
+        const respObj = empObj?.responsaveis?.find(r => r.nome === p.tecnicoResponsavel);
+        const waIcon = (num) => num ? `<a href="https://wa.me/${num.replace(/\D/g,'')}" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:#25d366;color:#fff;text-decoration:none;margin-left:4px;" onclick="event.stopPropagation()"><svg viewBox="0 0 24 24" fill="currentColor" style="width:10px;height:10px;"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.124.557 4.12 1.528 5.852L0 24l6.335-1.507A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.79 9.79 0 01-5.012-1.376l-.36-.213-3.757.893.946-3.656-.235-.376A9.79 9.79 0 012.182 12C2.182 6.565 6.565 2.182 12 2.182S21.818 6.565 21.818 12 17.435 21.818 12 21.818z"/></svg></a>` : '';
+        return `<div style="margin-top:14px;background:var(--bg);border:1.2px solid var(--border);border-radius:8px;padding:12px;">
           <div class="form-section-title" style="margin-bottom:8px;">Terceiro Responsável</div>
           <div style="display:flex;gap:18px;flex-wrap:wrap;">
-            ${p.empresaResponsavel ? `<div><div class="detail-label">Empresa Responsável</div><div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">${p.empresaResponsavel}</div></div>` : ''}
-            ${p.tecnicoResponsavel ? `<div><div class="detail-label">Técnico Responsável</div><div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">${p.tecnicoResponsavel}</div></div>` : ''}
+            ${p.empresaResponsavel ? `<div><div class="detail-label">Empresa Responsável</div>
+              <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;">${p.empresaResponsavel}</div>
+              ${empObj?.email ? `<div style="font-size:11px;color:var(--text-muted);">${empObj.email}</div>` : ''}
+              ${(empObj?.contatos||[]).filter(c=>c.tipo==='WhatsApp').map(c=>`<div style="font-size:11px;color:var(--cyan);display:flex;align-items:center;">${c.valor}${waIcon(c.valor)}</div>`).join('')}
+            </div>` : ''}
+            ${p.tecnicoResponsavel ? `<div><div class="detail-label">Técnico Responsável</div>
+              <div style="font-size:13px;color:var(--text-secondary);margin-top:2px;display:flex;align-items:center;gap:4px;">${p.tecnicoResponsavel}${respObj?.contato ? waIcon(respObj.contato) : ''}</div>
+              ${respObj?.contato ? `<div style="font-size:11px;color:var(--cyan);">${respObj.contato}</div>` : ''}
+            </div>` : ''}
           </div>
-        </div>` : ''}
+        </div>`;
+      })() : ''}
 
       ${checkListHtml(rotinaChecklist, 'Checklist Geral Verificado')}
       ${checkListHtml(tarefaChecklist, 'Checklist da Tarefa Verificado')}

@@ -133,9 +133,10 @@ function _empRenderContatos() {
   }
   list.innerHTML = _empContatos.map((c, i) => `
     <div class="emp-list-item">
-      <div class="emp-list-item-body">
-        <span class="emp-list-item-label">${_empEsc(c.tipo || 'Telefone')}</span>
+      <div class="emp-list-item-body" style="flex-direction:row;align-items:center;gap:8px;">
+        <span class="emp-list-item-label" style="min-width:70px;">${_empEsc(c.tipo || 'Telefone')}</span>
         <span class="emp-list-item-val">${_empEsc(c.valor)}</span>
+        ${c.tipo === 'WhatsApp' ? _empWhatsappIcon(c.valor) : ''}
       </div>
       <button class="ot-sub-del-btn" onclick="_empRemoveContato(${i})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -143,10 +144,29 @@ function _empRenderContatos() {
     </div>`).join('');
 }
 
+function _empValidatePhone(v) {
+  return /^[\d\s\+\-\(\)]{7,20}$/.test(v.replace(/\s/g,''));
+}
+function _empValidateEmail(v) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+}
+function _empWhatsappLink(num) {
+  const clean = num.replace(/\D/g,'');
+  return `https://wa.me/${clean.startsWith('55') ? clean : '55' + clean}`;
+}
+function _empWhatsappIcon(num) {
+  return `<a href="${_empWhatsappLink(num)}" target="_blank" title="Abrir WhatsApp" style="display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:#25d366;color:#fff;text-decoration:none;flex-shrink:0;margin-left:4px;" onclick="event.stopPropagation()">
+    <svg viewBox="0 0 24 24" fill="currentColor" style="width:13px;height:13px;"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.124.557 4.12 1.528 5.852L0 24l6.335-1.507A11.94 11.94 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 21.818a9.79 9.79 0 01-5.012-1.376l-.36-.213-3.757.893.946-3.656-.235-.376A9.79 9.79 0 012.182 12C2.182 6.565 6.565 2.182 12 2.182S21.818 6.565 21.818 12 17.435 21.818 12 21.818z"/></svg>
+  </a>`;
+}
+
 function empAddContato() {
   const tipo  = document.getElementById('emp-c-tipo')?.value || 'Telefone';
   const valor = document.getElementById('emp-c-valor')?.value.trim();
   if (!valor) { showToast('Informe o número/contato.', 'error'); return; }
+  if ((tipo === 'Telefone' || tipo === 'Celular' || tipo === 'WhatsApp') && !_empValidatePhone(valor)) {
+    showToast('Número de telefone inválido. Use apenas dígitos, espaços e símbolos + - ( ).', 'error'); return;
+  }
   _empContatos.push({ tipo, valor });
   document.getElementById('emp-c-valor').value = '';
   _empRenderContatos();
@@ -170,7 +190,7 @@ function _empRenderResps() {
       <div class="emp-list-item-body">
         <span class="emp-list-item-val" style="font-weight:600;">${_empEsc(r.nome)}</span>
         ${r.cargo   ? `<span class="emp-list-item-label">${_empEsc(r.cargo)}</span>` : ''}
-        ${r.contato ? `<span class="emp-list-item-label" style="color:var(--cyan);">${_empEsc(r.contato)}</span>` : ''}
+        ${r.contato ? `<span class="emp-list-item-label" style="color:var(--cyan);display:flex;align-items:center;gap:4px;">${_empEsc(r.contato)}${_empWhatsappIcon(r.contato)}</span>` : ''}
         ${r.email   ? `<span class="emp-list-item-label" style="color:var(--text-muted);">${_empEsc(r.email)}</span>` : ''}
       </div>
       <button class="ot-sub-del-btn" onclick="_empRemoveResp(${i})">
@@ -185,6 +205,12 @@ function empAddResp() {
   const contato = document.getElementById('emp-r-contato')?.value.trim();
   const email   = document.getElementById('emp-r-email')?.value.trim();
   if (!nome) { showToast('Informe o nome do responsável.', 'error'); return; }
+  if (contato && !_empValidatePhone(contato)) {
+    showToast('Número de contato inválido.', 'error'); return;
+  }
+  if (email && !_empValidateEmail(email)) {
+    showToast('E-mail inválido.', 'error'); return;
+  }
   _empResps.push({ nome, cargo, contato, email });
   document.getElementById('emp-r-nome').value    = '';
   document.getElementById('emp-r-cargo').value   = '';
@@ -240,6 +266,8 @@ function empSaveForm() {
   }
   const nome = document.getElementById('emp-f-nome')?.value.trim();
   if (!nome) { showToast('Informe o nome da empresa.', 'error'); return; }
+  const email = document.getElementById('emp-f-email')?.value.trim();
+  if (email && !_empValidateEmail(email)) { showToast('E-mail da empresa inválido.', 'error'); return; }
 
   const now = new Date().toISOString();
   const data = {
@@ -282,20 +310,23 @@ function _empRenderView(e) {
   if (!el) return;
 
   const contatosHtml = e.contatos?.length
-    ? e.contatos.map(c => `<div class="emp-list-item" style="pointer-events:none;">
-        <div class="emp-list-item-body">
-          <span class="emp-list-item-label">${_empEsc(c.tipo)}</span>
+    ? e.contatos.map(c => `<div class="emp-list-item">
+        <div class="emp-list-item-body" style="flex-direction:row;align-items:center;gap:8px;">
+          <span class="emp-list-item-label" style="min-width:70px;">${_empEsc(c.tipo)}</span>
           <span class="emp-list-item-val">${_empEsc(c.valor)}</span>
+          ${c.tipo === 'WhatsApp' ? _empWhatsappIcon(c.valor) : ''}
         </div>
       </div>`).join('')
     : `<div class="emp-list-empty">Nenhum contato registrado.</div>`;
 
   const respsHtml = e.responsaveis?.length
-    ? e.responsaveis.map(r => `<div class="emp-list-item" style="pointer-events:none;">
+    ? e.responsaveis.map(r => `<div class="emp-list-item">
         <div class="emp-list-item-body">
-          <span class="emp-list-item-val" style="font-weight:600;">${_empEsc(r.nome)}</span>
+          <div style="display:flex;align-items:center;gap:6px;">
+            <span class="emp-list-item-val" style="font-weight:600;">${_empEsc(r.nome)}</span>
+          </div>
           ${r.cargo   ? `<span class="emp-list-item-label">${_empEsc(r.cargo)}</span>` : ''}
-          ${r.contato ? `<span class="emp-list-item-label" style="color:var(--cyan);">${_empEsc(r.contato)}</span>` : ''}
+          ${r.contato ? `<span class="emp-list-item-label" style="color:var(--cyan);display:flex;align-items:center;gap:4px;">${_empEsc(r.contato)}${_empWhatsappIcon(r.contato)}</span>` : ''}
           ${r.email   ? `<span class="emp-list-item-label" style="color:var(--text-muted);">${_empEsc(r.email)}</span>` : ''}
         </div>
       </div>`).join('')

@@ -524,17 +524,17 @@
           : formatDate(pub.dataRealizada || '');
         const pubPor = pub.publicadoPorNome || pub.publicadoPorId || '—';
         acaoHtml = `<button class="btn btn-outline" style="font-size:11px;padding:4px 10px;"
-          onclick="closeAgendaDiaModal();openTarefaDetalhe('${tarefa.id}')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          onclick="viewPublicacaoFromAgenda('${pub.id}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
           Ver
         </button>`;
-        return `<tr onclick="closeAgendaDiaModal();openTarefaDetalhe('${tarefa.id}')" style="cursor:pointer;">
+        return `<tr onclick="viewPublicacaoFromAgenda('${pub.id}')" style="cursor:pointer;">
           <td><div style="font-weight:600;font-size:12.5px;">${nomeAtivo}</div><div style="font-size:10.5px;color:var(--text-muted);font-family:'DM Mono',monospace;">${codigoAtivo}</div></td>
           <td><div style="font-size:12.5px;">${nomeRotina}</div><div style="font-size:10.5px;color:var(--text-muted);">${tipoRotina}</div></td>
           <td style="font-size:12.5px;">${tarefa.titulo || '—'}</td>
           <td style="font-size:12px;">${dataReal}</td>
           <td style="font-size:12px;color:var(--text-muted);">${pubPor}</td>
-          <td>${flagHtml}</td>
+          <td></td>
           <td onclick="event.stopPropagation()">${acaoHtml}</td>
         </tr>`;
       } else {
