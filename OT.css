@@ -76,6 +76,7 @@
   min-height: 0;
   box-sizing: border-box;
   width: 100%;
+  min-width: 0;
 }
 .ot-board::-webkit-scrollbar { height: 6px; }
 .ot-board::-webkit-scrollbar-track { background: transparent; }
@@ -84,8 +85,8 @@
 /* ── Coluna Kanban ── */
 .ot-column {
   flex: 1 1 0;
-  min-width: 220px;
-  max-width: 320px;
+  min-width: 180px;
+  width: 0;
   display: flex;
   flex-direction: column;
   height: 100%;
@@ -901,11 +902,11 @@
 
 /* Responsividade */
 @media (max-width: 900px) {
-  .ot-column { min-width: 200px; max-width: 260px; }
+  .ot-column { min-width: 200px; }
 }
 @media (max-width: 600px) {
   .ot-board { padding: 10px 12px; gap: 10px; }
-  .ot-column { min-width: 180px; max-width: 240px; flex: 0 0 180px; }
+  .ot-column { min-width: 170px; flex: 0 0 170px; }
   .ot-toolbar { padding: 10px 12px; gap: 7px; }
   .ot-search input { width: 140px; }
 }
