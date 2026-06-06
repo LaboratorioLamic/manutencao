@@ -167,7 +167,7 @@
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) refreshTaskFlagsUI();
     });
-    switchTab('ativos');
+    switchTab('inicio');
   });
 
   // ── SIDEBAR OVERLAY ──
@@ -215,6 +215,9 @@
       populateTipoSelect();
     }
     if (tabId === 'rotina' || tabId === 'ativos') refreshTaskFlagsUI();
+    if (tabId === 'inicio') {
+      if (typeof renderHome === 'function') renderHome();
+    }
     if (tabId === 'config') {
       // Guarda de permissão: bloqueia acesso sem visualizarConfig
       if (typeof authHasPermission === 'function' &&
@@ -1384,8 +1387,11 @@
     renderTarefaDetalheContent(id);
     openModal('modal-tarefa-detalhe');
     // Permissões
-    _mbtn('btn-editar-tarefa',  _can('tarefas.editar'));
-    _mbtn('btn-excluir-tarefa', _can('tarefas.excluir'));
+    _mbtn('btn-editar-tarefa', _can('tarefas.editar'));
+    // Excluir: só visível se não há publicações vinculadas
+    const temPubs = state.publicacoes.some(p => p.tarefaId === tarefaDetalheId);
+    const btnDelTarefa = document.getElementById('btn-excluir-tarefa');
+    if (btnDelTarefa) btnDelTarefa.style.display = (!temPubs && _can('tarefas.excluir')) ? '' : 'none';
   }
 
   function editarTarefaAtual() {
@@ -2928,7 +2934,8 @@
     const dd = document.getElementById('rotina-equip-dropdown');
     if (!q) { dd.innerHTML = ''; dd.classList.remove('open'); return; }
     const matches = state.ativos.map((a, i) => ({ a, i })).filter(({ a }) =>
-      a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q));
+      a.statusUso !== 'em_desuso' &&
+      (a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q)));
     if (matches.length === 0) {
       dd.innerHTML = '<div class="autocomplete-empty">Nenhum equipamento encontrado</div>';
     } else {
@@ -3116,7 +3123,10 @@
     // Permissões
     _mbtn('btn-editar-rotina',  _can('rotinas.editar'));
     _mbtn('btn-toggle-rotina',  _can('rotinas.editar'));
-    _mbtn('btn-excluir-rotina', _can('rotinas.excluir'));
+    // Excluir: só visível se não há tarefas vinculadas
+    const temTarefasRotina = state.tarefas.some(t => t.rotinaId === rotinaViewId);
+    const btnDelRotina = document.getElementById('btn-excluir-rotina');
+    if (btnDelRotina) btnDelRotina.style.display = (!temTarefasRotina && _can('rotinas.excluir')) ? '' : 'none';
   }
 
   function switchRotinaViewTab(tab) {
@@ -3425,6 +3435,7 @@
       document.querySelectorAll('#modal-ativo input, #modal-ativo textarea').forEach(el => el.value = '');
       document.getElementById('ativo-setor').value = '';
       document.getElementById('ativo-categoria').value = '';
+      _ativoStatusUI('em_uso', []);
     } else {
       const ativo = state.ativos[index];
       document.getElementById('ativo-nome').value = ativo.nome;
@@ -3436,6 +3447,7 @@
       document.getElementById('ativo-serie').value = ativo.serie !== '-' ? ativo.serie : '';
       document.getElementById('ativo-fornecedor').value = ativo.fornecedor !== '-' ? ativo.fornecedor : '';
       document.getElementById('ativo-nota').value = ativo.nota;
+      _ativoStatusUI(ativo.statusUso || 'em_uso', ativo.pausaOTs || []);
     }
 
     openModal('modal-ativo');
@@ -3457,6 +3469,20 @@
         <div class="view-badges">
           <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${ativo.setor}</span>
           <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>${ativo.categoria}</span>
+          ${ativo.statusUso === 'em_pausa'
+            ? `<span class="view-badge" style="background:rgba(244,162,97,0.12);color:#b45309;border-color:#f4a261;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+                Em Pausa
+               </span>`
+            : ativo.statusUso === 'em_desuso'
+            ? `<span class="view-badge" style="background:rgba(148,163,184,0.14);color:#475569;border-color:#94a3b8;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                Em Desuso
+               </span>`
+            : `<span class="view-badge" style="background:rgba(42,157,143,0.1);color:#2a9d8f;border-color:#2a9d8f;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Em Uso
+               </span>`}
         </div>
       </div>
       <div class="detail-grid">
@@ -3467,7 +3493,27 @@
         <div class="detail-note"><div class="detail-label" style="margin-bottom:6px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;color:var(--cyan);"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Observações</div>
           <div class="detail-value" style="font-weight:400;font-size:13px;color:var(--text-secondary);white-space:pre-line;">${ativo.nota || '<span style="color:var(--text-muted);font-style:italic;">Nenhuma observação cadastrada.</span>'}</div>
         </div>
-      </div>`;
+      </div>
+      ${ativo.statusUso === 'em_pausa' && ativo.pausaOTs && ativo.pausaOTs.length > 0 ? `
+      <div class="view-pausa-ots">
+        <div class="detail-label" style="margin-bottom:8px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:12px;height:12px;color:#b45309;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+          OTs Associadas à Pausa
+        </div>
+        ${ativo.pausaOTs.map(otId => {
+          const ot = (typeof otState !== 'undefined' ? otState.ordens : []).find(o => o.id === otId);
+          if (!ot) return `<div class="view-pausa-ot-item"><span class="view-pausa-ot-num">${otId}</span><span class="view-pausa-ot-title" style="color:var(--text-muted);font-style:italic;">OT não encontrada</span></div>`;
+          const dataParadaFmt = ot.dataParada
+            ? new Date(ot.dataParada + 'T00:00:00').toLocaleDateString('pt-BR')
+            : '';
+          return `<div class="view-pausa-ot-item" onclick="otOpenView('${ot.id}')" title="Abrir OT">
+            <span class="view-pausa-ot-num">${ot.numero || otId}</span>
+            <span class="view-pausa-ot-title">${ot.titulo || '—'}</span>
+            ${dataParadaFmt ? `<span class="view-pausa-ot-data">Parada em ${dataParadaFmt}</span>` : ''}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:12px;height:12px;flex-shrink:0;color:var(--cyan);"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>`;
+        }).join('')}
+      </div>` : ''}`;
 
     // Atualiza badges das abas
     _atualizarBadgesAtivoTabs(index);
@@ -3475,7 +3521,28 @@
     openModal('modal-visualizar');
     // Permissões
     _mbtn('btn-editar-ativo', _can('ativos.editar'));
+    // Excluir: só visível se não há rotinas vinculadas e tem permissão
+    const temRotinas = state.rotinas.some(r => r.equipamentoIdx === index);
+    const btnDelAtivo = document.getElementById('btn-excluir-ativo');
+    if (btnDelAtivo) btnDelAtivo.style.display = (!temRotinas && _can('ativos.excluir')) ? '' : 'none';
   }
+
+  window.excluirAtivoAtual = function () {
+    if (!_can('ativos.excluir')) { showToast('Sem permissão para excluir ativos.', 'error'); return; }
+    const index = ativoEdicaoIndex;
+    if (index === null || index === undefined) return;
+    const temRotinas = state.rotinas.some(r => r.equipamentoIdx === index);
+    if (temRotinas) { showToast('Este ativo possui rotinas vinculadas e não pode ser excluído.', 'error'); return; }
+    if (!confirm('Excluir este ativo? Esta ação não pode ser desfeita.')) return;
+    // Ajusta índices de rotinas/tarefas que referenciam ativos após o removido
+    state.rotinas.forEach(r => { if (r.equipamentoIdx > index) r.equipamentoIdx--; });
+    state.tarefas.forEach(t => { if (t.equipamentoIdx > index) t.equipamentoIdx--; });
+    state.ativos.splice(index, 1);
+    saveState();
+    closeModal('modal-visualizar');
+    renderCards();
+    showToast('Ativo excluído.', 'success');
+  };
 
   function _atualizarBadgesAtivoTabs(index) {
     // Rotinas e Atividades: apenas o nome, sem contagem
@@ -3767,6 +3834,15 @@
       showToast('Preencha os campos obrigatórios (*).', 'error'); return;
     }
 
+    // status de uso
+    const statusUso = document.getElementById('btn-ativo-em-pausa')?.classList.contains('active') ? 'em_pausa'
+      : document.getElementById('btn-ativo-em-desuso')?.classList.contains('active') ? 'em_desuso'
+      : 'em_uso';
+    const pausaOTs  = statusUso === 'em_pausa' ? _ativoGetPausaOTs() : [];
+    if (statusUso === 'em_pausa' && pausaOTs.length === 0) {
+      showToast('Adicione ao menos uma OT associada à pausa.', 'error'); return;
+    }
+
     const ativoExistente = ativoEdicaoIndex !== null ? state.ativos[ativoEdicaoIndex] : null;
     const ativo = {
       nome, codigo, setor, categoria,
@@ -3775,6 +3851,7 @@
       serie: document.getElementById('ativo-serie').value.trim() || "-",
       fornecedor: document.getElementById('ativo-fornecedor').value.trim() || "-",
       nota: document.getElementById('ativo-nota').value.trim(),
+      statusUso, pausaOTs,
       _historico: ativoExistente?._historico || []
     };
 
@@ -3793,6 +3870,162 @@
     closeModal('modal-ativo');
     showToast('Ativo salvo com sucesso!', 'success');
   }
+
+  // ── STATUS DE USO DO ATIVO ───────────────────────────────────
+  function _ativoStatusUI(status, pausaOTs) {
+    const btnUso    = document.getElementById('btn-ativo-em-uso');
+    const btnPausa  = document.getElementById('btn-ativo-em-pausa');
+    const btnDesuso = document.getElementById('btn-ativo-em-desuso');
+    const section   = document.getElementById('ativo-pausa-section');
+    if (!btnUso) return;
+    btnUso.classList.toggle('active',    status === 'em_uso');
+    btnPausa.classList.toggle('active',  status === 'em_pausa');
+    btnDesuso?.classList.toggle('active', status === 'em_desuso');
+    section.style.display = status === 'em_pausa' ? '' : 'none';
+    _ativoRenderPausaOTs(pausaOTs || []);
+  }
+
+  function _ativoRenderPausaOTs(ids) {
+    const list = document.getElementById('ativo-pausa-ots-list');
+    if (!list) return;
+    if (ids.length === 0) { list.innerHTML = '<div class="ativo-pausa-empty">Nenhuma OT adicionada.</div>'; return; }
+    list.innerHTML = ids.map(id => {
+      const ot = otState.ordens.find(o => o.id === id);
+      return `<div class="ativo-pausa-ot-item">
+        <div class="ativo-pausa-ot-info">
+          <span class="ativo-pausa-ot-num">${ot ? (ot.numero || id) : id}</span>
+          <span class="ativo-pausa-ot-title">${ot ? (ot.titulo || '—') : 'OT não encontrada'}</span>
+        </div>
+        <button type="button" class="ativo-pausa-ot-rm" onclick="ativoRemovePausaOT('${id}')" title="Remover">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>`;
+    }).join('');
+  }
+
+  function _ativoGetPausaOTs() {
+    return Array.from(document.querySelectorAll('#ativo-pausa-ots-list [data-ot-id]'))
+      .map(el => el.dataset.otId);
+  }
+
+  window.ativoSetStatus = function (status) {
+    const section   = document.getElementById('ativo-pausa-section');
+    const btnUso    = document.getElementById('btn-ativo-em-uso');
+    const btnPausa  = document.getElementById('btn-ativo-em-pausa');
+    const btnDesuso = document.getElementById('btn-ativo-em-desuso');
+    if (!btnUso) return;
+    btnUso.classList.toggle('active',    status === 'em_uso');
+    btnPausa.classList.toggle('active',  status === 'em_pausa');
+    btnDesuso?.classList.toggle('active', status === 'em_desuso');
+    section.style.display = status === 'em_pausa' ? '' : 'none';
+    if (status === 'em_pausa') {
+      const list = document.getElementById('ativo-pausa-ots-list');
+      if (list && list.children.length === 0) _ativoRenderPausaOTs([]);
+    }
+  };
+
+  window.ativoAddPausaOT = function () {
+    _openOTPickerForPausa();
+  };
+
+  function _openOTPickerForPausa() {
+    // Filtra OTs relacionadas ao ativo (por ativoIdx) ou todas abertas
+    const idx = ativoEdicaoIndex;
+    const candidatas = otState.ordens.filter(o =>
+      !['concluida','cancelada'].includes(o.status) &&
+      (idx === null || o.ativoIdx === idx || o.ativoIdx == null)
+    );
+
+    // Monta modal simples
+    let overlay = document.getElementById('ativo-ot-picker-overlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'ativo-ot-picker-overlay';
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:3000;background:rgba(14,22,40,0.5);display:flex;align-items:center;justify-content:center;padding:24px;backdrop-filter:blur(3px);';
+      document.body.appendChild(overlay);
+    }
+
+    const existentes = new Set(
+      Array.from(document.querySelectorAll('#ativo-pausa-ots-list .ativo-pausa-ot-item'))
+        .map(el => el.dataset.otId)
+    );
+
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:12px;width:100%;max-width:600px;max-height:70vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(14,22,40,0.22);overflow:hidden;">
+        <div style="display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--border);">
+          <span style="font-size:15px;font-weight:700;flex:1;">Selecionar OT</span>
+          <button onclick="document.getElementById('ativo-ot-picker-overlay').style.display='none'"
+            style="width:32px;height:32px;border:1px solid var(--border);border-radius:8px;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border);">
+          <input type="text" id="ot-picker-search" placeholder="Buscar por número ou título..."
+            style="width:100%;padding:8px 12px;border:1px solid var(--border);border-radius:8px;font-size:13px;"
+            oninput="ativoFilterOTPicker(this.value)">
+        </div>
+        <div id="ot-picker-list" style="overflow-y:auto;flex:1;padding:8px 0;">
+          ${candidatas.length === 0
+            ? '<div style="text-align:center;padding:32px;color:var(--text-muted);font-size:13px;">Nenhuma OT em aberto encontrada.</div>'
+            : candidatas.map(o => {
+                const disabled = existentes.has(o.id);
+                return `<div class="ot-pick-row${disabled ? ' ot-pick-disabled' : ''}" data-ot-id="${o.id}"
+                  data-search="${(o.numero + ' ' + (o.titulo||'')).toLowerCase()}"
+                  ${!disabled ? `onclick="ativoSelectPausaOT('${o.id}')"` : ''}>
+                  <div style="display:flex;align-items:center;gap:10px;padding:10px 16px;cursor:${disabled?'default':'pointer'};opacity:${disabled?'0.4':'1'};">
+                    <div style="font-size:12px;font-weight:700;color:var(--cyan);min-width:60px;">${o.numero||'—'}</div>
+                    <div style="flex:1;font-size:13px;">${o.titulo||'—'}</div>
+                    ${disabled ? '<span style="font-size:11px;color:var(--text-muted);">Já adicionada</span>' : ''}
+                  </div>
+                </div>`;
+              }).join('')}
+        </div>
+      </div>`;
+    overlay.style.display = 'flex';
+  }
+
+  window.ativoFilterOTPicker = function (q) {
+    const rows = document.querySelectorAll('#ot-picker-list .ot-pick-row');
+    const lq = q.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    rows.forEach(r => {
+      const match = r.dataset.search.includes(lq);
+      r.style.display = match ? '' : 'none';
+    });
+  };
+
+  window.ativoSelectPausaOT = function (id) {
+    document.getElementById('ativo-ot-picker-overlay').style.display = 'none';
+    const list = document.getElementById('ativo-pausa-ots-list');
+    if (!list) return;
+    // Remove empty state
+    list.querySelectorAll('.ativo-pausa-empty').forEach(el => el.remove());
+    // Avoid duplicate
+    if (list.querySelector(`[data-ot-id="${id}"]`)) return;
+    const ot = otState.ordens.find(o => o.id === id);
+    const item = document.createElement('div');
+    item.className = 'ativo-pausa-ot-item';
+    item.dataset.otId = id;
+    item.innerHTML = `
+      <div class="ativo-pausa-ot-info">
+        <span class="ativo-pausa-ot-num">${ot ? (ot.numero || id) : id}</span>
+        <span class="ativo-pausa-ot-title">${ot ? (ot.titulo || '—') : '—'}</span>
+      </div>
+      <button type="button" class="ativo-pausa-ot-rm" onclick="ativoRemovePausaOT('${id}')" title="Remover">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>`;
+    list.appendChild(item);
+  };
+
+  window.ativoRemovePausaOT = function (id) {
+    const item = document.querySelector(`#ativo-pausa-ots-list [data-ot-id="${id}"]`);
+    if (item) item.remove();
+    const list = document.getElementById('ativo-pausa-ots-list');
+    if (list && list.children.length === 0) {
+      list.innerHTML = '<div class="ativo-pausa-empty">Nenhuma OT adicionada.</div>';
+    }
+  };
 
   function _normalizeSearch(str) {
     return (str || '').toLowerCase()
@@ -3821,6 +4054,15 @@
     }
   }
 
+  let _ativosSubtab = 'em_operacao';
+
+  window.ativosSetSubtab = function (tab) {
+    _ativosSubtab = tab;
+    document.getElementById('subtab-em-operacao')?.classList.toggle('active', tab === 'em_operacao');
+    document.getElementById('subtab-em-desuso')?.classList.toggle('active', tab === 'em_desuso');
+    renderCards();
+  };
+
   function renderCards() {
     const grid = document.getElementById('assets-grid');
     const fSetor = document.getElementById('main-sector-filter').value;
@@ -3831,6 +4073,12 @@
     const filtrados = state.ativos
       .map((item, index) => ({ item, index }))
       .filter(({ item }) => {
+        // sub-tab filter: em_desuso shows only em_desuso, em_operacao shows all others
+        if (_ativosSubtab === 'em_desuso') {
+          if (item.statusUso !== 'em_desuso') return false;
+        } else {
+          if (item.statusUso === 'em_desuso') return false;
+        }
         if (visSetores && !visSetores.includes(item.setor)) return false;
         const matchSetor = fSetor === 'todos' || item.setor === fSetor;
         const matchCat = fCat === 'todas' || item.categoria === fCat;
@@ -3854,10 +4102,18 @@
 
     grid.innerHTML = filtrados.map(({ item: a, index }) => {
       const { danger, warning, total } = getAtivoAlertCounts(index);
-      const alertCls = danger > 0 ? 'alert-danger' : (warning > 0 ? 'alert-warning' : '');
+      const emPausa = a.statusUso === 'em_pausa';
+      const emDesuso = a.statusUso === 'em_desuso';
+      const alertCls = emDesuso ? 'asset-desuso' : (emPausa ? 'asset-paused' : (danger > 0 ? 'alert-danger' : (warning > 0 ? 'alert-warning' : '')));
 
       let flagHtml = '';
-      if (total > 0) {
+      if (emDesuso) {
+        flagHtml = `<span class="task-flag flag-desuso" style="font-size:11px;padding:3px 8px;white-space:nowrap;" title="Ativo em desuso">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>&nbsp;Em Desuso</span>`;
+      } else if (emPausa) {
+        flagHtml = `<span class="task-flag flag-paused" style="font-size:11px;padding:3px 8px;white-space:nowrap;" title="Ativo em pausa">
+          <svg viewBox="0 0 24 24" fill="currentColor" style="width:11px;height:11px;flex-shrink:0;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>&nbsp;Em Pausa</span>`;
+      } else if (total > 0) {
         const cls  = danger > 0 ? 'flag-danger' : 'flag-warning';
         const icon = danger > 0
           ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`

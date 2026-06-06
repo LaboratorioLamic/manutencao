@@ -122,7 +122,8 @@ let _otFilterDate     = { mode: null, mes: null, ano: null, de: null, ate: null 
 let _otViewMode       = 'kanban'; // kanban | calendario | lista
 let _otCalYear        = new Date().getFullYear();
 let _otCalMonth       = new Date().getMonth();
-let _otListSort       = { col: 'criadoEm', dir: -1 };
+let _otListSort        = { col: 'prazo', dir: -1 };
+let _otListShowFinais  = false;
 
 // ── DRAG & DROP STATE ─────────────────────────────────────────
 let _dragOtId      = null;
@@ -141,6 +142,8 @@ document.addEventListener('DOMContentLoaded', () => {
   _otInjectModals();
   _otExtendUpload();
   _otHookTab();
+  // otLoad deve rodar antes de renderHome para que otState.ordens já esteja populado
+  if (typeof renderHome === 'function') renderHome();
 });
 
 function _otHookTab() {
@@ -159,6 +162,12 @@ function _otInitTab() {
   tabEl.dataset.otInit = '1';
   tabEl.innerHTML = _otBuildTabHTML();
   _otBindToolbar();
+  // Aplica filtro padrão de 12 meses
+  _otFilterDate = { mode: '12meses', mes: null, ano: null, de: null, ate: null };
+  const lbl = document.getElementById('ot-date-filter-label');
+  if (lbl) lbl.textContent = 'Últimos 12 meses';
+  document.getElementById('ot-date-filter-btn')?.classList.add('active');
+  otDpSetMode('12meses');
   _otRenderView_mode();
 }
 
@@ -217,11 +226,15 @@ function _otBuildTabHTML() {
       </button>
       <div class="ot-date-picker-popup" id="ot-date-picker-popup" style="display:none;">
         <div class="ot-date-picker-tabs">
-          <button class="ot-dp-tab active" data-mode="mes" onclick="otDpSetMode('mes')">Mês</button>
+          <button class="ot-dp-tab" data-mode="12meses" onclick="otDpSetMode('12meses')">12 Meses</button>
+          <button class="ot-dp-tab" data-mode="mes" onclick="otDpSetMode('mes')">Mês</button>
           <button class="ot-dp-tab" data-mode="ano" onclick="otDpSetMode('ano')">Ano</button>
           <button class="ot-dp-tab" data-mode="custom" onclick="otDpSetMode('custom')">Personalizado</button>
         </div>
-        <div id="ot-dp-mes-panel" class="ot-dp-panel">
+        <div id="ot-dp-12meses-panel" class="ot-dp-panel" style="display:none;">
+          <div style="font-size:12px;color:var(--text-muted);padding:6px 2px;">Exibe OTs criadas nos últimos 12 meses a partir de hoje.</div>
+        </div>
+        <div id="ot-dp-mes-panel" class="ot-dp-panel" style="display:none;">
           <div class="ot-dp-row">
             <select id="ot-dp-mes-sel" class="field-select" style="flex:1;">
               ${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map((m,i)=>`<option value="${i}" ${i===new Date().getMonth()?'selected':''}>${m}</option>`).join('')}
@@ -404,7 +417,7 @@ function otToggleDatePicker() {
 function otDpSetMode(mode) {
   _otDpCurrentMode = mode;
   document.querySelectorAll('.ot-dp-tab').forEach(t => t.classList.toggle('active', t.dataset.mode === mode));
-  ['mes','ano','custom'].forEach(m => {
+  ['12meses','mes','ano','custom'].forEach(m => {
     const panel = document.getElementById(`ot-dp-${m}-panel`);
     if (panel) panel.style.display = m === mode ? '' : 'none';
   });
@@ -412,7 +425,10 @@ function otDpSetMode(mode) {
 
 function otApplyDateFilter() {
   const mode = _otDpCurrentMode;
-  if (mode === 'mes') {
+  if (mode === '12meses') {
+    _otFilterDate = { mode: '12meses', mes: null, ano: null, de: null, ate: null };
+    document.getElementById('ot-date-filter-label').textContent = 'Últimos 12 meses';
+  } else if (mode === 'mes') {
     const mes = parseInt(document.getElementById('ot-dp-mes-sel')?.value);
     const ano = parseInt(document.getElementById('ot-dp-mes-ano-sel')?.value);
     _otFilterDate = { mode: 'mes', mes, ano, de: null, ate: null };
@@ -444,10 +460,15 @@ function otClearDateFilter() {
 
 function _otPassesDateFilter(o) {
   if (!_otFilterDate.mode) return true;
-  const dataRef = o.prazo || o.criadoEm?.split('T')[0] || '';
+  const dataRef = o.criadoEm?.split('T')[0] || o.prazo || '';
   if (!dataRef) return true;
   const d = new Date(dataRef + (dataRef.length === 10 ? 'T00:00:00' : ''));
-  if (_otFilterDate.mode === 'mes') {
+  if (_otFilterDate.mode === '12meses') {
+    const cutoff = new Date();
+    cutoff.setFullYear(cutoff.getFullYear() - 1);
+    cutoff.setHours(0, 0, 0, 0);
+    return d >= cutoff;
+  } else if (_otFilterDate.mode === 'mes') {
     return d.getFullYear() === _otFilterDate.ano && d.getMonth() === _otFilterDate.mes;
   } else if (_otFilterDate.mode === 'ano') {
     return d.getFullYear() === _otFilterDate.ano;
@@ -639,9 +660,14 @@ function _otRenderCalendario() {
       <div class="ot-cal-ots">
         ${ots.slice(0, maxShow).map(o => {
           const { cls } = _otCardDeadlineInfo(o);
+          const _ativoNome = (o.ativoIdx !== null && o.ativoIdx !== undefined && typeof state !== 'undefined')
+            ? (state.ativos[o.ativoIdx]?.nome || '') : '';
           return `<div class="ot-cal-ot-pill ${cls ? 'ot-cal-pill-' + (cls.includes('overdue') ? 'overdue' : 'warning') : ''}" onclick="otOpenView('${o.id}')" title="${_escHtml(o.titulo)}">
             <span class="ot-cal-pill-dot ot-cal-dot-${o.tipo}"></span>
-            ${_escHtml(o.titulo.length > 20 ? o.titulo.slice(0,20)+'…' : o.titulo)}
+            <span class="ot-cal-pill-body">
+              <span class="ot-cal-pill-title">${_escHtml(o.titulo.length > 22 ? o.titulo.slice(0,22)+'…' : o.titulo)}</span>
+              ${_ativoNome ? `<span class="ot-cal-pill-ativo">${_escHtml(_ativoNome.length > 20 ? _ativoNome.slice(0,20)+'…' : _ativoNome)}</span>` : ''}
+            </span>
           </div>`;
         }).join('')}
         ${ots.length > maxShow ? `<div class="ot-cal-more">+${ots.length - maxShow} mais</div>` : ''}
@@ -736,7 +762,8 @@ const OT_LIST_COLS = [
 function _otRenderLista() {
   const content = document.getElementById('ot-main-content');
   if (!content) return;
-  const filtered = _otGetFiltered();
+  const all = _otGetFiltered();
+  const filtered = _otListShowFinais ? all : all.filter(o => !['concluida','cancelada'].includes(o.status));
   const { col, dir } = _otListSort;
   const sorted = [...filtered].sort((a, b) => {
     let va = a[col] || '', vb = b[col] || '';
@@ -771,8 +798,18 @@ function _otRenderLista() {
         </tr>`;
       }).join('');
 
+  const totalFinais = all.filter(o => ['concluida','cancelada'].includes(o.status)).length;
   content.innerHTML = `
 <div class="ot-list-wrapper">
+  <div class="ot-list-toolbar">
+    <span class="ot-list-count">${sorted.length} OT${sorted.length !== 1 ? 's' : ''}</span>
+    <button class="ot-list-finais-btn${_otListShowFinais ? ' active' : ''}" onclick="otListToggleFinais()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+      Finalizados${totalFinais > 0 ? ` (${totalFinais})` : ''}
+    </button>
+  </div>
   <table class="ot-list-table">
     <thead><tr>${headerCols}</tr></thead>
     <tbody>${rows}</tbody>
@@ -783,6 +820,11 @@ function _otRenderLista() {
 function otListSort(col) {
   if (_otListSort.col === col) _otListSort.dir *= -1;
   else { _otListSort.col = col; _otListSort.dir = -1; }
+  _otRenderLista();
+}
+
+function otListToggleFinais() {
+  _otListShowFinais = !_otListShowFinais;
   _otRenderLista();
 }
 
@@ -903,6 +945,9 @@ function otOpenDeleteConfirm(id) {
   _otDeleteId = id;
   const o = otState.ordens.find(x => x.id === id);
   if (!o) return;
+  if (['concluida', 'cancelada'].includes(o.status)) {
+    showToast('OTs concluídas ou canceladas não podem ser excluídas.', 'error'); return;
+  }
   const el = document.getElementById('ot-delete-title-display');
   if (el) el.textContent = o.titulo;
   const input = document.getElementById('ot-delete-confirm-input');
@@ -985,10 +1030,6 @@ function otOpenForm(id) {
   // Alerta padrão em branco para novas OTs; preserva valor existente ao editar
   _otFormSetField('ot-f-prazo-alerta', (o?.prazoAlertaDias !== undefined && o?.prazoAlertaDias !== null) ? o.prazoAlertaDias : '');
   _otFormSetField('ot-f-resp',       o?.responsavelId || '');
-  _otFormSetField('ot-f-tipo-falha', o?.tipoFalha   || '');
-  _otFormSetField('ot-f-causa',      o?.causaRaiz   || '');
-  _otFormSetField('ot-f-deteccao',   o?.metodoDetec || '');
-  _otFormSetField('ot-f-dano',       o?.tipoDano    || '');
 
   // Ativo vinculado
   _otAtivoIdx = o?.ativoIdx ?? null;
@@ -1002,6 +1043,10 @@ function otOpenForm(id) {
   const terceirizado = !!(o?.terceirizado);
   _otSetToggle('ot-toggle-falhou', ativoFalhou);
   _otSetToggle('ot-toggle-terceiro', terceirizado);
+  _otSetToggle('ot-toggle-parada', !!(o?.causouParada));
+  const _paradaDataRow = document.getElementById('ot-parada-data-row');
+  if (_paradaDataRow) _paradaDataRow.style.display = o?.causouParada ? 'block' : 'none';
+  _otFormSetField('ot-f-data-parada', o?.dataParada || '');
   document.getElementById('ot-falha-section').classList.toggle('show', ativoFalhou && o?.tipo === 'corretiva');
   document.getElementById('ot-terceiro-section').classList.toggle('show', terceirizado);
 
@@ -1013,8 +1058,12 @@ function otOpenForm(id) {
   // Subtarefas
   _otSubTemp = o?.subtarefas ? JSON.parse(JSON.stringify(o.subtarefas)) : [];
 
-  // Catalogs selects
+  // Catalogs selects — populados ANTES de setar os valores dos campos de falha
   _otPopulateCatalogSelects();
+  _otFormSetField('ot-f-tipo-falha', o?.tipoFalha   || '');
+  _otFormSetField('ot-f-causa',      o?.causaRaiz   || '');
+  _otFormSetField('ot-f-deteccao',   o?.metodoDetec || '');
+  _otFormSetField('ot-f-dano',       o?.tipoDano    || '');
 
   // Checar se deve mostrar falha section
   _otOnTipoChange();
@@ -1110,6 +1159,15 @@ function otToggleFalhou() {
   el?.classList.toggle('active');
   const on = el?.classList.contains('active');
   if (sec) sec.classList.toggle('show', on && isCorretiva);
+  // reset parada toggle quando desativa falha
+  if (!on) _otSetToggle('ot-toggle-parada', false);
+}
+
+function otToggleParada() {
+  const el = document.getElementById('ot-toggle-parada');
+  el?.classList.toggle('active');
+  const dataRow = document.getElementById('ot-parada-data-row');
+  if (dataRow) dataRow.style.display = el?.classList.contains('active') ? 'block' : 'none';
 }
 
 function otToggleTerceiro() {
@@ -1168,7 +1226,7 @@ function _otRenderAtivoSearchList(q) {
   const list = document.getElementById('ot-ativo-search-list');
   if (!list || typeof state === 'undefined') return;
   const ativos = state.ativos.map((a, i) => ({ ...a, _idx: i }))
-    .filter(a => !q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q));
+    .filter(a => a.statusUso !== 'em_desuso' && (!q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q)));
   if (ativos.length === 0) {
     list.innerHTML = '<div class="autocomplete-empty">Nenhum ativo encontrado</div>';
     return;
@@ -1314,6 +1372,17 @@ function otSaveForm() {
   const sess = typeof currentSession !== 'undefined' ? currentSession : null;
   const ativoFalhou  = !!(document.getElementById('ot-toggle-falhou')?.classList.contains('active')) && tipo === 'corretiva';
   const terceirizado = !!(document.getElementById('ot-toggle-terceiro')?.classList.contains('active'));
+  const causouParada = ativoFalhou && !!(document.getElementById('ot-toggle-parada')?.classList.contains('active'));
+  const dataParada   = causouParada ? (document.getElementById('ot-f-data-parada')?.value || '') : '';
+
+  // Validação: campos de falha obrigatórios quando ativoFalhou
+  if (ativoFalhou) {
+    if (!document.getElementById('ot-f-tipo-falha')?.value) { showToast('Informe o Tipo de Falha.', 'error'); otSwitchFormTab('falha'); return; }
+    if (!document.getElementById('ot-f-causa')?.value)      { showToast('Informe a Causa Raiz.', 'error');   otSwitchFormTab('falha'); return; }
+    if (!document.getElementById('ot-f-deteccao')?.value)   { showToast('Informe o Método de Detecção.', 'error'); otSwitchFormTab('falha'); return; }
+    if (!document.getElementById('ot-f-dano')?.value)       { showToast('Informe o Tipo de Dano.', 'error'); otSwitchFormTab('falha'); return; }
+    if (causouParada && !dataParada)                         { showToast('Informe a Data da Parada.', 'error'); otSwitchFormTab('falha'); return; }
+  }
 
   const now = new Date().toISOString();
 
@@ -1340,6 +1409,8 @@ function otSaveForm() {
       empresa:     terceirizado ? (document.getElementById('ot-f-empresa')?.value.trim()      || '') : '',
       respEmpresa: terceirizado ? (document.getElementById('ot-f-resp-empresa')?.value.trim() || '') : '',
       ativoFalhou,
+      causouParada,
+      dataParada:  causouParada ? dataParada : '',
       tipoFalha:   ativoFalhou ? (document.getElementById('ot-f-tipo-falha')?.value || '') : '',
       causaRaiz:   ativoFalhou ? (document.getElementById('ot-f-causa')?.value      || '') : '',
       metodoDetec: ativoFalhou ? (document.getElementById('ot-f-deteccao')?.value   || '') : '',
@@ -1349,7 +1420,6 @@ function otSaveForm() {
     });
   } else {
     // Nova OT
-    // Status inicial: se tem responsável, pode ser em_processo; caso contrário pendente
     const statusInicial = 'pendente';
     otState.ordens.push({
       id: _otUid(),
@@ -1376,6 +1446,8 @@ function otSaveForm() {
       empresa:     terceirizado ? (document.getElementById('ot-f-empresa')?.value.trim()      || '') : '',
       respEmpresa: terceirizado ? (document.getElementById('ot-f-resp-empresa')?.value.trim() || '') : '',
       ativoFalhou,
+      causouParada,
+      dataParada:  causouParada ? dataParada : '',
       tipoFalha:   ativoFalhou ? (document.getElementById('ot-f-tipo-falha')?.value || '') : '',
       causaRaiz:   ativoFalhou ? (document.getElementById('ot-f-causa')?.value      || '') : '',
       metodoDetec: ativoFalhou ? (document.getElementById('ot-f-deteccao')?.value   || '') : '',
@@ -1391,6 +1463,17 @@ function otSaveForm() {
     });
   }
 
+  // Se causou parada, aplica status em_pausa no ativo com esta OT associada
+  if (causouParada && _otAtivoIdx !== null && typeof state !== 'undefined') {
+    const ativo = state.ativos[_otAtivoIdx];
+    if (ativo) {
+      const otId = _otFormId || otState.ordens[otState.ordens.length - 1]?.id;
+      ativo.statusUso = 'em_pausa';
+      ativo.pausaOTs  = Array.from(new Set([...(ativo.pausaOTs || []), otId]));
+      if (typeof saveState === 'function') saveState();
+    }
+  }
+
   otSave();
   otCloseModal('modal-ot-form');
   _otRenderKanban();
@@ -1403,6 +1486,8 @@ function otOpenView(id) {
   const o = otState.ordens.find(x => x.id === id);
   if (!o) return;
   _otRenderView(o);
+  const btnDel = document.getElementById('btn-ot-delete');
+  if (btnDel) btnDel.style.display = ['concluida', 'cancelada'].includes(o.status) ? 'none' : '';
   otOpenModal('modal-ot-view');
 }
 
@@ -1514,12 +1599,19 @@ ${o.ativoFalhou && o.tipo === 'corretiva' ? `
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
   Análise de Falha
 </div>
-<div class="detail-grid" style="margin-bottom:16px;">
+<div class="detail-grid" style="margin-bottom:${o.causouParada ? '10px' : '16px'};">
   <div class="detail-card"><div class="detail-label">Tipo de Falha</div><div class="detail-value">${_escHtml(o.tipoFalha || '—')}</div></div>
   <div class="detail-card"><div class="detail-label">Causa Raiz</div><div class="detail-value">${_escHtml(o.causaRaiz || '—')}</div></div>
   <div class="detail-card"><div class="detail-label">Método de Detecção</div><div class="detail-value">${_escHtml(o.metodoDetec || '—')}</div></div>
   <div class="detail-card"><div class="detail-label">Tipo de Dano</div><div class="detail-value">${_escHtml(o.tipoDano || '—')}</div></div>
-</div>` : ''}
+</div>
+${o.causouParada ? `<div class="ot-parada-alert" style="margin-bottom:16px;">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;flex-shrink:0;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+  <div>
+    <div style="font-weight:600;font-size:13px;">Falha gerou parada do equipamento</div>
+    ${o.dataParada ? `<div style="font-size:12px;margin-top:2px;opacity:0.85;">Equipamento parado em: <strong>${_fmtDate(o.dataParada)}</strong></div>` : ''}
+  </div>
+</div>` : ''}` : ''}
 ${o.terceirizado ? `
 <div class="form-section-title" style="margin-bottom:12px;">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a7 7 0 0114 0v2"/></svg>
@@ -2226,14 +2318,14 @@ function _otModalsHTML() {
           <div class="ot-falha-section" id="ot-falha-section">
             <div class="form-row">
               <div class="form-field" style="margin-bottom:12px;">
-                <label class="field-label">Tipo de Falha</label>
+                <label class="field-label">Tipo de Falha <span class="required">*</span></label>
                 <div class="ot-catalog-field">
                   <select id="ot-f-tipo-falha" class="field-select"></select>
                   <button class="ot-catalog-add-btn" onclick="otOpenCatalog('tiposFalha')" title="Gerenciar tipos">+</button>
                 </div>
               </div>
               <div class="form-field" style="margin-bottom:12px;">
-                <label class="field-label">Causa Raiz</label>
+                <label class="field-label">Causa Raiz <span class="required">*</span></label>
                 <div class="ot-catalog-field">
                   <select id="ot-f-causa" class="field-select"></select>
                   <button class="ot-catalog-add-btn" onclick="otOpenCatalog('causasRaiz')" title="Gerenciar causas">+</button>
@@ -2241,19 +2333,29 @@ function _otModalsHTML() {
               </div>
             </div>
             <div class="form-row">
-              <div class="form-field" style="margin-bottom:0;">
-                <label class="field-label">Método de Detecção</label>
+              <div class="form-field" style="margin-bottom:12px;">
+                <label class="field-label">Método de Detecção <span class="required">*</span></label>
                 <div class="ot-catalog-field">
                   <select id="ot-f-deteccao" class="field-select"></select>
                   <button class="ot-catalog-add-btn" onclick="otOpenCatalog('metodosDetec')" title="Gerenciar métodos">+</button>
                 </div>
               </div>
-              <div class="form-field" style="margin-bottom:0;">
-                <label class="field-label">Tipo de Dano Causado</label>
+              <div class="form-field" style="margin-bottom:12px;">
+                <label class="field-label">Tipo de Dano Causado <span class="required">*</span></label>
                 <div class="ot-catalog-field">
                   <select id="ot-f-dano" class="field-select"></select>
                   <button class="ot-catalog-add-btn" onclick="otOpenCatalog('tiposDano')" title="Gerenciar danos">+</button>
                 </div>
+              </div>
+            </div>
+            <div class="form-field" style="margin-bottom:0;" id="ot-parada-row">
+              <div class="ot-toggle-row" id="ot-toggle-parada" onclick="otToggleParada()">
+                <div class="ot-toggle-switch"></div>
+                <span class="ot-toggle-label">Causou parada do ativo (aplica status "Em Pausa" ao ativo)</span>
+              </div>
+              <div id="ot-parada-data-row" style="display:none;margin-top:10px;">
+                <label class="field-label">Data da Parada <span style="color:var(--red)">*</span></label>
+                <input type="date" id="ot-f-data-parada" class="field-input" max="${new Date().toISOString().split('T')[0]}">
               </div>
             </div>
           </div>
@@ -2318,7 +2420,7 @@ function _otModalsHTML() {
     </div>
     <div class="modal-body" id="ot-view-body"></div>
     <div class="modal-footer" style="justify-content:space-between;">
-      <button class="btn btn-outline" style="color:var(--red);border-color:rgba(230,57,70,0.3);" onclick="otOpenDeleteConfirm(_otViewId)">
+      <button id="btn-ot-delete" class="btn btn-outline" style="color:var(--red);border-color:rgba(230,57,70,0.3);" onclick="otOpenDeleteConfirm(_otViewId)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
         Excluir OT
       </button>

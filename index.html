@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="OT.css">
 <link rel="stylesheet" href="empresas.css">
+<link rel="stylesheet" href="home.css">
 </head>
 <body class="auth-locked">
 
@@ -220,11 +221,11 @@
 
   <nav class="sidebar-nav">
     <div class="nav-section-label">Principal</div>
-    <div class="nav-item" onclick="switchTab('inicio')" id="nav-inicio">
+    <div class="nav-item active" onclick="switchTab('inicio')" id="nav-inicio">
       <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></span>
       Início
     </div>
-    <div class="nav-item active" onclick="switchTab('ativos')" id="nav-ativos">
+    <div class="nav-item" onclick="switchTab('ativos')" id="nav-ativos">
       <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 16V7a2 2 0 00-2-2H6a2 2 0 00-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 01-.9 1.45H3.62a1 1 0 01-.9-1.45L4 16"/></svg></span>
       Ativos
     </div>
@@ -294,13 +295,7 @@
     </header>
 
     <div id="content-area">
-      <div id="tab-inicio" class="tab-panel">
-        <div class="placeholder-view">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          <h3>Dashboard em breve</h3>
-          <p>A visão geral com KPIs e gráficos estará disponível em breve.</p>
-        </div>
-      </div>
+      <div id="tab-inicio" class="tab-panel active"></div>
       <!-- ── ABA ROTINA ── -->
       <div id="tab-rotina" class="tab-panel">
 
@@ -870,7 +865,7 @@
         </div><!-- /rotina-content -->
       </div>
 
-      <div id="tab-ativos" class="tab-panel active">
+      <div id="tab-ativos" class="tab-panel">
         <div class="section-header" style="margin-bottom: 16px;">
           <div>
             <div class="section-title">Ativos</div>
@@ -923,6 +918,11 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <div class="ativos-subtabs" id="ativos-subtabs">
+          <button class="ativos-subtab active" id="subtab-em-operacao" onclick="ativosSetSubtab('em_operacao')">Em Operação</button>
+          <button class="ativos-subtab" id="subtab-em-desuso" onclick="ativosSetSubtab('em_desuso')">Em Desuso</button>
         </div>
 
         <div id="assets-grid" class="assets-grid">
@@ -2158,6 +2158,42 @@
         </div>
       </div>
 
+      <div class="form-section">
+        <div class="form-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Status de Uso
+        </div>
+        <div class="ativo-status-toggle-row">
+          <button type="button" id="btn-ativo-em-uso"
+            class="ativo-status-btn active" onclick="ativoSetStatus('em_uso')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Em Uso
+          </button>
+          <button type="button" id="btn-ativo-em-pausa"
+            class="ativo-status-btn" onclick="ativoSetStatus('em_pausa')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            Em Pausa
+          </button>
+          <button type="button" id="btn-ativo-em-desuso"
+            class="ativo-status-btn" onclick="ativoSetStatus('em_desuso')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            Em Desuso
+          </button>
+        </div>
+        <div id="ativo-pausa-section" style="display:none; margin-top:12px;">
+          <label class="field-label" style="margin-bottom:6px;">
+            OTs associadas à pausa <span class="required">*</span>
+            <span style="font-weight:400;color:var(--text-muted);font-size:11px;"> — mínimo 1 obrigatória</span>
+          </label>
+          <div class="ativo-pausa-ots" id="ativo-pausa-ots-list"></div>
+          <button type="button" class="btn btn-outline btn-sm" style="margin-top:8px;"
+            onclick="ativoAddPausaOT()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Adicionar OT
+          </button>
+        </div>
+      </div>
+
       <div class="form-section" style="margin-bottom:0;">
         <div class="form-section-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
@@ -2312,6 +2348,10 @@
 
     <div class="modal-footer">
       <button class="btn btn-outline" onclick="closeModal('modal-visualizar')">Fechar</button>
+      <button id="btn-excluir-ativo" class="btn btn-outline" style="color:var(--red);border-color:rgba(230,57,70,0.3);display:none;" onclick="excluirAtivoAtual()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+        Excluir
+      </button>
       <button id="btn-editar-ativo" class="btn btn-primary" onclick="editarAtivoAtual()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
         Editar
@@ -2834,5 +2874,6 @@
 <script src="agenda.js"></script>
 <script src="OT.js"></script>
 <script src="empresas.js"></script>
+<script src="home.js"></script>
 </body>
 </html>

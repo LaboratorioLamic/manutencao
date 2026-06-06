@@ -330,6 +330,18 @@
 .ot-toggle-label { font-size: 13px; font-weight: 500; color: var(--text-secondary); flex: 1; }
 .ot-toggle-row.active .ot-toggle-label { color: var(--red); font-weight: 600; }
 
+/* Alerta de parada na view */
+.ot-parada-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(244, 162, 97, 0.1);
+  border: 1px solid rgba(244, 162, 97, 0.35);
+  border-radius: 8px;
+  color: #b45309;
+}
+
 /* Terceirizado section */
 .ot-terceiro-section {
   background: rgba(139,92,246,0.04);
@@ -822,13 +834,16 @@
 }
 .ot-cal-ots { display: flex; flex-direction: column; gap: 2px; }
 .ot-cal-ot-pill {
-  font-size: 10.5px; font-weight: 600; padding: 2px 5px;
-  border-radius: 4px; cursor: pointer; white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis;
+  font-size: 10.5px; font-weight: 600; padding: 3px 5px;
+  border-radius: 4px; cursor: pointer;
+  overflow: hidden;
   background: rgba(0,168,204,0.1); color: var(--cyan);
   border: 1px solid rgba(0,168,204,0.2);
-  transition: var(--transition); display: flex; align-items: center; gap: 4px;
+  transition: var(--transition); display: flex; align-items: flex-start; gap: 4px;
 }
+.ot-cal-pill-body { display: flex; flex-direction: column; gap: 1px; overflow: hidden; min-width: 0; }
+.ot-cal-pill-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ot-cal-pill-ativo { font-size: 9.5px; font-weight: 400; opacity: 0.75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ot-cal-ot-pill:hover { filter: brightness(0.9); }
 .ot-cal-pill-overdue { background: rgba(230,57,70,0.1); color: var(--red); border-color: rgba(230,57,70,0.2); }
 .ot-cal-pill-warning { background: rgba(244,162,97,0.12); color: #b45309; border-color: rgba(244,162,97,0.25); }
@@ -841,6 +856,25 @@
 
 /* ── Lista OT ── */
 .ot-list-wrapper { flex: 1; overflow: auto; padding: 16px 24px; }
+.ot-list-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.ot-list-count {
+  font-size: 12px; font-weight: 600; color: var(--text-muted);
+}
+.ot-list-finais-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 999px;
+  border: 1.5px solid var(--border); background: #fff;
+  font-size: 11.5px; font-weight: 600; color: var(--text-secondary);
+  cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.ot-list-finais-btn:hover { border-color: var(--cyan); color: var(--cyan); }
+.ot-list-finais-btn.active {
+  border-color: #2a9d8f; background: rgba(42,157,143,0.07);
+  color: #2a9d8f; box-shadow: 0 0 0 3px rgba(42,157,143,0.1);
+}
 .ot-list-table {
   width: 100%; border-collapse: collapse; font-size: 13px;
 }
