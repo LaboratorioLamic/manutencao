@@ -553,6 +553,120 @@
   .view-pausa-ot-num { font-size: 11px; font-weight: 700; color: #b45309; min-width: 48px; }
   .view-pausa-ot-title { flex: 1; font-size: 13px; color: var(--text-secondary); }
   .view-pausa-ot-data { font-size: 11px; color: #b45309; white-space: nowrap; }
+
+  /* ── ABA OTs DO ATIVO ─────────────────────────── */
+  .avot-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .avot-card {
+    background: var(--surface);
+    border: 1.5px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    cursor: pointer;
+    transition: border-color .15s, box-shadow .15s, transform .1s;
+  }
+  .avot-card:hover {
+    border-color: var(--cyan);
+    box-shadow: 0 2px 12px rgba(0,168,204,.12);
+    transform: translateY(-1px);
+  }
+
+  .avot-card-top {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .avot-num {
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'DM Mono', monospace;
+    color: var(--cyan);
+    background: rgba(0,168,204,.1);
+    padding: 2px 7px;
+    border-radius: 5px;
+    margin-right: 2px;
+  }
+  .avot-arrow {
+    width: 13px; height: 13px;
+    color: var(--text-muted);
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: color .15s;
+  }
+  .avot-card:hover .avot-arrow { color: var(--cyan); }
+
+  .avot-titulo {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    line-height: 1.4;
+    margin-bottom: 8px;
+  }
+
+  .avot-card-bot {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* Badges tipo/sev/status */
+  .avot-badge {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .avot-tipo-corretiva   { background: rgba(230,57,70,.12);   color: #e63946; border-color: rgba(230,57,70,.25); }
+  .avot-tipo-implantacao { background: rgba(124,58,237,.12);  color: #7c3aed; border-color: rgba(124,58,237,.25); }
+  .avot-tipo-melhoria    { background: rgba(0,168,204,.12);   color: var(--cyan); border-color: rgba(0,168,204,.25); }
+  .avot-tipo-alteracao   { background: rgba(244,162,97,.12);  color: #b45309; border-color: rgba(244,162,97,.3); }
+  .avot-sev-critica  { background: rgba(230,57,70,.15);  color: #e63946; border-color: rgba(230,57,70,.3); }
+  .avot-sev-alta     { background: rgba(244,162,97,.15); color: #b45309; border-color: rgba(244,162,97,.35); }
+  .avot-sev-media    { background: rgba(0,168,204,.12);  color: var(--cyan); border-color: rgba(0,168,204,.25); }
+  .avot-sev-baixa    { background: rgba(42,157,143,.12); color: #2a9d8f; border-color: rgba(42,157,143,.25); }
+  .avot-st-pendente  { background: rgba(113,128,150,.12); color: #718096; border-color: rgba(113,128,150,.25); }
+  .avot-st-processo  { background: rgba(0,168,204,.12);   color: var(--cyan); border-color: rgba(0,168,204,.25); }
+  .avot-st-revisao   { background: rgba(244,162,97,.12);  color: #b45309; border-color: rgba(244,162,97,.3); }
+
+  /* Prazo / responsável / falha tags */
+  .avot-prazo, .avot-resp, .avot-falha-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .avot-prazo-vencida { color: var(--red); font-weight: 600; }
+  .avot-falha-tag { color: #e63946; }
+
+  /* Empty state */
+  .avot-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 40px 16px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .avot-empty svg { width: 36px; height: 36px; opacity: .4; }
+  .avot-empty strong { font-size: 14px; color: var(--text-secondary); }
+  .avot-empty span   { font-size: 12px; }
+
+  /* Paginação de atividades */
+  .atv-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    padding: 12px 0 2px;
+  }
+  .atv-pag-info { font-size: 12px; color: var(--text-muted); margin-right: 4px; }
+
   .detail-card {
     background: var(--bg); border: 1.5px solid var(--border);
     border-radius: 10px; padding: 14px 16px;

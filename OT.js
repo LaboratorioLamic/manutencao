@@ -860,11 +860,6 @@ function _otTryTransition(otId, targetStatus) {
   if (!o) return;
   const from = o.status;
 
-  // Bloqueios: apenas OTs canceladas são finais; OTs concluídas podem ser reabertas/alteradas
-  if (from === 'cancelada') {
-    showToast('OTs canceladas não podem ser movidas.', 'error'); return;
-  }
-
   // Validações de transição
   if (targetStatus === 'em_processo' && !o.responsavelNome) {
     showToast('Defina um responsável antes de iniciar a OT.', 'error');
@@ -916,12 +911,10 @@ function _otSetStatus(otId, newStatus, pubTipo, texto) {
   const idx = otState.ordens.findIndex(x => x.id === otId);
   if (idx < 0) return;
   const old = otState.ordens[idx].status;
-  if (old === 'cancelada') {
-    showToast('OTs canceladas não podem ser movidas.', 'error'); return;
-  }
   otState.ordens[idx].status      = newStatus;
   otState.ordens[idx].atualizadoEm = new Date().toISOString();
   if (newStatus === 'concluida') otState.ordens[idx].dataConclusao = new Date().toISOString().split('T')[0];
+  if (old === 'cancelada' && newStatus !== 'cancelada') otState.ordens[idx].motivoCancelamento = '';
 
   const sess = typeof currentSession !== 'undefined' ? currentSession : null;
   if (texto || pubTipo) {
@@ -1637,9 +1630,23 @@ ${o.terceirizado ? `
     </div>` : ''}`;
   })() : ''}
 </div>` : ''}
-${o.motivoCancelamento ? `<div class="detail-note" style="border-left-color:var(--red);margin-bottom:16px;">
-  <div class="detail-label" style="margin-bottom:6px;color:var(--red);">Motivo do Cancelamento</div>
-  <div style="font-size:13px;">${_escHtml(o.motivoCancelamento)}</div>
+${o.status === 'cancelada' ? `<div class="detail-note" style="border-left-color:var(--red);margin-bottom:16px;">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+    <div class="detail-label" style="color:var(--red);">Motivo do Cancelamento</div>
+    <button class="btn btn-outline" style="font-size:11px;padding:3px 10px;color:var(--red);border-color:rgba(230,57,70,0.3);"
+      onclick="otEditMotivoCancelamento('${o.id}')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+      Editar
+    </button>
+  </div>
+  <div id="ot-motivo-display" style="font-size:13px;">${_escHtml(o.motivoCancelamento || '—')}</div>
+  <div id="ot-motivo-edit-wrap" style="display:none;margin-top:8px;">
+    <textarea id="ot-motivo-edit-input" class="field-input" rows="3" style="width:100%;resize:vertical;font-size:13px;">${_escHtml(o.motivoCancelamento || '')}</textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;">
+      <button class="btn btn-outline" style="font-size:12px;padding:5px 12px;" onclick="otCancelMotivoCancelamento()">Cancelar</button>
+      <button class="btn btn-primary" style="font-size:12px;padding:5px 12px;" onclick="otSaveMotivoCancelamento('${o.id}')">Salvar</button>
+    </div>
+  </div>
 </div>` : ''}
 </div>
 
@@ -1757,6 +1764,39 @@ ${o.motivoCancelamento ? `<div class="detail-note" style="border-left-color:var(
       }
     }
   }
+}
+
+function otEditMotivoCancelamento(_otId) {
+  const display  = document.getElementById('ot-motivo-display');
+  const editWrap = document.getElementById('ot-motivo-edit-wrap');
+  if (!display || !editWrap) return;
+  display.style.display  = 'none';
+  editWrap.style.display = 'block';
+  const input = document.getElementById('ot-motivo-edit-input');
+  if (input) input.focus();
+}
+
+function otCancelMotivoCancelamento() {
+  const display  = document.getElementById('ot-motivo-display');
+  const editWrap = document.getElementById('ot-motivo-edit-wrap');
+  if (display)  display.style.display  = 'block';
+  if (editWrap) editWrap.style.display = 'none';
+}
+
+function otSaveMotivoCancelamento(otId) {
+  const input = document.getElementById('ot-motivo-edit-input');
+  if (!input) return;
+  const novoMotivo = input.value.trim();
+  if (!novoMotivo) { showToast('O motivo não pode ser vazio.', 'error'); return; }
+  const idx = otState.ordens.findIndex(x => x.id === otId);
+  if (idx < 0) return;
+  otState.ordens[idx].motivoCancelamento = novoMotivo;
+  otState.ordens[idx].atualizadoEm = new Date().toISOString();
+  otSave();
+  const display = document.getElementById('ot-motivo-display');
+  if (display) display.textContent = novoMotivo;
+  otCancelMotivoCancelamento();
+  showToast('Motivo atualizado.', 'success');
 }
 
 function otSwitchPubTab(key) {

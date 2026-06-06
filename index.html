@@ -2311,6 +2311,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
         <span id="avtab-label-tarefas">Tarefas</span>
       </button>
+      <button class="drawer-tab-btn" id="avtab-btn-ots" onclick="switchAtivoTab('ots')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span id="avtab-label-ots">OT's</span>
+      </button>
       <button class="drawer-tab-btn" id="avtab-btn-atividades" onclick="switchAtivoTab('atividades')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <span id="avtab-label-atividades">Atividades</span>
@@ -2340,6 +2344,9 @@
           </div>
         </div>
         <div id="ativo-tarefas-list"></div>
+      </div>
+      <div id="avtab-ots" style="padding:16px 24px;display:none;">
+        <div id="ativo-ots-list"></div>
       </div>
       <div id="avtab-atividades" style="padding:16px 24px;display:none;">
         <div id="ativo-atividades-list"></div>

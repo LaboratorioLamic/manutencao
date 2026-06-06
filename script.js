@@ -1709,7 +1709,7 @@
 
   let _historicoTarefaId = null;
 
-  const HISTORICO_PER_PAGE = 25;
+  const HISTORICO_PER_PAGE = 10;
   let _historicoPage = 0;
   let _historicoSort = { col: 'dataRealizada', dir: 'desc' };
 
@@ -3115,6 +3115,7 @@
 
   function viewRotina(id) {
     rotinaViewId = id;
+    _rotinaAtivPage = 0;
     switchRotinaViewTab('info');
     renderRotinaViewInfo();
     renderRotinaViewTarefas();
@@ -3263,18 +3264,36 @@
       }).join('') + `</div>`;
   }
 
-  function renderRotinaViewAtividades() {
+  function _renderAtivPagination(fnName, page, totalPages, total) {
+    if (totalPages <= 1) return '';
+    const PER   = HISTORICO_PER_PAGE;
+    const start = page * PER + 1;
+    const end   = Math.min((page + 1) * PER, total);
+    return `<div class="atv-pagination">
+      <span class="atv-pag-info">${start}–${end} de ${total}</span>
+      <button class="btn btn-outline btn-icon" onclick="${fnName}(${page - 1})" ${page === 0 ? 'disabled' : ''}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button class="btn btn-outline btn-icon" onclick="${fnName}(${page + 1})" ${page >= totalPages - 1 ? 'disabled' : ''}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>`;
+  }
+
+  let _rotinaAtivPage = 0;
+  function renderRotinaViewAtividades(page) {
+    if (page !== undefined) _rotinaAtivPage = page;
     const container = document.getElementById('rotina-view-atividades-list');
     const tarefaIds = state.tarefas.filter(t => t.rotinaId === rotinaViewId).map(t => t.id);
     const rotina = state.rotinas.find(r => r.id === rotinaViewId);
-    const pubs = state.publicacoes
+    const allPubs = state.publicacoes
       .filter(p => tarefaIds.includes(p.tarefaId))
       .sort((a, b) => {
         const ka = dataRealizadaSortKey(a.dataRealizada) || a.dataPublicacao || '';
         const kb = dataRealizadaSortKey(b.dataRealizada) || b.dataPublicacao || '';
         return kb > ka ? 1 : kb < ka ? -1 : 0;
       });
-    if (pubs.length === 0) {
+    if (allPubs.length === 0) {
       container.innerHTML = `<div class="data-table-empty" style="padding:32px 16px;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <strong>Nenhuma atividade registrada</strong>
@@ -3282,6 +3301,11 @@
       </div>`;
       return;
     }
+    const PER = HISTORICO_PER_PAGE;
+    const totalPages = Math.max(1, Math.ceil(allPubs.length / PER));
+    if (_rotinaAtivPage >= totalPages) _rotinaAtivPage = totalPages - 1;
+    const pubs = allPubs.slice(_rotinaAtivPage * PER, (_rotinaAtivPage + 1) * PER);
+
     container.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;">` +
       pubs.map(p => {
         const t = state.tarefas.find(t => t.id === p.tarefaId);
@@ -3294,7 +3318,8 @@
           </div>
           ${p.notas ? `<span style="font-size:12px;color:var(--text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.notas}</span>` : ''}
         </div>`;
-      }).join('') + `</div>`;
+      }).join('') + `</div>` +
+      _renderAtivPagination('renderRotinaViewAtividades', _rotinaAtivPage, totalPages, allPubs.length);
   }
 
   function toggleRotinaStatus() {
@@ -3455,6 +3480,7 @@
 
   function visualizarAtivo(index, initialTab = 'info') {
     ativoEdicaoIndex = index;
+    _ativoAtivPage = 0;
     const ativo = state.ativos[index];
     document.getElementById('visualizar-title').textContent = ativo.nome;
     document.getElementById('visualizar-subtitle').textContent = `${ativo.setor} · ${ativo.categoria}`;
@@ -3561,23 +3587,116 @@
     });
     const total = danger + warning;
     const lbT = document.getElementById('avtab-label-tarefas');
-    if (!lbT) return;
-    if (total > 0) {
-      const cor = danger > 0 ? 'var(--red)' : 'var(--amber)';
-      lbT.innerHTML = `Tarefas <span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:20px;font-size:10px;font-weight:700;background:${cor};color:#fff;margin-left:4px;">${total}</span>`;
-    } else {
-      lbT.textContent = 'Tarefas';
+    if (lbT) {
+      if (total > 0) {
+        const cor = danger > 0 ? 'var(--red)' : 'var(--amber)';
+        lbT.innerHTML = `Tarefas <span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:20px;font-size:10px;font-weight:700;background:${cor};color:#fff;margin-left:4px;">${total}</span>`;
+      } else {
+        lbT.textContent = 'Tarefas';
+      }
+    }
+
+    // OTs: badge com contagem de OTs abertas do ativo
+    const lbO = document.getElementById('avtab-label-ots');
+    if (lbO) {
+      const otsAbertas = (typeof otState !== 'undefined' ? otState.ordens : [])
+        .filter(o => Number(o.ativoIdx) === index && !['concluida','cancelada'].includes(o.status));
+      if (otsAbertas.length > 0) {
+        lbO.innerHTML = `OT's <span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:20px;font-size:10px;font-weight:700;background:var(--cyan);color:#fff;margin-left:4px;">${otsAbertas.length}</span>`;
+      } else {
+        lbO.textContent = `OT's`;
+      }
     }
   }
 
   function switchAtivoTab(tab) {
-    ['info','rotinas','tarefas','atividades'].forEach(t => {
+    ['info','rotinas','tarefas','ots','atividades'].forEach(t => {
       document.getElementById('avtab-' + t).style.display = t === tab ? 'block' : 'none';
       document.getElementById('avtab-btn-' + t).classList.toggle('active', t === tab);
     });
     if (tab === 'rotinas')    _renderAtivoRotinas();
     if (tab === 'tarefas')    _renderAtivoTarefas();
+    if (tab === 'ots')        _renderAtivoOTs();
     if (tab === 'atividades') _renderAtivoAtividades();
+  }
+
+  function _renderAtivoOTs() {
+    const idx = ativoEdicaoIndex;
+    const container = document.getElementById('ativo-ots-list');
+    if (!container) return;
+
+    const ordens = (typeof otState !== 'undefined' ? otState.ordens : [])
+      .filter(o => Number(o.ativoIdx) === idx && !['concluida','cancelada'].includes(o.status))
+      .sort((a, b) => (b.criadoEm || '') < (a.criadoEm || '') ? -1 : 1);
+
+    if (ordens.length === 0) {
+      container.innerHTML = `
+        <div class="avot-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <strong>Nenhuma OT em aberto</strong>
+          <span>Este ativo não possui ordens de trabalho ativas no momento</span>
+        </div>`;
+      return;
+    }
+
+    const SEV_CFG = {
+      critica:  { label: 'Crítica',  cls: 'avot-sev-critica'  },
+      alta:     { label: 'Alta',     cls: 'avot-sev-alta'     },
+      media:    { label: 'Média',    cls: 'avot-sev-media'    },
+      baixa:    { label: 'Baixa',    cls: 'avot-sev-baixa'    },
+    };
+    const ST_CFG = {
+      pendente:    { label: 'Pendente',    cls: 'avot-st-pendente'    },
+      em_processo: { label: 'Em Processo', cls: 'avot-st-processo'    },
+      em_revisao:  { label: 'Em Revisão',  cls: 'avot-st-revisao'     },
+    };
+    const TIPO_CFG = {
+      corretiva:   { label: 'Corretiva',   cls: 'avot-tipo-corretiva'   },
+      implantacao: { label: 'Implantação', cls: 'avot-tipo-implantacao' },
+      melhoria:    { label: 'Melhoria',    cls: 'avot-tipo-melhoria'    },
+      alteracao:   { label: 'Alteração',   cls: 'avot-tipo-alteracao'   },
+    };
+
+    const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
+    const isVencida = o => o.prazo && new Date(o.prazo + 'T00:00:00') < new Date();
+
+    container.innerHTML = `<div class="avot-list">` + ordens.map(o => {
+      const sev  = SEV_CFG[o.severidade]  || { label: o.severidade || '—', cls: 'avot-sev-media' };
+      const st   = ST_CFG[o.status]       || { label: o.status || '—',     cls: 'avot-st-pendente' };
+      const tipo = TIPO_CFG[o.tipo]       || { label: o.tipo || '—',       cls: 'avot-tipo-corretiva' };
+      const vencida = isVencida(o);
+      const prazoHtml = o.prazo
+        ? `<span class="avot-prazo${vencida ? ' avot-prazo-vencida' : ''}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            ${vencida ? 'Vencida · ' : ''}${fmtDate(o.prazo)}
+          </span>`
+        : '';
+      const falhaHtml = o.ativoFalhou
+        ? `<span class="avot-falha-tag">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:10px;height:10px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            Falha registrada
+          </span>`
+        : '';
+
+      return `<div class="avot-card" onclick="otOpenView('${o.id}')">
+        <div class="avot-card-top">
+          <span class="avot-num">${o.numero || '—'}</span>
+          <span class="avot-badge ${tipo.cls}">${tipo.label}</span>
+          <span class="avot-badge ${sev.cls}">${sev.label}</span>
+          <span class="avot-badge ${st.cls}">${st.label}</span>
+          <svg class="avot-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </div>
+        <div class="avot-titulo">${o.titulo || '—'}</div>
+        <div class="avot-card-bot">
+          ${prazoHtml}
+          ${falhaHtml}
+          ${o.responsavelNome ? `<span class="avot-resp">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+            ${o.responsavelNome}
+          </span>` : ''}
+        </div>
+      </div>`;
+    }).join('') + `</div>`;
   }
 
   function _renderAtivoRotinas() {
@@ -3656,21 +3775,28 @@
       }).join('') + `</div>`;
   }
 
-  function _renderAtivoAtividades() {
+  let _ativoAtivPage = 0;
+  function _renderAtivoAtividades(page) {
+    if (page !== undefined) _ativoAtivPage = page;
     const idx = ativoEdicaoIndex;
     const container = document.getElementById('ativo-atividades-list');
     const tarefaIds = state.tarefas.filter(t => t.equipamentoIdx === idx).map(t => t.id);
-    const pubs = state.publicacoes
+    const allPubs = state.publicacoes
       .filter(p => tarefaIds.includes(p.tarefaId))
       .sort((a, b) => {
         const ka = dataRealizadaSortKey(a.dataRealizada) || a.dataPublicacao || '';
         const kb = dataRealizadaSortKey(b.dataRealizada) || b.dataPublicacao || '';
         return kb > ka ? 1 : kb < ka ? -1 : 0;
       });
-    if (pubs.length === 0) {
+    if (allPubs.length === 0) {
       container.innerHTML = `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><strong>Nenhuma atividade registrada</strong><p>As atividades aparecem após publicar tarefas deste ativo</p></div>`;
       return;
     }
+    const PER = HISTORICO_PER_PAGE;
+    const totalPages = Math.max(1, Math.ceil(allPubs.length / PER));
+    if (_ativoAtivPage >= totalPages) _ativoAtivPage = totalPages - 1;
+    const pubs = allPubs.slice(_ativoAtivPage * PER, (_ativoAtivPage + 1) * PER);
+
     container.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;">` +
       pubs.map(p => {
         const t      = state.tarefas.find(t => t.id === p.tarefaId);
@@ -3683,7 +3809,8 @@
           </div>
           ${p.anexos?.length > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${p.anexos.length} anexo${p.anexos.length>1?'s':''}</span>` : ''}
         </div>`;
-      }).join('') + `</div>`;
+      }).join('') + `</div>` +
+      _renderAtivPagination('_renderAtivoAtividades', _ativoAtivPage, totalPages, allPubs.length);
   }
 
   // Abrir drawer de rotina pré-selecionando o ativo
