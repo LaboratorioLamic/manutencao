@@ -1025,7 +1025,8 @@ function renderUsersTable() {
     const statusChip = u.ativo !== false
       ? '<span class="chip chip-green">Ativo</span>'
       : '<span class="chip chip-gray">Inativo</span>';
-    const canDelete   = !isMe && !u.isAdmin;
+    const canManageUsers = currentSession?.isAdmin || authHasPermission('config.gerenciarUsuarios');
+    const canDelete   = canManageUsers && !isMe && !u.isAdmin;
     const canDemote   = u.isAdmin && !isMe && currentSession?.isAdmin;
 
     const adminBtn = canDemote
@@ -1053,11 +1054,11 @@ function renderUsersTable() {
       <td>${grpName}</td>
       <td>${statusChip}</td>
       <td style="text-align:right;white-space:nowrap;">
-        <button class="btn btn-outline btn-icon" onclick="openUserEditModal('${u.id}')" title="Editar">
+        ${canManageUsers ? `<button class="btn btn-outline btn-icon" onclick="openUserEditModal('${u.id}')" title="Editar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;">
             <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
           </svg>
-        </button>
+        </button>` : ''}
         ${adminBtn}
         <button class="btn btn-outline btn-icon" onclick="deleteUser('${u.id}')" title="Excluir"
           style="color:var(--red);border-color:rgba(230,57,70,.3);margin-left:4px;"
@@ -1100,6 +1101,10 @@ function toggleAllowRegistration() {
 
 // ── Modal criar/editar usuário ───────────────────────────────
 function openUserEditModal(id) {
+  if (currentSession && !currentSession.isAdmin && !authHasPermission('config.gerenciarUsuarios')) {
+    if (typeof showToast === 'function') showToast('Você não tem permissão para gerenciar usuários.', 'error');
+    return;
+  }
   _userEditId = id || null;
 
   const errEl = document.getElementById('user-edit-error');
@@ -1220,6 +1225,10 @@ function updateUserEditStatusLabel() {
 }
 
 function saveUserEdit() {
+  if (currentSession && !currentSession.isAdmin && !authHasPermission('config.gerenciarUsuarios')) {
+    if (typeof showToast === 'function') showToast('Você não tem permissão para gerenciar usuários.', 'error');
+    return;
+  }
   const nome     = (document.getElementById('user-edit-nome')?.value     || '').trim();
   const cpf      = (document.getElementById('user-edit-cpf')?.value      || '').trim();
   const cargo    = (document.getElementById('user-edit-cargo')?.value    || '').trim();
@@ -1279,6 +1288,10 @@ function saveUserEdit() {
 }
 
 function deleteUser(id) {
+  if (currentSession && !currentSession.isAdmin && !authHasPermission('config.gerenciarUsuarios')) {
+    if (typeof showToast === 'function') showToast('Você não tem permissão para excluir usuários.', 'error');
+    return;
+  }
   const u = authState.users.find(u => u.id === id);
   if (!u) return;
   if (u.isAdmin) { if (typeof showToast==='function') showToast('Não é possível excluir o administrador.', 'error'); return; }

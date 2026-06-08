@@ -18,6 +18,7 @@
     anoPicker:   null,    // ano selecionado no picker de ano
   };
   let _activeNotifTab = 'tarefas';
+  let _homeOnlyMine   = false;
   let _hupMinhas = false; // toggle "Minhas Execuções" no card de últimas publicações
   let _falhaTabByAtivo = {}; // { [ativoKey]: 'falha'|'causa'|'deteccao'|'dano' }
 
@@ -477,6 +478,10 @@
               </div>` : ''}
           </div>
         </div>
+        <button class="home-mine-btn${_homeOnlyMine ? ' active' : ''}" onclick="homeToggleMine()" title="Mostrar apenas meus itens">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0;"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          Meus itens
+        </button>
       </div>`;
   }
 
@@ -1104,16 +1109,35 @@
         };
       });
 
+    // Filtro "Meus itens"
+    const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
+    let tarefaItemsVis = tarefaItems;
+    let otItemsVis     = otItems;
+    if (_homeOnlyMine && _sess) {
+      tarefaItemsVis = tarefaItems.filter(it => {
+        const t = k.tarefasAtrasadasList.find(x => x.id === it.id)
+               || k.tarefasProximasList.find(x => x.id === it.id);
+        if (!t) return false;
+        const resp = t.responsaveis || { usuarios: [], grupos: [] };
+        return resp.usuarios.includes(_sess.userId) ||
+               (_sess.grupoId && resp.grupos.includes(_sess.grupoId));
+      });
+      otItemsVis = otItems.filter(it => {
+        const o = k.ordensVis.find(x => x.id === it.id);
+        return o?.responsavelId === _sess.userId;
+      });
+    }
+
     const tabT = _activeNotifTab === 'tarefas';
-    const cntT = tarefaItems.length;
-    const cntO = otItems.length;
+    const cntT = tarefaItemsVis.length;
+    const cntO = otItemsVis.length;
 
     const _tarefaList = cntT === 0
       ? `<div class="home-notif-empty">
            ${_ico.ok}
-           <span>Sem tarefas pendentes</span>
+           <span>${_homeOnlyMine ? 'Nenhuma tarefa atribuída a você' : 'Sem tarefas pendentes'}</span>
          </div>`
-      : tarefaItems.map(it =>
+      : tarefaItemsVis.map(it =>
           `<div class="home-notif-item"
             onclick="openTarefaDetalhe('${it.id}')">
             <div class="home-notif-dot" style="background:${it.dot}"></div>
@@ -1127,9 +1151,9 @@
     const _otList = cntO === 0
       ? `<div class="home-notif-empty">
            ${_ico.ok}
-           <span>Sem OTs em aberto</span>
+           <span>${_homeOnlyMine ? 'Nenhuma OT atribuída a você' : 'Sem OTs em aberto'}</span>
          </div>`
-      : otItems.map(it =>
+      : otItemsVis.map(it =>
           `<div class="home-notif-item"
             onclick="otOpenView('${it.id}')">
             <div class="home-notif-dot" style="background:${it.dot}"></div>
@@ -1345,6 +1369,11 @@
   window.homeCustomDate = function (chave, valor) {
     _hf[chave] = valor;
     if (_hf.dataInicio && _hf.dataFim) { _closeDrop(); renderHome(); }
+  };
+
+  window.homeToggleMine = function () {
+    _homeOnlyMine = !_homeOnlyMine;
+    renderHome();
   };
 
   window.homeNotifTab = function (tab) {

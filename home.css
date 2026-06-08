@@ -644,6 +644,34 @@
   overflow: visible !important;
 }
 
+.home-mine-btn {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-radius: 20px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: var(--transition);
+}
+.home-mine-btn:hover {
+  color: var(--cyan);
+  border-color: rgba(0,168,204,0.4);
+}
+.home-mine-btn.active {
+  color: var(--cyan);
+  font-weight: 600;
+  background: rgba(0,168,204,0.08);
+  border-color: rgba(0,168,204,0.5);
+}
+
 .home-notif-header {
   border-bottom: 1px solid var(--border);
   padding: 0;
