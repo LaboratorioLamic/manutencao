@@ -407,6 +407,15 @@
 }
 .ot-sub-del-btn:hover { background: rgba(230,57,70,0.1); color: var(--red); }
 .ot-sub-del-btn svg { width: 13px; height: 13px; }
+.ot-sub-ev-btn {
+  width: 26px; height: 26px; border: none; flex-shrink: 0;
+  background: rgba(244,162,97,0.1); color: #b45309; cursor: pointer;
+  border-radius: 6px; display: flex; align-items: center; justify-content: center;
+  transition: var(--transition);
+}
+.ot-sub-ev-btn:hover { background: rgba(244,162,97,0.22); }
+.ot-sub-ev-btn.has-evidence { background: rgba(42,157,143,0.12); color: #2a9d8f; }
+.ot-sub-ev-btn.has-evidence:hover { background: rgba(42,157,143,0.22); }
 
 .ot-sub-add-row {
   display: flex; gap: 8px; margin-top: 4px;
@@ -451,6 +460,13 @@
 }
 .ot-pub-autor { font-size: 12px; color: var(--text-muted); }
 .ot-pub-data  { font-size: 11px; color: var(--text-muted); margin-left: auto; flex-shrink: 0; }
+.ot-pub-subtarefa-ref {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; font-weight: 600; color: #b45309;
+  background: rgba(244,162,97,0.1); border: 1px solid rgba(244,162,97,0.22);
+  padding: 2px 7px; border-radius: 10px; margin-top: 4px;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .ot-pub-texto { font-size: 13px; color: var(--text-primary); line-height: 1.5; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; word-break: break-word; }
 .ot-pub-anexos { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .ot-pub-anexo-chip {

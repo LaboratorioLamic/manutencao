@@ -1677,15 +1677,19 @@
           <div class="form-row">
             <div class="form-field" style="margin-bottom:0;">
               <label class="field-label">Empresa Padrão</label>
-              <select id="tarefa-empresa-padrao" class="field-select" onchange="empPopulateTecnicoSelect('tarefa-resp-padrao','tarefa-empresa-padrao')">
-                <option value="">— Selecione a empresa —</option>
-              </select>
+              <div class="autocomplete-wrapper">
+                <input type="text" id="tarefa-empresa-padrao" class="field-input" placeholder="Pesquisar empresa..." autocomplete="off"
+                  oninput="tarefaEmpresaFilter()" onfocus="tarefaEmpresaFilter()" onblur="setTimeout(()=>tarefaEmpresaClose(),180)">
+                <div class="autocomplete-dropdown" id="tarefa-empresa-padrao-dd"></div>
+              </div>
             </div>
             <div class="form-field" style="margin-bottom:0;">
               <label class="field-label">Responsável Padrão</label>
-              <select id="tarefa-resp-padrao" class="field-select">
-                <option value="">— Selecione o responsável —</option>
-              </select>
+              <div class="autocomplete-wrapper">
+                <input type="text" id="tarefa-resp-padrao" class="field-input" placeholder="Pesquisar responsável..." autocomplete="off"
+                  oninput="tarefaRespFilter()" onfocus="tarefaRespFilter()" onblur="setTimeout(()=>tarefaRespClose(),180)">
+                <div class="autocomplete-dropdown" id="tarefa-resp-padrao-dd"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -1895,15 +1899,19 @@
         <div class="form-row">
           <div class="form-field" style="margin-bottom:0;">
             <label class="field-label">Empresa Responsável</label>
-            <select id="pub-empresa-responsavel" class="field-select" onchange="empPopulateTecnicoSelect('pub-tecnico-responsavel','pub-empresa-responsavel')">
-              <option value="">— Selecione a empresa —</option>
-            </select>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="pub-empresa-responsavel" class="field-input" placeholder="Pesquisar empresa..." autocomplete="off"
+                oninput="pubEmpresaFilter()" onfocus="pubEmpresaFilter()" onblur="setTimeout(()=>pubEmpresaClose(),180)">
+              <div class="autocomplete-dropdown" id="pub-empresa-responsavel-dd"></div>
+            </div>
           </div>
           <div class="form-field" style="margin-bottom:0;">
             <label class="field-label">Técnico Responsável</label>
-            <select id="pub-tecnico-responsavel" class="field-select">
-              <option value="">— Selecione o técnico —</option>
-            </select>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="pub-tecnico-responsavel" class="field-input" placeholder="Selecione uma empresa primeiro" autocomplete="off"
+                oninput="pubTecnicoFilter()" onfocus="pubTecnicoFilter()" onblur="setTimeout(()=>pubTecnicoClose(),180)" disabled>
+              <div class="autocomplete-dropdown" id="pub-tecnico-responsavel-dd"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -2028,15 +2036,19 @@
         <div class="form-row">
           <div class="form-field" style="margin-bottom:0;">
             <label class="field-label">Empresa Responsável</label>
-            <select id="edit-pub-empresa" class="field-select" onchange="empPopulateTecnicoSelect('edit-pub-tecnico','edit-pub-empresa')">
-              <option value="">— Selecione a empresa —</option>
-            </select>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="edit-pub-empresa" class="field-input" placeholder="Pesquisar empresa..." autocomplete="off"
+                oninput="editPubEmpresaFilter()" onfocus="editPubEmpresaFilter()" onblur="setTimeout(()=>editPubEmpresaClose(),180)">
+              <div class="autocomplete-dropdown" id="edit-pub-empresa-dd"></div>
+            </div>
           </div>
           <div class="form-field" style="margin-bottom:0;">
             <label class="field-label">Técnico Responsável</label>
-            <select id="edit-pub-tecnico" class="field-select">
-              <option value="">— Selecione o técnico —</option>
-            </select>
+            <div class="autocomplete-wrapper">
+              <input type="text" id="edit-pub-tecnico" class="field-input" placeholder="Selecione uma empresa primeiro" autocomplete="off"
+                oninput="editPubTecnicoFilter()" onfocus="editPubTecnicoFilter()" onblur="setTimeout(()=>editPubTecnicoClose(),180)" disabled>
+              <div class="autocomplete-dropdown" id="edit-pub-tecnico-dd"></div>
+            </div>
           </div>
         </div>
       </div>

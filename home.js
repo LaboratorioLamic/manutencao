@@ -166,6 +166,22 @@
       o.tipo === 'corretiva' && !['concluida', 'cancelada'].includes(o.status)
     ).length;
 
+    // OTs de Serviço Abertas: abertas, não corretivas
+    const otsServicoList = ordensVis.filter(o =>
+      o.tipo !== 'corretiva' && !['concluida', 'cancelada'].includes(o.status)
+    );
+    const otsServico = otsServicoList.length;
+
+    // OTs com Atraso: abertas (não finalizadas) com prazo vencido
+    const hoje2 = _hoje();
+    const otsAtrasoList = ordensVis.filter(o => {
+      if (['concluida', 'cancelada'].includes(o.status)) return false;
+      if (!o.prazo) return false;
+      const d = new Date(o.prazo + 'T00:00:00');
+      return d < hoje2;
+    });
+    const otsAtraso = otsAtrasoList.length;
+
     // OTs críticas abertas (para painel)
     const otCriticasAbertas = ordensVis.filter(o =>
       o.severidade === 'critica' && !['concluida', 'cancelada'].includes(o.status)
@@ -204,6 +220,8 @@
     return {
       otEmProcesso:  otByStatus.em_processo,
       otEmRevisao:   otByStatus.em_revisao,
+      otsServico, otsServicoList,
+      otsAtraso, otsAtrasoList,
       otConcluidas,
       otsFalhaTotal, otsFalhaList,
       tarefasAtrasadas: tarefasAtrasadas.length,
@@ -565,14 +583,16 @@
     </div>`;
   }
 
-  // Row 1: OTs em Processo | OTs em Revisão | OTs Concluídas | OTs Corretivas Abertas
+  // Row 1: OTs com Atraso | OTs de Serviço Abertas | OTs Concluídas | OTs Corretivas Abertas
   function _renderKPIRow1(k) {
     return `<div class="home-kpi-row">
-      ${_kpi('OTs em Processo',       k.otEmProcesso,  _ico.clock,   'kpi-cyan',  'Em andamento',       'otEmProcesso')}
-      ${_kpi('OTs em Revisão',        k.otEmRevisao,   _ico.eye,     'kpi-amber', 'Aguardando revisão', 'otEmRevisao')}
-      ${_kpi('OTs com Falha',          k.otsFalhaTotal, _ico.alert,   'kpi-red',   'Ativos com falha registrada', 'otsFalha')}
-      ${_kpi('OTs Corretivas Abertas',k.otCorretivas,  _ico.wrench,
+      ${_kpi('OTs Corretivas Abertas', k.otCorretivas,  _ico.wrench,
           k.otCorretivas > 0 ? 'kpi-amber' : 'kpi-cyan', 'Em aberto', 'otCorretivas')}
+      ${_kpi('OTs de Serviço Abertas', k.otsServico,    _ico.eye,
+          'kpi-cyan', 'Não corretivas em aberto', 'otsServico')}
+      ${_kpi('OTs com Falha',          k.otsFalhaTotal, _ico.alert,   'kpi-red',   'Ativos com falha registrada', 'otsFalha')}
+      ${_kpi('OTs com Atraso',         k.otsAtraso,     _ico.clock,
+          'kpi-amber', 'Prazo vencido', 'otsAtraso')}
     </div>`;
   }
 
@@ -580,7 +600,7 @@
   function _renderKPIRow2(k) {
     return `<div class="home-kpi-row">
       ${_kpi('Tarefas com Atraso', k.tarefasAtrasadas,  _ico.alert,
-          k.tarefasAtrasadas > 0 ? 'kpi-red' : 'kpi-green',
+          'kpi-amber',
           'Vencidas sem conclusão', 'tarefasAtrasadas')}
       ${_kpi('Rotinas Ativas',     k.rotinasAtivas,     _ico.refresh, 'kpi-cyan',
           'Planos ativos', 'rotinasAtivas')}
@@ -645,22 +665,33 @@
 
     switch (tipo) {
 
-      case 'otEmProcesso':
-        return { titulo: 'OTs em Processo', cols: ['Nº', 'Título', 'Ativo / Setor', 'Tipo', 'Abertura'],
-          rows: k.ordensVis.filter(o => o.status === 'em_processo').map(o => ({
-            cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o),
-                    _otTipoLabel(o.tipo), _fmtDate((o.criadoEm||'').split('T')[0])],
-            fn: _fn(`otOpenView('${o.id}')`),
-          })),
+      case 'otsAtraso':
+        return { titulo: 'OTs com Atraso', cols: ['Nº', 'Título', 'Ativo / Setor', 'Tipo', 'Prazo', 'Atraso'],
+          rows: (k.otsAtrasoList || [])
+            .sort((a, b) => (a.prazo || '').localeCompare(b.prazo || ''))
+            .map(o => {
+              const d = new Date(o.prazo + 'T00:00:00');
+              const dias = Math.ceil((hoje - d) / 86400000);
+              return {
+                cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o),
+                        _otTipoLabel(o.tipo), _fmtDate(o.prazo),
+                        `<span class="hkm-badge hkm-danger">${dias}d de atraso</span>`],
+                fn: _fn(`otOpenView('${o.id}')`),
+              };
+            }),
         };
 
-      case 'otEmRevisao':
-        return { titulo: 'OTs em Revisão', cols: ['Nº', 'Título', 'Ativo / Setor', 'Tipo', 'Abertura'],
-          rows: k.ordensVis.filter(o => o.status === 'em_revisao').map(o => ({
-            cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o),
-                    _otTipoLabel(o.tipo), _fmtDate((o.criadoEm||'').split('T')[0])],
-            fn: _fn(`otOpenView('${o.id}')`),
-          })),
+      case 'otsServico':
+        return { titulo: 'OTs de Serviço Abertas', cols: ['Nº', 'Título', 'Ativo / Setor', 'Tipo', 'Status', 'Abertura'],
+          rows: (k.otsServicoList || [])
+            .sort((a, b) => (['critica','alta','media','baixa'].indexOf(a.severidade)) - (['critica','alta','media','baixa'].indexOf(b.severidade)))
+            .map(o => ({
+              cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o),
+                      _otTipoLabel(o.tipo),
+                      `<span class="hkm-badge hkm-st-${o.status}">${_otStLabel(o.status)}</span>`,
+                      _fmtDate((o.criadoEm||'').split('T')[0])],
+              fn: _fn(`otOpenView('${o.id}')`),
+            })),
         };
 
       case 'otConcluidas':
@@ -1039,15 +1070,37 @@
           baixa:   { dot: '#2a9d8f' },
         };
         const sc = stCfg[ot.status] || { label: ot.status, cls: 'notif-badge-gray' };
+
+        // Flag de prazo
+        let prazoBadge = '';
+        if (ot.prazo) {
+          const todayP = new Date(); todayP.setHours(0,0,0,0);
+          const dP = new Date(ot.prazo + 'T00:00:00');
+          const diffP = Math.ceil((dP - todayP) / 86400000);
+          let alertLimit = 2;
+          if (ot.prazoAlertaDias !== undefined && ot.prazoAlertaDias !== null) {
+            const parsed = parseInt(ot.prazoAlertaDias, 10);
+            if (!Number.isNaN(parsed) && parsed >= 0) alertLimit = parsed;
+          }
+          if (diffP < 0) {
+            prazoBadge = `<span class="home-notif-badge notif-badge-red" style="margin-left:4px">Vencida ${Math.abs(diffP)}d</span>`;
+          } else if (diffP === 0) {
+            prazoBadge = `<span class="home-notif-badge notif-badge-red" style="margin-left:4px">Vence hoje</span>`;
+          } else if (diffP <= alertLimit) {
+            prazoBadge = `<span class="home-notif-badge notif-badge-amber" style="margin-left:4px">${diffP}d restante${diffP !== 1 ? 's' : ''}</span>`;
+          }
+        }
+
         return {
-          id:     ot.id,
-          num:    ot.numero || ot.id,
-          titulo: ot.titulo || ot.num,
-          meta:   ativo ? `${ativo.nome} · ${ativo.setor}` : (ot.setor || '—'),
-          badge:  sc.label,
-          bCls:   sc.cls,
-          dot:    sevCfg[ot.severidade]?.dot || '#718096',
-          sev:    ot.severidade,
+          id:         ot.id,
+          num:        ot.numero || ot.id,
+          titulo:     ot.titulo || ot.num,
+          meta:       ativo ? `${ativo.nome} · ${ativo.setor}` : (ot.setor || '—'),
+          badge:      sc.label,
+          bCls:       sc.cls,
+          dot:        sevCfg[ot.severidade]?.dot || '#718096',
+          sev:        ot.severidade,
+          prazoBadge,
         };
       });
 
@@ -1084,7 +1137,10 @@
               <div class="home-notif-title">${_esc(it.num)} — ${_esc(it.titulo)}</div>
               <div class="home-notif-meta">${_esc(it.meta)}</div>
             </div>
-            <span class="home-notif-badge ${it.bCls}">${it.badge}</span>
+            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+              <span class="home-notif-badge ${it.bCls}">${it.badge}</span>
+              ${it.prazoBadge}
+            </div>
           </div>`).join('');
 
     return `

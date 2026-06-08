@@ -928,6 +928,25 @@ function _otSetStatus(otId, newStatus, pubTipo, texto) {
     });
   }
   otSave();
+
+  // Se a OT foi concluída ou cancelada, verificar se algum ativo em pausa
+  // tem todas as suas OTs de pausa finalizadas — se sim, retornar para "Em Uso"
+  if (['concluida', 'cancelada'].includes(newStatus) && typeof state !== 'undefined') {
+    state.ativos.forEach((ativo, ativoIdx) => {
+      if (ativo.statusUso !== 'em_pausa' || !ativo.pausaOTs || ativo.pausaOTs.length === 0) return;
+      if (!ativo.pausaOTs.includes(otId)) return;
+      const todasFinalizadas = ativo.pausaOTs.every(pid => {
+        const ot = otState.ordens.find(o => o.id === pid);
+        return !ot || ['concluida', 'cancelada'].includes(ot.status);
+      });
+      if (todasFinalizadas) {
+        state.ativos[ativoIdx] = { ...ativo, statusUso: 'em_uso', pausaOTs: [] };
+        if (typeof saveState === 'function') saveState();
+        showToast(`Ativo "${ativo.nome}" retornou para Em Uso automaticamente.`, 'success');
+      }
+    });
+  }
+
   _otRenderKanban();
   showToast(`OT movida para ${OT_STATUS_CFG[newStatus]?.label}.`, 'success');
 }
@@ -1004,6 +1023,101 @@ function otConfirmDevolve() {
   otCloseModal('modal-ot-devolve');
 }
 
+// ── AUTOCOMPLETE EMPRESA / RESPONSÁVEL DO FORM OT ────────────
+let _otFEmpresaId = null;
+
+function _otFSetEmpresaResp(empresaNome, respNome) {
+  _otFEmpresaId = null;
+  const empInp  = document.getElementById('ot-f-empresa');
+  const respInp = document.getElementById('ot-f-resp-empresa');
+  if (!empInp || !respInp) return;
+
+  if (empresaNome && typeof empState !== 'undefined') {
+    const emp = empState.empresas.find(e => e.nome === empresaNome);
+    if (emp) {
+      _otFEmpresaId = emp.id ?? empState.empresas.indexOf(emp);
+      empInp.value  = emp.nome;
+      respInp.disabled = false;
+      respInp.placeholder = 'Pesquisar responsável...';
+      respInp.value = respNome || '';
+      return;
+    }
+  }
+  empInp.value  = empresaNome || '';
+  respInp.disabled = true;
+  respInp.placeholder = 'Selecione uma empresa primeiro';
+  respInp.value = '';
+}
+
+function otFEmpresaFilter() {
+  const inp  = document.getElementById('ot-f-empresa');
+  const drop = document.getElementById('ot-f-empresa-drop');
+  if (!inp || !drop) return;
+  const q = inp.value.toLowerCase();
+  const empresas = typeof empState !== 'undefined' ? empState.empresas : [];
+  const matches  = empresas.filter(e => e.nome.toLowerCase().includes(q));
+  drop.innerHTML = matches.length
+    ? matches.map(e => `<div class="autocomplete-item" onmousedown="otFEmpresaSelect(${empState.empresas.indexOf(e)})">${e.nome}</div>`).join('')
+    : `<div class="autocomplete-item" style="color:var(--text-muted);font-style:italic;">Nenhuma empresa encontrada</div>`;
+  drop.classList.add('open');
+}
+
+function otFEmpresaSelect(idx) {
+  const emp  = typeof empState !== 'undefined' ? empState.empresas[idx] : null;
+  if (!emp) return;
+  _otFEmpresaId = idx;
+  const empInp  = document.getElementById('ot-f-empresa');
+  const respInp = document.getElementById('ot-f-resp-empresa');
+  if (empInp) empInp.value = emp.nome;
+  if (respInp) {
+    respInp.disabled    = false;
+    respInp.placeholder = 'Pesquisar responsável...';
+    respInp.value       = '';
+  }
+  otFEmpresaClose();
+}
+
+function otFEmpresaClose() {
+  const drop = document.getElementById('ot-f-empresa-drop');
+  if (drop) drop.classList.remove('open');
+  // Se o campo ficou vazio, desabilita responsável
+  const empInp  = document.getElementById('ot-f-empresa');
+  const respInp = document.getElementById('ot-f-resp-empresa');
+  if (empInp && !empInp.value.trim()) {
+    _otFEmpresaId = null;
+    if (respInp) { respInp.disabled = true; respInp.placeholder = 'Selecione uma empresa primeiro'; respInp.value = ''; }
+  }
+}
+
+function otFRespFilter() {
+  if (_otFEmpresaId === null) return;
+  const inp  = document.getElementById('ot-f-resp-empresa');
+  const drop = document.getElementById('ot-f-resp-empresa-drop');
+  if (!inp || !drop) return;
+  const emp  = typeof empState !== 'undefined' ? empState.empresas[_otFEmpresaId] : null;
+  const resps = emp?.responsaveis || [];
+  const q = inp.value.toLowerCase();
+  const matches = resps.filter(r => r.nome.toLowerCase().includes(q));
+  drop.innerHTML = matches.length
+    ? matches.map(r => `<div class="autocomplete-item" onmousedown="otFRespSelect(${resps.indexOf(r)})">${r.nome}</div>`).join('')
+    : `<div class="autocomplete-item" style="color:var(--text-muted);font-style:italic;">Nenhum responsável encontrado</div>`;
+  drop.classList.add('open');
+}
+
+function otFRespSelect(idx) {
+  const emp  = typeof empState !== 'undefined' ? empState.empresas[_otFEmpresaId] : null;
+  const resp = emp?.responsaveis?.[idx];
+  if (!resp) return;
+  const inp = document.getElementById('ot-f-resp-empresa');
+  if (inp) inp.value = resp.nome;
+  otFRespClose();
+}
+
+function otFRespClose() {
+  const drop = document.getElementById('ot-f-resp-empresa-drop');
+  if (drop) drop.classList.remove('open');
+}
+
 // ── MODAL FORMULÁRIO OT ───────────────────────────────────────
 function otOpenForm(id) {
   _otFormId   = id;
@@ -1043,10 +1157,8 @@ function otOpenForm(id) {
   document.getElementById('ot-falha-section').classList.toggle('show', ativoFalhou && o?.tipo === 'corretiva');
   document.getElementById('ot-terceiro-section').classList.toggle('show', terceirizado);
 
-  // Selects de empresa/responsável (populados do módulo Empresas)
-  if (typeof empPopulateBothSelects === 'function') {
-    empPopulateBothSelects('ot-f-empresa', 'ot-f-resp-empresa', o?.empresa || '', o?.respEmpresa || '');
-  }
+  // Autocomplete empresa/responsável
+  _otFSetEmpresaResp(o?.empresa || '', o?.respEmpresa || '');
 
   // Subtarefas
   _otSubTemp = o?.subtarefas ? JSON.parse(JSON.stringify(o.subtarefas)) : [];
@@ -1660,8 +1772,12 @@ ${o.status === 'cancelada' ? `<div class="detail-note" style="border-left-color:
   ${sub.map((s, i) => {
     const evPubs = otState.publicacoes.filter(p => p.otId === o.id && p.tipo === 'evidencia' && p.subtarefaId === s.id);
     const hasEvidence = evPubs.length > 0;
-    const blocked = s.exigeEvidencia && !hasEvidence && !s.concluida && canEdit;
-    return `<div class="ot-sub-item${s.concluida ? ' done' : ''}" style="cursor:${canEdit && !blocked ? 'pointer' : 'default'}" onclick="${canEdit && !blocked ? `otViewToggleSub('${o.id}',${i})` : blocked ? `showToast('Adicione uma publicação de evidência vinculada a esta subtarefa antes de concluir.','error')` : ''}">
+    const evPubId = hasEvidence ? evPubs[0].id : null;
+    const blocked = !s.concluida && s.exigeEvidencia && !hasEvidence && canEdit;
+    const clickAction = canEdit
+      ? (blocked ? `showToast('Adicione uma publicação de evidência vinculada a esta subtarefa antes de concluir.','error')` : `otViewToggleSub('${o.id}',${i})`)
+      : '';
+    return `<div class="ot-sub-item${s.concluida ? ' done' : ''}" style="cursor:${canEdit ? 'pointer' : 'default'}" onclick="${clickAction}">
       <div class="ot-sub-check${s.concluida ? ' checked' : ''}${blocked ? ' blocked' : ''}">
         ${blocked ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;color:#b45309;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`
           : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>`}
@@ -1669,10 +1785,14 @@ ${o.status === 'cancelada' ? `<div class="detail-note" style="border-left-color:
       <div class="ot-sub-body">
         <div class="ot-sub-desc">${_escHtml(s.descricao)}</div>
         <div class="ot-sub-meta">
-          ${s.exigeEvidencia ? `<span class="ot-sub-ev-badge">${hasEvidence ? '✓ Evidência vinculada' : 'Exige evidência'}</span>` : ''}
+          ${s.exigeEvidencia && !s.concluida ? `<span class="ot-sub-ev-badge">${hasEvidence ? '✓ Evidência vinculada' : 'Exige evidência'}</span>` : ''}
           ${s.concluidoPorNome ? `<span>✓ ${_escHtml(s.concluidoPorNome)} · ${s.concluidoEm ? _fmtDateTime(s.concluidoEm) : ''}</span>` : ''}
         </div>
       </div>
+      ${s.exigeEvidencia && !s.concluida && canEdit ? `<button class="ot-sub-ev-btn${hasEvidence ? ' has-evidence' : ''}" title="${hasEvidence ? 'Ver evidência' : 'Adicionar evidência'}"
+        onclick="event.stopPropagation();${hasEvidence ? `otOpenPubView('${evPubId}')` : `otOpenPubModalFromSub('${s.id}')`}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+      </button>` : ''}
     </div>`;
   }).join('')}
   </div>` : `<div class="checklist-empty-tip">Nenhuma subtarefa ainda.</div>`}
@@ -1823,6 +1943,12 @@ function otChangeStatusFromView(otId, targetStatus) {
 function _otPubEntryHTML(p) {
   const cfg = OT_PUB_CFG[p.tipo] || OT_PUB_CFG.atualizacao;
   const anexos = p.anexos || [];
+  const subDesc = (() => {
+    if (!p.subtarefaId) return null;
+    const o = otState.ordens.find(x => x.id === p.otId);
+    const s = o?.subtarefas?.find(x => x.id === p.subtarefaId);
+    return s ? s.descricao : null;
+  })();
   return `<div class="ot-pub-entry ot-pub-entry-clickable" onclick="otOpenPubView('${p.id}')">
   <div class="ot-pub-timeline">
     <div class="ot-pub-dot ot-pub-dot-${p.tipo}"></div>
@@ -1833,6 +1959,7 @@ function _otPubEntryHTML(p) {
       <span class="ot-pub-autor">${_escHtml(p.autorNome || '—')}</span>
       <span class="ot-pub-data">${_fmtDateTime(p.data)}</span>
     </div>
+    ${subDesc ? `<div class="ot-pub-subtarefa-ref"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:10px;height:10px;flex-shrink:0;"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>${_escHtml(subDesc)}</div>` : ''}
     ${p.texto ? `<div class="ot-pub-texto">${_escHtml(p.texto.length > 120 ? p.texto.slice(0,120)+'…' : p.texto)}</div>` : ''}
     ${anexos.length > 0 ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${anexos.length} anexo(s)</div>` : ''}
   </div>
@@ -1874,6 +2001,7 @@ function otOpenPubModal() {
   _otUpdatePubCharCount();
   _otRenderPubAnexos();
   _otRenderPubSubtarefaSelect();
+  otPubTipoChange();
   if (typeof resetUploadZone === 'function') resetUploadZone('ot-pub');
   const titleEl = document.getElementById('ot-pub-modal-title');
   if (titleEl) titleEl.textContent = 'Nova Publicação';
@@ -1882,6 +2010,15 @@ function otOpenPubModal() {
   const btnEl = document.getElementById('btn-ot-confirmar-pub');
   if (btnEl) btnEl.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><polyline points="20 6 9 17 4 12"/></svg> Confirmar Publicação`;
   otOpenModal('modal-ot-pub');
+}
+
+function otOpenPubModalFromSub(subId) {
+  otOpenPubModal();
+  const tipoSel = document.getElementById('ot-pub-tipo');
+  if (tipoSel) { tipoSel.value = 'evidencia'; otPubTipoChange(); }
+  _otRenderPubSubtarefaSelect();
+  const subSel = document.getElementById('ot-pub-subtarefa-sel');
+  if (subSel) subSel.value = subId;
 }
 
 function otOpenEditPub(pubId) {
@@ -1934,7 +2071,14 @@ function _otRenderPubSubtarefaSelect() {
   const sel = document.getElementById('ot-pub-subtarefa-sel');
   if (!sel) return;
   const o = _otViewId ? otState.ordens.find(x => x.id === _otViewId) : null;
-  const subs = (o?.subtarefas || []).filter(s => s.exigeEvidencia);
+  // Subtarefas que exigem evidência, não concluídas, e ainda sem evidência publicada
+  // (ao editar uma publicação existente preserva a própria subtarefa no select)
+  const pubs = otState.publicacoes;
+  const subs = (o?.subtarefas || []).filter(s => {
+    if (!s.exigeEvidencia || s.concluida) return false;
+    const jaTemEvidencia = pubs.some(p => p.otId === o.id && p.tipo === 'evidencia' && p.subtarefaId === s.id && p.id !== _otEditPubId);
+    return !jaTemEvidencia;
+  });
   sel.innerHTML = `<option value="">— Nenhuma (publicação geral) —</option>` +
     subs.map(s => `<option value="${s.id}">${_escHtml(s.descricao)}</option>`).join('');
 }
@@ -2329,15 +2473,24 @@ function _otModalsHTML() {
             <div class="form-row">
               <div class="form-field" style="margin-bottom:0;">
                 <label class="field-label">Empresa / Prestador</label>
-                <select id="ot-f-empresa" class="field-select" onchange="empPopulateTecnicoSelect('ot-f-resp-empresa','ot-f-empresa')">
-                  <option value="">— Selecione a empresa —</option>
-                </select>
+                <div class="autocomplete-wrapper">
+                  <input id="ot-f-empresa" class="field-input" type="text" placeholder="Pesquisar empresa..." autocomplete="off"
+                    oninput="otFEmpresaFilter()"
+                    onfocus="otFEmpresaFilter()"
+                    onblur="setTimeout(otFEmpresaClose,180)">
+                  <div class="autocomplete-dropdown" id="ot-f-empresa-drop"></div>
+                </div>
               </div>
               <div class="form-field" style="margin-bottom:0;">
                 <label class="field-label">Responsável pela empresa</label>
-                <select id="ot-f-resp-empresa" class="field-select">
-                  <option value="">— Selecione o responsável —</option>
-                </select>
+                <div class="autocomplete-wrapper">
+                  <input id="ot-f-resp-empresa" class="field-input" type="text" placeholder="Selecione uma empresa primeiro" autocomplete="off"
+                    disabled
+                    oninput="otFRespFilter()"
+                    onfocus="otFRespFilter()"
+                    onblur="setTimeout(otFRespClose,180)">
+                  <div class="autocomplete-dropdown" id="ot-f-resp-empresa-drop"></div>
+                </div>
               </div>
             </div>
           </div>

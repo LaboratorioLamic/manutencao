@@ -491,6 +491,12 @@
     setProximaDataDisplay('');
     _diasSemanaSelected = [];
     _tarefaResponsaveis = { usuarios: [], grupos: [] };
+    _tarefaEmpresaId = null;
+    document.getElementById('tarefa-empresa-padrao').value = '';
+    const _respReset = document.getElementById('tarefa-resp-padrao');
+    _respReset.value = '';
+    _respReset.disabled = true;
+    _respReset.placeholder = 'Selecione uma empresa primeiro';
     document.querySelectorAll('.dia-semana-btn').forEach(b => b.classList.remove('active'));
     onTarefaFrequenciaChange();
     _renderResponsaveisChips();
@@ -515,8 +521,8 @@
       document.getElementById('tarefa-anexo-obrigatorio').checked = !!editing.anexoObrigatorio;
       const _terceiroSec = document.getElementById('tarefa-terceiro-section');
       if (_terceiroSec) _terceiroSec.style.display = editing.realizadoPorTerceiro ? '' : 'none';
-      if (editing.realizadoPorTerceiro && typeof empPopulateBothSelects === 'function') {
-        empPopulateBothSelects('tarefa-empresa-padrao', 'tarefa-resp-padrao', editing.empresaPadrao || '', editing.respPadrao || '');
+      if (editing.realizadoPorTerceiro) {
+        _tarefaSetEmpresaResp(editing.empresaPadrao || '', editing.respPadrao || '');
       }
       setProximaDataDisplay(editing.proximaData || '');
       document.getElementById('tarefa-proxima-data').value = editing.proximaData || '';
@@ -573,10 +579,253 @@
     const checked = document.getElementById('tarefa-terceiro').checked;
     const sec = document.getElementById('tarefa-terceiro-section');
     if (sec) sec.style.display = checked ? '' : 'none';
-    if (checked && typeof empPopulateBothSelects === 'function') {
-      empPopulateBothSelects('tarefa-empresa-padrao', 'tarefa-resp-padrao', '', '');
+    if (checked) {
+      document.getElementById('tarefa-empresa-padrao').value = '';
+      _tarefaEmpresaId = null;
+      const respInp = document.getElementById('tarefa-resp-padrao');
+      respInp.value = '';
+      respInp.disabled = true;
+      respInp.placeholder = 'Selecione uma empresa primeiro';
     }
   };
+
+  // ── AUTOCOMPLETE EMPRESA/RESPONSÁVEL NO DRAWER DE TAREFA ──
+  let _tarefaEmpresaId = null;
+
+  window.tarefaEmpresaFilter = function () {
+    const inp = document.getElementById('tarefa-empresa-padrao');
+    const dd  = document.getElementById('tarefa-empresa-padrao-dd');
+    if (!inp || !dd) return;
+    const q = inp.value.toLowerCase();
+    const empresas = (typeof empState !== 'undefined' ? empState.empresas : []);
+    const matches = q ? empresas.filter(e => e.nome.toLowerCase().includes(q)) : empresas;
+    if (matches.length === 0) {
+      dd.innerHTML = '<div class="autocomplete-empty">Nenhuma empresa encontrada</div>';
+    } else {
+      dd.innerHTML = matches.map(e =>
+        `<div class="autocomplete-opt" onmousedown="tarefaEmpresaSelect('${e.id}','${e.nome.replace(/'/g,"\\'")}')">
+          <div class="autocomplete-opt-name">${e.nome}</div>
+          ${e.cnpj ? `<div class="autocomplete-opt-meta">${e.cnpj}</div>` : ''}
+        </div>`).join('');
+    }
+    dd.classList.add('open');
+  };
+
+  window.tarefaEmpresaSelect = function (id, nome) {
+    _tarefaEmpresaId = id;
+    document.getElementById('tarefa-empresa-padrao').value = nome;
+    tarefaEmpresaClose();
+    const respInp = document.getElementById('tarefa-resp-padrao');
+    respInp.value = '';
+    respInp.disabled = false;
+    respInp.placeholder = 'Pesquisar responsável...';
+    tarefaRespClose();
+  };
+
+  window.tarefaEmpresaClose = function () {
+    document.getElementById('tarefa-empresa-padrao-dd')?.classList.remove('open');
+  };
+
+  window.tarefaRespFilter = function () {
+    if (!_tarefaEmpresaId) return;
+    const inp = document.getElementById('tarefa-resp-padrao');
+    const dd  = document.getElementById('tarefa-resp-padrao-dd');
+    if (!inp || !dd) return;
+    const empresas = (typeof empState !== 'undefined' ? empState.empresas : []);
+    const emp = empresas.find(e => e.id === _tarefaEmpresaId);
+    const resps = emp?.responsaveis || [];
+    const q = inp.value.toLowerCase();
+    const matches = q ? resps.filter(r => r.nome.toLowerCase().includes(q) || (r.cargo || '').toLowerCase().includes(q)) : resps;
+    if (matches.length === 0) {
+      dd.innerHTML = '<div class="autocomplete-empty">Nenhum responsável encontrado</div>';
+    } else {
+      dd.innerHTML = matches.map(r =>
+        `<div class="autocomplete-opt" onmousedown="tarefaRespSelect('${r.nome.replace(/'/g,"\\'")}')">
+          <div class="autocomplete-opt-name">${r.nome}</div>
+          ${r.cargo ? `<div class="autocomplete-opt-meta">${r.cargo}</div>` : ''}
+        </div>`).join('');
+    }
+    dd.classList.add('open');
+  };
+
+  window.tarefaRespSelect = function (nome) {
+    document.getElementById('tarefa-resp-padrao').value = nome;
+    tarefaRespClose();
+  };
+
+  window.tarefaRespClose = function () {
+    document.getElementById('tarefa-resp-padrao-dd')?.classList.remove('open');
+  };
+
+  // ── AUTOCOMPLETE EMPRESA/TÉCNICO NA PUBLICAÇÃO ────────────────
+  let _pubEmpresaId = null;
+
+  window.pubEmpresaFilter = function () {
+    const inp = document.getElementById('pub-empresa-responsavel');
+    const dd  = document.getElementById('pub-empresa-responsavel-dd');
+    if (!inp || !dd) return;
+    const q = inp.value.toLowerCase();
+    const empresas = (typeof empState !== 'undefined' ? empState.empresas : []);
+    const matches = q ? empresas.filter(e => e.nome.toLowerCase().includes(q)) : empresas;
+    if (matches.length === 0) {
+      dd.innerHTML = '<div class="autocomplete-empty">Nenhuma empresa encontrada</div>';
+    } else {
+      dd.innerHTML = matches.map(e =>
+        `<div class="autocomplete-opt" onmousedown="pubEmpresaSelect('${e.id}','${e.nome.replace(/'/g,"\\'")}')">
+          <div class="autocomplete-opt-name">${e.nome}</div>
+          ${e.cnpj ? `<div class="autocomplete-opt-meta">${e.cnpj}</div>` : ''}
+        </div>`).join('');
+    }
+    dd.classList.add('open');
+  };
+
+  window.pubEmpresaSelect = function (id, nome) {
+    _pubEmpresaId = id;
+    document.getElementById('pub-empresa-responsavel').value = nome;
+    pubEmpresaClose();
+    const tecInp = document.getElementById('pub-tecnico-responsavel');
+    tecInp.value = '';
+    tecInp.disabled = false;
+    tecInp.placeholder = 'Pesquisar técnico...';
+    pubTecnicoClose();
+  };
+
+  window.pubEmpresaClose = function () {
+    document.getElementById('pub-empresa-responsavel-dd')?.classList.remove('open');
+  };
+
+  window.pubTecnicoFilter = function () {
+    if (!_pubEmpresaId) return;
+    const inp = document.getElementById('pub-tecnico-responsavel');
+    const dd  = document.getElementById('pub-tecnico-responsavel-dd');
+    if (!inp || !dd) return;
+    const empresas = (typeof empState !== 'undefined' ? empState.empresas : []);
+    const emp = empresas.find(e => e.id === _pubEmpresaId);
+    const resps = emp?.responsaveis || [];
+    const q = inp.value.toLowerCase();
+    const matches = q ? resps.filter(r => r.nome.toLowerCase().includes(q) || (r.cargo || '').toLowerCase().includes(q)) : resps;
+    if (matches.length === 0) {
+      dd.innerHTML = '<div class="autocomplete-empty">Nenhum técnico encontrado</div>';
+    } else {
+      dd.innerHTML = matches.map(r =>
+        `<div class="autocomplete-opt" onmousedown="pubTecnicoSelect('${r.nome.replace(/'/g,"\\'")}')">
+          <div class="autocomplete-opt-name">${r.nome}</div>
+          ${r.cargo ? `<div class="autocomplete-opt-meta">${r.cargo}</div>` : ''}
+        </div>`).join('');
+    }
+    dd.classList.add('open');
+  };
+
+  window.pubTecnicoSelect = function (nome) {
+    document.getElementById('pub-tecnico-responsavel').value = nome;
+    pubTecnicoClose();
+  };
+
+  window.pubTecnicoClose = function () {
+    document.getElementById('pub-tecnico-responsavel-dd')?.classList.remove('open');
+  };
+
+  function _pubSetEmpresaTecnico(empresaNome, tecnicoNome) {
+    const empresas = (typeof empState !== 'undefined' ? empState.empresas : []);
+    const emp = empresas.find(e => e.nome === empresaNome);
+    _pubEmpresaId = emp?.id || null;
+    document.getElementById('pub-empresa-responsavel').value = empresaNome || '';
+    const tecInp = document.getElementById('pub-tecnico-responsavel');
+    tecInp.value = tecnicoNome || '';
+    tecInp.disabled = !_pubEmpresaId;
+    tecInp.placeholder = _pubEmpresaId ? 'Pesquisar técnico...' : 'Selecione uma empresa primeiro';
+  }
+
+  // ── AUTOCOMPLETE EMPRESA/TÉCNICO EM EDITAR PUBLICAÇÃO ────────
+  let _editPubEmpresaId = null;
+
+  window.editPubEmpresaFilter = function () {
+    const inp = document.getElementById('edit-pub-empresa');
+    const dd  = document.getElementById('edit-pub-empresa-dd');
+    if (!inp || !dd) return;
+    const q = inp.value.toLowerCase();
+    const empresas = (typeof empState !== 'undefined' ? empState.empresas : []);
+    const matches = q ? empresas.filter(e => e.nome.toLowerCase().includes(q)) : empresas;
+    if (matches.length === 0) {
+      dd.innerHTML = '<div class="autocomplete-empty">Nenhuma empresa encontrada</div>';
+    } else {
+      dd.innerHTML = matches.map(e =>
+        `<div class="autocomplete-opt" onmousedown="editPubEmpresaSelect('${e.id}','${e.nome.replace(/'/g,"\\'")}')">
+          <div class="autocomplete-opt-name">${e.nome}</div>
+          ${e.cnpj ? `<div class="autocomplete-opt-meta">${e.cnpj}</div>` : ''}
+        </div>`).join('');
+    }
+    dd.classList.add('open');
+  };
+
+  window.editPubEmpresaSelect = function (id, nome) {
+    _editPubEmpresaId = id;
+    document.getElementById('edit-pub-empresa').value = nome;
+    editPubEmpresaClose();
+    const tecInp = document.getElementById('edit-pub-tecnico');
+    tecInp.value = '';
+    tecInp.disabled = false;
+    tecInp.placeholder = 'Pesquisar técnico...';
+    editPubTecnicoClose();
+  };
+
+  window.editPubEmpresaClose = function () {
+    document.getElementById('edit-pub-empresa-dd')?.classList.remove('open');
+  };
+
+  window.editPubTecnicoFilter = function () {
+    if (!_editPubEmpresaId) return;
+    const inp = document.getElementById('edit-pub-tecnico');
+    const dd  = document.getElementById('edit-pub-tecnico-dd');
+    if (!inp || !dd) return;
+    const empresas = (typeof empState !== 'undefined' ? empState.empresas : []);
+    const emp = empresas.find(e => e.id === _editPubEmpresaId);
+    const resps = emp?.responsaveis || [];
+    const q = inp.value.toLowerCase();
+    const matches = q ? resps.filter(r => r.nome.toLowerCase().includes(q) || (r.cargo || '').toLowerCase().includes(q)) : resps;
+    if (matches.length === 0) {
+      dd.innerHTML = '<div class="autocomplete-empty">Nenhum técnico encontrado</div>';
+    } else {
+      dd.innerHTML = matches.map(r =>
+        `<div class="autocomplete-opt" onmousedown="editPubTecnicoSelect('${r.nome.replace(/'/g,"\\'")}')">
+          <div class="autocomplete-opt-name">${r.nome}</div>
+          ${r.cargo ? `<div class="autocomplete-opt-meta">${r.cargo}</div>` : ''}
+        </div>`).join('');
+    }
+    dd.classList.add('open');
+  };
+
+  window.editPubTecnicoSelect = function (nome) {
+    document.getElementById('edit-pub-tecnico').value = nome;
+    editPubTecnicoClose();
+  };
+
+  window.editPubTecnicoClose = function () {
+    document.getElementById('edit-pub-tecnico-dd')?.classList.remove('open');
+  };
+
+  function _editPubSetEmpresaTecnico(empresaNome, tecnicoNome) {
+    const empresas = (typeof empState !== 'undefined' ? empState.empresas : []);
+    const emp = empresas.find(e => e.nome === empresaNome);
+    _editPubEmpresaId = emp?.id || null;
+    document.getElementById('edit-pub-empresa').value = empresaNome || '';
+    const tecInp = document.getElementById('edit-pub-tecnico');
+    tecInp.value = tecnicoNome || '';
+    tecInp.disabled = !_editPubEmpresaId;
+    tecInp.placeholder = _editPubEmpresaId ? 'Pesquisar técnico...' : 'Selecione uma empresa primeiro';
+  }
+
+  // Preenche os campos de autocomplete ao editar tarefa existente
+  function _tarefaSetEmpresaResp(empresaNome, respNome) {
+    const empresas = (typeof empState !== 'undefined' ? empState.empresas : []);
+    const emp = empresas.find(e => e.nome === empresaNome);
+    _tarefaEmpresaId = emp?.id || null;
+    document.getElementById('tarefa-empresa-padrao').value = empresaNome || '';
+    const respInp = document.getElementById('tarefa-resp-padrao');
+    respInp.value = respNome || '';
+    respInp.disabled = !_tarefaEmpresaId;
+    respInp.placeholder = _tarefaEmpresaId ? 'Pesquisar responsável...' : 'Selecione uma empresa primeiro';
+  }
 
   function updateTarefaStatusToggleLabel() {
     const toggle = document.getElementById('tarefa-status');
@@ -1514,12 +1763,7 @@
     document.getElementById('pub-hora-realizada').value =
       String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     document.getElementById('pub-notas').value = '';
-    if (typeof empPopulateBothSelects === 'function') {
-      empPopulateBothSelects('pub-empresa-responsavel', 'pub-tecnico-responsavel', t.empresaPadrao || '', t.respPadrao || '');
-    } else {
-      document.getElementById('pub-empresa-responsavel').value = t.empresaPadrao || '';
-      document.getElementById('pub-tecnico-responsavel').value = t.respPadrao || '';
-    }
+    _pubSetEmpresaTecnico(t.empresaPadrao || '', t.respPadrao || '');
     const terceiroSection = document.getElementById('pub-terceiro-section');
     if (terceiroSection) terceiroSection.style.display = t.realizadoPorTerceiro ? '' : 'none';
     pubChecklistState = {};
@@ -1956,12 +2200,7 @@
     const tEdit = state.tarefas.find(t => t.id === p.tarefaId);
     const editTerceiroSection = document.getElementById('edit-pub-terceiro-section');
     if (editTerceiroSection) editTerceiroSection.style.display = tEdit?.realizadoPorTerceiro ? '' : 'none';
-    if (typeof empPopulateBothSelects === 'function') {
-      empPopulateBothSelects('edit-pub-empresa', 'edit-pub-tecnico', p.empresaResponsavel || '', p.tecnicoResponsavel || '');
-    } else {
-      document.getElementById('edit-pub-empresa').value = p.empresaResponsavel || '';
-      document.getElementById('edit-pub-tecnico').value = p.tecnicoResponsavel || '';
-    }
+    _editPubSetEmpresaTecnico(p.empresaResponsavel || '', p.tecnicoResponsavel || '');
     // Carrega anexos existentes — normaliza formato legado
     _editPubAnexos = (p.anexos || []).map((a, i) =>
       typeof a === 'string' ? { titulo: `Anexo ${i + 1}`, url: a } : { ...a }
