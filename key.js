@@ -24,9 +24,10 @@ let currentSession = null;
                rotinas:     { criar, editar, excluir, editarTipo },
                tarefas:     { criar, editar, excluir, publicar },
                atividades:  { editar, excluir },
-               os:          { criar, editar, excluir },
-               config:      { criarUsuarios, editarUsuarios,
-                              deletarUsuarios, gerenciarGrupos }
+               ot:          { criarOT, editarOT, excluirOT, alterarStatus,
+                              realizarPublicacoes, editarPublicacoes, excluirPublicacoes },
+               config:      { visualizarConfig, backup,
+                              gerenciarUsuarios, gerenciarGrupos }
              }}
 */
 
@@ -59,6 +60,17 @@ function _loadAuth() {
       authState.users  = Array.isArray(d.users)  ? d.users  : [];
       authState.groups = Array.isArray(d.groups) ? d.groups : [];
       authState.allowRegistration = d.allowRegistration !== false;
+      // Migração: unifica criarUsuarios/editarUsuarios/deletarUsuarios → gerenciarUsuarios
+      authState.groups.forEach(g => {
+        if (!g.permissoes?.config) return;
+        const c = g.permissoes.config;
+        if ('criarUsuarios' in c || 'editarUsuarios' in c || 'deletarUsuarios' in c) {
+          c.gerenciarUsuarios = !!(c.criarUsuarios || c.editarUsuarios || c.deletarUsuarios);
+          delete c.criarUsuarios; delete c.editarUsuarios; delete c.deletarUsuarios;
+        }
+        // Migração: renomeia os → ot
+        if (g.permissoes.os) { g.permissoes.ot = g.permissoes.os; delete g.permissoes.os; }
+      });
       // Migração: reconstrói lista de cargos a partir dos usuários se não existir
       if (Array.isArray(d.cargos) && d.cargos.length > 0) {
         authState.cargos = d.cargos;
@@ -435,11 +447,12 @@ function applyPermissions() {
   vis('btn-editar-tipo-rotina',    can('rotinas.editarTipo'));
 
   // Botões de config
-  vis('btn-novo-usuario', can('config.criarUsuarios'));
-  vis('btn-novo-grupo',   can('config.gerenciarGrupos'));
+  vis('btn-novo-usuario',  can('config.gerenciarUsuarios'));
+  vis('btn-novo-grupo',    can('config.gerenciarGrupos'));
+  vis('btn-nova-empresa',  can('config.gerenciarEmpresas'));
 
   // Config sub-nav
-  const canUsers  = can('config.criarUsuarios') || can('config.editarUsuarios') || can('config.deletarUsuarios');
+  const canUsers  = can('config.gerenciarUsuarios');
   const canGroups = can('config.gerenciarGrupos');
   const canBackup = can('config.backup');
   vis('cnav-usuario', canUsers);
@@ -453,6 +466,11 @@ function applyPermissions() {
 
   // Toggle de cadastro (apenas admin vê)
   vis('cfg-allow-registration-row', currentSession.isAdmin);
+
+  // Se a aba config estiver ativa, navegar para o primeiro painel visível
+  if (document.getElementById('tab-config')?.classList.contains('active')) {
+    if (typeof _switchConfigTabFirst === 'function') _switchConfigTabFirst();
+  }
 }
 
 function _updateLoginButtons() {
@@ -1114,7 +1132,14 @@ function openUserEditModal(id) {
     document.getElementById('user-edit-password').value  = '';
     document.getElementById('user-edit-confirm').value   = '';
     if (groupSel) { groupSel.value = u.grupoId || ''; }
-    document.getElementById('user-edit-status').checked = u.ativo !== false;
+    const statusEl = document.getElementById('user-edit-status');
+    if (statusEl) {
+      statusEl.checked = u.ativo !== false;
+      const isSelf = currentSession?.userId === id;
+      statusEl.disabled = isSelf;
+      const statusHint = document.getElementById('user-edit-status-self-hint');
+      if (statusHint) statusHint.style.display = isSelf ? 'inline' : 'none';
+    }
     _userEditIsAdmin = !!u.isAdmin;
     _userEditSetoresTemp = Array.isArray(u.setores) ? [...u.setores] : [];
   } else {
@@ -1124,7 +1149,10 @@ function openUserEditModal(id) {
       if (el) el.value = '';
     });
     if (groupSel) groupSel.disabled = false;
-    document.getElementById('user-edit-status').checked = true;
+    const statusEl2 = document.getElementById('user-edit-status');
+    if (statusEl2) { statusEl2.checked = true; statusEl2.disabled = false; }
+    const statusHint2 = document.getElementById('user-edit-status-self-hint');
+    if (statusHint2) statusHint2.style.display = 'none';
     _userEditIsAdmin = false;
     _userEditSetoresTemp = [];
   }
@@ -1199,7 +1227,8 @@ function saveUserEdit() {
   const pwd      = document.getElementById('user-edit-password')?.value  || '';
   const conf     = document.getElementById('user-edit-confirm')?.value   || '';
   const grupoId  = document.getElementById('user-edit-grupo')?.value     || null;
-  const ativo    = document.getElementById('user-edit-status')?.checked  !== false;
+  const isSelf   = _userEditId && currentSession?.userId === _userEditId;
+  const ativo    = isSelf ? true : (document.getElementById('user-edit-status')?.checked !== false);
 
   if (!nome)     { _showAuthError('user-edit-error', 'Informe o nome completo.'); return; }
   if (!username) { _showAuthError('user-edit-error', 'Informe o nome de usuário.'); return; }
@@ -1270,16 +1299,21 @@ const PERM_STRUCTURE = {
   rotinas:    { label: 'Rotinas',          keys: ['criar','editar','excluir','editarTipo'] },
   tarefas:    { label: 'Tarefas',          keys: ['criar','editar','excluir','publicar'] },
   atividades: { label: 'Atividades',       keys: ['editar','excluir','gerenciarAnexos'] },
-  os:         { label: 'OS',               keys: ['criar','editar','excluir'] },
-  config:     { label: 'Configurações',    keys: ['visualizarConfig','backup','criarUsuarios','editarUsuarios','deletarUsuarios','gerenciarGrupos'] }
+  ot:         { label: 'OT',               keys: ['criarOT','editarOT','excluirOT','alterarStatus','realizarPublicacoes','editarPublicacoes','excluirPublicacoes'] },
+  config:     { label: 'Configurações',    keys: ['visualizarConfig','backup','gerenciarUsuarios','gerenciarGrupos','gerenciarEmpresas'] }
 };
 
 const PERM_LABELS = {
   criar:'Criar', editar:'Editar', excluir:'Excluir', gerenciarAnexos:'Gerenciar Anexos', publicar:'Publicar',
   editarSetor:'Editar setores', editarCategoria:'Editar categorias', editarTipo:'Editar tipos',
+  criarOT:'Criar OT', editarOT:'Editar OT', excluirOT:'Excluir OT',
+  alterarStatus:'Alterar Status',
+  realizarPublicacoes:'Realizar Publicações',
+  editarPublicacoes:'Editar Publicações',
+  excluirPublicacoes:'Excluir Publicações',
   visualizarConfig:'Visualizar configurações', backup:'Backup',
-  criarUsuarios:'Criar usuários', editarUsuarios:'Editar usuários',
-  deletarUsuarios:'Deletar usuários', gerenciarGrupos:'Gerenciar grupos'
+  gerenciarUsuarios:'Gerenciar usuários', gerenciarGrupos:'Gerenciar grupos',
+  gerenciarEmpresas:'Gerenciar empresas'
 };
 
 function _emptyPermissoes() {
@@ -1489,7 +1523,7 @@ const PERM_ICONS = {
   rotinas:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>`,
   tarefas:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
   atividades: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>`,
-  os:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 18.66l-1.41 1.41M19.07 19.07l-1.41-1.41M5.34 5.34L3.93 3.93M12 2v2m0 18v2m10-10h-2M4 12H2"/></svg>`,
+  ot:         `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>`,
   config:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`
 };
 

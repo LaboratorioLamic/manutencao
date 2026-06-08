@@ -271,9 +271,9 @@ function _otBuildTabHTML() {
     </button>
   </div>
   <div id="ot-main-content" style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;"></div>
-  <button class="ot-fab" onclick="otOpenForm(null)" title="Nova OT">
+  ${(typeof authHasPermission !== 'function' || authHasPermission('ot.criar')) ? `<button class="ot-fab" onclick="otOpenForm(null)" title="Nova OT">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-  </button>
+  </button>` : ''}
 </div>`;
 }
 
@@ -954,6 +954,9 @@ function _otSetStatus(otId, newStatus, pubTipo, texto) {
 // ── EXCLUIR OT ────────────────────────────────────────────────
 let _otDeleteId = null;
 function otOpenDeleteConfirm(id) {
+  if (typeof authHasPermission === 'function' && !authHasPermission('ot.excluir')) {
+    showToast('Você não tem permissão para excluir OTs.', 'error'); return;
+  }
   _otDeleteId = id;
   const o = otState.ordens.find(x => x.id === id);
   if (!o) return;
@@ -1120,6 +1123,14 @@ function otFRespClose() {
 
 // ── MODAL FORMULÁRIO OT ───────────────────────────────────────
 function otOpenForm(id) {
+  if (typeof authHasPermission === 'function') {
+    if (!id && !authHasPermission('ot.criar')) {
+      showToast('Você não tem permissão para criar OTs.', 'error'); return;
+    }
+    if (id && !authHasPermission('ot.editar')) {
+      showToast('Você não tem permissão para editar OTs.', 'error'); return;
+    }
+  }
   _otFormId   = id;
   _otAtivoIdx = null;
   _otRespId   = null;
@@ -1591,8 +1602,12 @@ function otOpenView(id) {
   const o = otState.ordens.find(x => x.id === id);
   if (!o) return;
   _otRenderView(o);
-  const btnDel = document.getElementById('btn-ot-delete');
-  if (btnDel) btnDel.style.display = ['concluida', 'cancelada'].includes(o.status) ? 'none' : '';
+  const canDelOT  = typeof authHasPermission !== 'function' || authHasPermission('ot.excluir');
+  const canEditOT = typeof authHasPermission !== 'function' || authHasPermission('ot.editar');
+  const btnDel  = document.getElementById('btn-ot-delete');
+  const btnEdit = document.getElementById('btn-ot-view-edit');
+  if (btnDel)  btnDel.style.display  = (!canDelOT  || ['concluida','cancelada'].includes(o.status)) ? 'none' : '';
+  if (btnEdit) btnEdit.style.display = !canEditOT ? 'none' : '';
   otOpenModal('modal-ot-view');
 }
 
@@ -1609,7 +1624,10 @@ function _otRenderView(o) {
   const pubs = otState.publicacoes.filter(p => p.otId === o.id)
     .sort((a, b) => a.data < b.data ? 1 : -1);
 
-  const canEdit = o.status !== 'cancelada';
+  const _hasPerm = (k) => typeof authHasPermission !== 'function' || authHasPermission(k);
+  const canEdit   = o.status !== 'cancelada' && _hasPerm('ot.realizarPublicacoes');
+  const canStatus = o.status !== 'cancelada' && _hasPerm('ot.alterarStatus');
+  const canPub    = o.status !== 'cancelada' && _hasPerm('ot.realizarPublicacoes');
 
   const el = document.getElementById('ot-view-body');
   if (!el) return;
@@ -1801,7 +1819,7 @@ ${o.status === 'cancelada' ? `<div class="detail-note" style="border-left-color:
 <div class="ot-modal-tab-panel" data-tab="publicacoes">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
     <div style="font-size:14px;font-weight:700;color:var(--text-primary);">Publicações</div>
-    ${canEdit ? `<button class="btn btn-primary" style="padding:6px 14px;font-size:12px;" onclick="otOpenPubModal()">
+    ${canPub ? `<button class="btn btn-primary" style="padding:6px 14px;font-size:12px;" onclick="otOpenPubModal()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:13px;height:13px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
       Nova Publicação
     </button>` : ''}
@@ -1836,10 +1854,10 @@ ${o.status === 'cancelada' ? `<div class="detail-note" style="border-left-color:
     const curCfg = OT_STATUS_CFG[o.status] || {};
     const wrapHtml = `
       <div class="ot-status-wrap" style="position:relative;margin-right:8px;">
-        <button class="ot-status-dropdown-btn ot-status-btn-${o.status}" id="ot-status-btn">
+        <button class="ot-status-dropdown-btn ot-status-btn-${o.status}" id="ot-status-btn"${!canStatus ? ' disabled style="opacity:.55;cursor:not-allowed;"' : ''}>
           ${OT_STATUS_ICONS[o.status] || ''}
           <span>${curCfg.label || 'Status'}</span>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;margin-left:4px;"><polyline points="6 9 12 15 18 9"/></svg>
+          ${canStatus ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;margin-left:4px;"><polyline points="6 9 12 15 18 9"/></svg>` : ''}
         </button>
       </div>`;
     hdrRight.insertAdjacentHTML('afterbegin', wrapHtml);
@@ -1868,6 +1886,7 @@ ${o.status === 'cancelada' ? `<div class="detail-note" style="border-left-color:
       });
       btn.onclick = ev => {
         ev.stopPropagation();
+        if (!canStatus) return;
         document.querySelectorAll('.ot-status-menu-dropdown').forEach(m => { if (m !== menu) m.classList.remove('open'); });
         if (menu.classList.contains('open')) { menu.classList.remove('open'); return; }
         const rect = btn.getBoundingClientRect();
@@ -1926,6 +1945,9 @@ function otSwitchPubTab(key) {
 
 // Helper to change status from within the view and keep the same tab open
 function otChangeStatusFromView(otId, targetStatus) {
+  if (typeof authHasPermission === 'function' && !authHasPermission('ot.alterarStatus')) {
+    showToast('Você não tem permissão para alterar o status da OT.', 'error'); return;
+  }
   const currentTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'ordem';
   _otTryTransition(otId, targetStatus);
   // Re-render view and restore tab (if view still open)
@@ -1991,6 +2013,9 @@ function otViewToggleSub(otId, i) {
 
 // ── PUBLICAÇÃO DA OT ──────────────────────────────────────────
 function otOpenPubModal() {
+  if (typeof authHasPermission === 'function' && !authHasPermission('ot.realizarPublicacoes')) {
+    showToast('Você não tem permissão para realizar publicações.', 'error'); return;
+  }
   _otPubReturnTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'publicacoes';
   _otEditPubId = null;
   _otPubAnexos = [];
@@ -2022,6 +2047,9 @@ function otOpenPubModalFromSub(subId) {
 }
 
 function otOpenEditPub(pubId) {
+  if (typeof authHasPermission === 'function' && !authHasPermission('ot.editarPublicacoes')) {
+    showToast('Você não tem permissão para editar publicações.', 'error'); return;
+  }
   const p = otState.publicacoes.find(x => x.id === pubId);
   if (!p) return;
   _otPubReturnTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'publicacoes';
@@ -2172,6 +2200,9 @@ function otConfirmPub() {
 // ── EXCLUIR PUBLICAÇÃO ────────────────────────────────────────
 let _otDeletePubId = null;
 function otOpenDeletePub(pubId) {
+  if (typeof authHasPermission === 'function' && !authHasPermission('ot.excluirPublicacoes')) {
+    showToast('Você não tem permissão para excluir publicações.', 'error'); return;
+  }
   _otDeletePubId = pubId;
   otOpenModal('modal-ot-delete-pub');
 }
@@ -2234,6 +2265,14 @@ function otOpenPubView(pubId) {
           </a>`).join('')}
       </div>` : ''}
   `;
+  // Mostrar/ocultar botões de editar e excluir publicação conforme permissão
+  const _canEP = typeof authHasPermission !== 'function' || authHasPermission('ot.editarPublicacoes');
+  const _canDP = typeof authHasPermission !== 'function' || authHasPermission('ot.excluirPublicacoes');
+  const btnPubEdit = document.getElementById('btn-pub-view-editar');
+  const btnPubDel  = document.getElementById('btn-pub-view-excluir');
+  if (btnPubEdit) btnPubEdit.style.display = _canEP ? '' : 'none';
+  if (btnPubDel)  btnPubDel.style.display  = _canDP ? '' : 'none';
+
   otOpenModal('modal-ot-pub-view');
 }
 
@@ -2915,12 +2954,12 @@ function _otModalsHTML() {
     </div>
     <div class="modal-body" id="ot-pub-view-body"></div>
     <div class="modal-footer" style="justify-content:space-between;">
-      <button class="btn btn-outline" style="color:var(--red);border-color:rgba(230,57,70,0.3);" onclick="otOpenDeletePub(_otViewPubId)">
+      <button id="btn-pub-view-excluir" class="btn btn-outline" style="color:var(--red);border-color:rgba(230,57,70,0.3);" onclick="otOpenDeletePub(_otViewPubId)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
         Excluir
       </button>
       <div style="display:flex;gap:8px;">
-        <button class="btn btn-outline" style="color:var(--cyan);border-color:rgba(0,168,204,0.3);" onclick="otOpenEditPub(_otViewPubId)">
+        <button id="btn-pub-view-editar" class="btn btn-outline" style="color:var(--cyan);border-color:rgba(0,168,204,0.3);" onclick="otOpenEditPub(_otViewPubId)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
           Editar
         </button>
@@ -2962,6 +3001,9 @@ function _otModalsHTML() {
 
 // ── EDITAR A PARTIR DA VIEW ───────────────────────────────────
 function otEditFromView() {
+  if (typeof authHasPermission === 'function' && !authHasPermission('ot.editar')) {
+    showToast('Você não tem permissão para editar OTs.', 'error'); return;
+  }
   const o = _otViewId ? otState.ordens.find(x => x.id === _otViewId) : null;
   if (!o || o.status === 'concluida' || o.status === 'cancelada') {
     showToast('OTs concluídas ou canceladas não podem ser editadas.', 'error'); return;

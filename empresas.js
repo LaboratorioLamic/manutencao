@@ -6,6 +6,12 @@ const EMP_KEY = 'gestao-empresas-v1';
 
 let empState = { empresas: [] };
 
+function _empCanManage() {
+  if (typeof currentSession === 'undefined' || !currentSession) return true;
+  if (currentSession.isAdmin) return true;
+  return typeof authHasPermission === 'function' && authHasPermission('config.gerenciarEmpresas');
+}
+
 function empSave() { localStorage.setItem(EMP_KEY, JSON.stringify(empState)); }
 function empLoad() {
   try {
@@ -62,6 +68,7 @@ function empRenderTable() {
       <td style="font-size:13px;color:var(--text-secondary);">${e.contatos?.[0]?.valor ? _empEsc(e.contatos[0].valor) : '—'}</td>
       <td style="font-size:13px;color:var(--text-secondary);">${_empEsc(e.email || '—')}</td>
       <td style="text-align:right;white-space:nowrap;" onclick="event.stopPropagation()">
+        ${_empCanManage() ? `
         <button class="btn btn-outline btn-icon" title="Editar" onclick="empOpenForm('${e.id}')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;">
             <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/>
@@ -72,7 +79,7 @@ function empRenderTable() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;">
             <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
           </svg>
-        </button>
+        </button>` : ''}
       </td>
     </tr>`).join('');
 }
@@ -84,6 +91,10 @@ function empSearchChange(v) {
 
 // ── ABRIR FORM ────────────────────────────────────────────────
 function empOpenForm(id) {
+  if (!_empCanManage()) {
+    if (typeof showToast === 'function') showToast('Você não tem permissão para gerenciar empresas.', 'error');
+    return;
+  }
   _empFormId   = id || null;
   const e      = id ? empState.empresas.find(x => x.id === id) : null;
 
@@ -302,6 +313,8 @@ function empOpenView(id) {
   const e = empState.empresas.find(x => x.id === id);
   if (!e) return;
   _empRenderView(e);
+  const btnEdit = document.getElementById('btn-emp-view-editar');
+  if (btnEdit) btnEdit.style.display = _empCanManage() ? '' : 'none';
   empOpenModal('modal-emp-view');
 }
 
@@ -374,6 +387,10 @@ function _empRenderView(e) {
 // ── EXCLUIR ───────────────────────────────────────────────────
 let _empDeleteId = null;
 function empConfirmDelete(id) {
+  if (!_empCanManage()) {
+    if (typeof showToast === 'function') showToast('Você não tem permissão para excluir empresas.', 'error');
+    return;
+  }
   _empDeleteId = id;
   const e = empState.empresas.find(x => x.id === id);
   const el = document.getElementById('emp-delete-name');
@@ -617,7 +634,7 @@ function _empModalsHTML() {
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;">
-        <button class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="empEditFromView()">
+        <button id="btn-emp-view-editar" class="btn btn-outline" style="padding:6px 12px;font-size:12px;" onclick="empEditFromView()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
           Editar
         </button>
@@ -668,6 +685,10 @@ function _empModalsHTML() {
 }
 
 function empEditFromView() {
+  if (!_empCanManage()) {
+    if (typeof showToast === 'function') showToast('Você não tem permissão para editar empresas.', 'error');
+    return;
+  }
   empCloseModal('modal-emp-view');
   empOpenForm(_empViewId);
 }

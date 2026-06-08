@@ -227,8 +227,7 @@
         switchTab('ativos');
         return;
       }
-      if (typeof renderUsersTable  === 'function') renderUsersTable();
-      if (typeof renderGroupsTable === 'function') renderGroupsTable();
+      _switchConfigTabFirst();
     }
   }
 
@@ -249,12 +248,22 @@
   }
 
   // ── CONFIG SUBTABS ──
+  const CONFIG_TABS_ORDER = ['usuario','grupos','empresas','backup'];
+
+  function _switchConfigTabFirst() {
+    const first = CONFIG_TABS_ORDER.find(t => {
+      const el = document.getElementById('cnav-' + t);
+      return el && el.style.display !== 'none';
+    });
+    if (first) switchConfigTab(first);
+  }
+
   function switchConfigTab(tab) {
     const configTab = document.getElementById('tab-config');
     configTab.querySelectorAll('.rotina-panel').forEach(p => p.classList.remove('active'));
     configTab.querySelectorAll('.rotina-nav-item').forEach(n => n.classList.remove('active'));
-    document.getElementById('cpanel-' + tab).classList.add('active');
-    document.getElementById('cnav-' + tab).classList.add('active');
+    document.getElementById('cpanel-' + tab)?.classList.add('active');
+    document.getElementById('cnav-' + tab)?.classList.add('active');
     if (tab === 'backup')   renderSysInfo();
     if (tab === 'usuario')  { if (typeof renderUsersTable  === 'function') renderUsersTable(); }
     if (tab === 'grupos')   { if (typeof renderGroupsTable === 'function') renderGroupsTable(); }
