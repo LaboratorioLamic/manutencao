@@ -3903,10 +3903,12 @@
     openModal('modal-visualizar');
     // Permissões
     _mbtn('btn-editar-ativo', _can('ativos.editar'));
-    // Excluir: só visível se não há rotinas vinculadas e tem permissão
+    // Excluir: só visível se não há rotinas vinculadas, sem OTs publicadas e tem permissão
     const temRotinas = state.rotinas.some(r => r.equipamentoIdx === index);
+    const tarefasDoAtivo = state.tarefas.filter(t => t.equipamentoIdx === index).map(t => t.id);
+    const temOTsPublicadas = state.publicacoes.some(p => tarefasDoAtivo.includes(p.tarefaId));
     const btnDelAtivo = document.getElementById('btn-excluir-ativo');
-    if (btnDelAtivo) btnDelAtivo.style.display = (!temRotinas && _can('ativos.excluir')) ? '' : 'none';
+    if (btnDelAtivo) btnDelAtivo.style.display = (!temRotinas && !temOTsPublicadas && _can('ativos.excluir')) ? '' : 'none';
   }
 
   window.excluirAtivoAtual = function () {
@@ -3915,6 +3917,9 @@
     if (index === null || index === undefined) return;
     const temRotinas = state.rotinas.some(r => r.equipamentoIdx === index);
     if (temRotinas) { showToast('Este ativo possui rotinas vinculadas e não pode ser excluído.', 'error'); return; }
+    const tarefasDoAtivo = state.tarefas.filter(t => t.equipamentoIdx === index).map(t => t.id);
+    const temOTsPublicadas = state.publicacoes.some(p => tarefasDoAtivo.includes(p.tarefaId));
+    if (temOTsPublicadas) { showToast('Este ativo possui OTs publicadas e não pode ser excluído.', 'error'); return; }
     if (!confirm('Excluir este ativo? Esta ação não pode ser desfeita.')) return;
     // Ajusta índices de rotinas/tarefas que referenciam ativos após o removido
     state.rotinas.forEach(r => { if (r.equipamentoIdx > index) r.equipamentoIdx--; });
@@ -4600,11 +4605,25 @@
     }
   }
 
+  function _getSectorOptsFromAtivos() {
+    const fCat = _categorySearchVal;
+    const visible = state.ativos.filter(a => {
+      if (_ativosSubtab === 'em_desuso') { if (a.statusUso !== 'em_desuso') return false; }
+      else { if (a.statusUso === 'em_desuso') return false; }
+      if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(a)) return false;
+      if (fCat !== 'todas' && a.categoria !== fCat) return false;
+      return true;
+    });
+    const setores = [...new Set(visible.map(a => a.setor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
+    // mantém apenas os que estão em _sectorSearchOpts (respeita filtro de topbar)
+    return _sectorSearchOpts.filter(s => setores.includes(s));
+  }
+
   function _sectorSearchRenderDropdown(q) {
     const dd = document.getElementById('sector-search-dropdown');
     if (!dd) return;
     const opts = [{ val: 'todos', label: 'Todos os setores' },
-      ..._sectorSearchOpts.map(s => ({ val: s, label: s }))];
+      ..._getSectorOptsFromAtivos().map(s => ({ val: s, label: s }))];
     const filtered = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
     dd.innerHTML = filtered.length === 0
       ? `<div class="sector-dd-empty">Nenhum setor encontrado</div>`
@@ -4709,6 +4728,15 @@
     const inp = document.getElementById('main-category-filter-input');
     if (inp) inp.value = val === 'todas' ? '' : val;
     _categorySearchClose();
+    // Reseta filtro de setor se não tiver ativos na nova categoria
+    if (_sectorSearchVal !== 'todos') {
+      const newSetores = _getSectorOptsFromAtivos();
+      if (!newSetores.includes(_sectorSearchVal)) {
+        _sectorSearchVal = 'todos';
+        const sinp = document.getElementById('main-sector-filter-input');
+        if (sinp) sinp.value = '';
+      }
+    }
     renderCards();
     if (typeof updateNotifBadge === 'function') updateNotifBadge();
   }
