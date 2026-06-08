@@ -940,9 +940,18 @@
             <button id="btn-editar-setor-toolbar" class="btn btn-outline btn-icon" onclick="openSetorModal()" title="Novo Setor">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
-            <select id="main-category-filter" class="field-select" style="min-width: 160px;" onchange="renderCards();updateNotifBadge()">
-              <option value="todas">Categoria (Todas)</option>
-            </select>
+            <div class="sector-search-wrap" id="category-search-wrap" style="position:relative;">
+              <input id="main-category-filter-input" type="text" class="field-input sector-search-input"
+                placeholder="Categoria (Todas)" autocomplete="off"
+                oninput="categorySearchFilter(this.value)"
+                onfocus="categorySearchOpen()"
+                onkeydown="categorySearchKey(event)"
+                style="min-width:180px;height:36px;font-size:13px;padding-right:28px;">
+              <span class="sector-search-caret" onclick="categorySearchToggle()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <div id="category-search-dropdown" class="sector-search-dropdown" style="display:none;"></div>
+            </div>
             <button id="btn-nova-categoria-toolbar" class="btn btn-outline btn-icon" onclick="openCategoriaModal()" title="Nova Categoria">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
@@ -2178,14 +2187,38 @@
           <div class="form-field">
             <label class="field-label">Setor <span class="required">*</span></label>
             <div class="input-with-btn">
-              <select id="ativo-setor" class="field-select"><option value="">Selecione...</option></select>
+              <div class="sector-search-wrap" id="form-setor-wrap" style="position:relative;flex:1;">
+                <input id="ativo-setor-input" type="text" class="field-input sector-search-input"
+                  placeholder="Selecione ou digite..." autocomplete="off"
+                  oninput="formSetorFilter(this.value)"
+                  onfocus="formSetorOpen()"
+                  onkeydown="formSetorKey(event)"
+                  style="width:100%;height:36px;font-size:13px;padding-right:28px;">
+                <span class="sector-search-caret" onclick="formSetorToggle()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+                <div id="form-setor-dropdown" class="sector-search-dropdown" style="display:none;"></div>
+                <input type="hidden" id="ativo-setor">
+              </div>
               <button id="btn-editar-setor-form" class="btn btn-outline btn-icon" onclick="openSetorModal()" title="Gerenciar Setores"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
             </div>
           </div>
           <div class="form-field">
             <label class="field-label">Categoria <span class="required">*</span></label>
             <div class="input-with-btn">
-              <select id="ativo-categoria" class="field-select"><option value="">Selecione...</option></select>
+              <div class="sector-search-wrap" id="form-categoria-wrap" style="position:relative;flex:1;">
+                <input id="ativo-categoria-input" type="text" class="field-input sector-search-input"
+                  placeholder="Selecione ou digite..." autocomplete="off"
+                  oninput="formCategoriaFilter(this.value)"
+                  onfocus="formCategoriaOpen()"
+                  onkeydown="formCategoriaKey(event)"
+                  style="width:100%;height:36px;font-size:13px;padding-right:28px;">
+                <span class="sector-search-caret" onclick="formCategoriaToggle()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+                <div id="form-categoria-dropdown" class="sector-search-dropdown" style="display:none;"></div>
+                <input type="hidden" id="ativo-categoria">
+              </div>
               <button id="btn-editar-categoria-form" class="btn btn-outline btn-icon" onclick="openCategoriaModal()" title="Gerenciar Categorias"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
             </div>
           </div>

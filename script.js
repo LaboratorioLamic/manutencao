@@ -318,7 +318,7 @@
     if (!ativo) return false;
     if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
     const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
-    const fCat   = document.getElementById('main-category-filter')?.value || 'todas';
+    const fCat   = (typeof categorySearchGetValue === 'function') ? categorySearchGetValue() : 'todas';
     if (fSetor !== 'todos' && ativo.setor !== fSetor) return false;
     if (fCat !== 'todas' && ativo.categoria !== fCat) return false;
     return true;
@@ -3736,8 +3736,9 @@
   }
 
   function limparAtivosFiltros() {
-    const cat = document.getElementById('main-category-filter');
-    if (cat) cat.value = 'todas';
+    _categorySearchVal = 'todas';
+    const cinp = document.getElementById('main-category-filter-input');
+    if (cinp) cinp.value = '';
     renderCards();
     updateNotifBadge();
     updateAtivosFiltroBtn();
@@ -3745,9 +3746,8 @@
 
   function updateAtivosFiltroBtn() {
     const btn = document.getElementById('btn-ativos-filtro');
-    const cat = document.getElementById('main-category-filter');
-    if (!btn || !cat) return;
-    const hasFilter = cat.value !== 'todas';
+    if (!btn) return;
+    const hasFilter = _categorySearchVal !== 'todas';
     if (!isAtivosFilterOpen()) btn.classList.toggle('active', hasFilter);
   }
 
@@ -3812,6 +3812,8 @@
       document.querySelectorAll('#modal-ativo input, #modal-ativo textarea').forEach(el => el.value = '');
       document.getElementById('ativo-setor').value = '';
       document.getElementById('ativo-categoria').value = '';
+      const si = document.getElementById('ativo-setor-input'); if (si) si.value = '';
+      const ci = document.getElementById('ativo-categoria-input'); if (ci) ci.value = '';
       _ativoStatusUI('em_uso', []);
     } else {
       const ativo = state.ativos[index];
@@ -3819,6 +3821,8 @@
       document.getElementById('ativo-codigo').value = ativo.codigo;
       document.getElementById('ativo-setor').value = ativo.setor;
       document.getElementById('ativo-categoria').value = ativo.categoria;
+      const si2 = document.getElementById('ativo-setor-input'); if (si2) si2.value = ativo.setor || '';
+      const ci2 = document.getElementById('ativo-categoria-input'); if (ci2) ci2.value = ativo.categoria || '';
       document.getElementById('ativo-marca').value = ativo.marca !== '-' ? ativo.marca : '';
       document.getElementById('ativo-modelo').value = ativo.modelo !== '-' ? ativo.modelo : '';
       document.getElementById('ativo-serie').value = ativo.serie !== '-' ? ativo.serie : '';
@@ -4258,12 +4262,10 @@
   function atualizarSelects() {
     const raw = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
     const setores = [...raw].sort((a, b) => a.localeCompare(b, 'pt'));
-    const setorOptions = setores.map(s => `<option value="${s}">${s}</option>`).join('');
     sectorSearchSetOptions(setores);
-    document.getElementById('ativo-setor').innerHTML = `<option value="">Selecione...</option>` + setorOptions;
-    const catOptions = [...state.categorias].sort((a, b) => a.localeCompare(b, 'pt')).map(c => `<option value="${c}">${c}</option>`).join('');
-    document.getElementById('main-category-filter').innerHTML = `<option value="todas">Todas</option>` + catOptions;
-    document.getElementById('ativo-categoria').innerHTML = `<option value="">Selecione...</option>` + catOptions;
+    formSetorSetOptions(setores);
+    const cats = [...state.categorias].sort((a, b) => a.localeCompare(b, 'pt'));
+    formCategoriaSetOptions(cats);
     atualizarFiltrosRotina();
     populateTipoSelect();
     updateAtivosFiltroBtn();
@@ -4363,6 +4365,8 @@
     document.querySelectorAll('#modal-ativo input, #modal-ativo textarea').forEach(el => el.value = '');
     document.getElementById('ativo-setor').value = '';
     document.getElementById('ativo-categoria').value = '';
+    const _si = document.getElementById('ativo-setor-input'); if (_si) _si.value = '';
+    const _ci = document.getElementById('ativo-categoria-input'); if (_ci) _ci.value = '';
     document.getElementById('modal-ativo').classList.remove('open');
     if (wasEditing && isModalOpen('modal-visualizar')) {
       visualizarAtivo(editedIdx, getActiveSubTab('avtab', ['info', 'rotinas', 'tarefas', 'atividades']) || 'info');
@@ -4532,9 +4536,10 @@
       .replace(/[^a-z0-9]/g, '');
   }
 
-  // ── SECTOR SEARCH (filtro digitável de setor na aba Ativos) ──
+  // ── SECTOR / CATEGORY SEARCH STATE ──
   let _sectorSearchVal  = 'todos';
   let _sectorSearchOpts = [];
+  let _categorySearchVal = 'todas';
 
   function sectorSearchSetOptions(setores) {
     _sectorSearchOpts = setores;
@@ -4613,12 +4618,237 @@
     const inp = document.getElementById('main-sector-filter-input');
     if (inp) inp.value = val === 'todos' ? '' : val;
     _sectorSearchClose();
+    // Reseta filtro de categoria se não existir nas novas opções
+    if (_categorySearchVal !== 'todas') {
+      const newCats = _getCategoryOptsFromAtivos();
+      if (!newCats.includes(_categorySearchVal)) {
+        _categorySearchVal = 'todas';
+        const cinp = document.getElementById('main-category-filter-input');
+        if (cinp) cinp.value = '';
+      }
+    }
     renderCards();
     if (typeof updateNotifBadge === 'function') updateNotifBadge();
   }
 
   function _sectorSearchClose() {
     const dd = document.getElementById('sector-search-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+
+  // ── CATEGORY SEARCH (filtro digitável de categoria na aba Ativos) ──
+  let _categorySearchClickBound = false;
+
+  function categorySearchGetValue() { return _categorySearchVal; }
+
+  function _getCategoryOptsFromAtivos() {
+    const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
+    const visible = state.ativos.filter(a => {
+      if (_ativosSubtab === 'em_desuso') { if (a.statusUso !== 'em_desuso') return false; }
+      else { if (a.statusUso === 'em_desuso') return false; }
+      if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(a)) return false;
+      if (fSetor !== 'todos' && a.setor !== fSetor) return false;
+      return true;
+    });
+    const cats = [...new Set(visible.map(a => a.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
+    return cats;
+  }
+
+  function categorySearchOpen() {
+    _categorySearchRenderDropdown('');
+    const dd = document.getElementById('category-search-dropdown');
+    if (dd) dd.style.display = '';
+    if (!_categorySearchClickBound) {
+      document.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('#category-search-wrap')) _categorySearchClose();
+      });
+      _categorySearchClickBound = true;
+    }
+  }
+
+  function categorySearchToggle() {
+    const dd = document.getElementById('category-search-dropdown');
+    if (!dd) return;
+    if (dd.style.display === 'none' || !dd.style.display) {
+      document.getElementById('main-category-filter-input')?.focus();
+      categorySearchOpen();
+    } else {
+      _categorySearchClose();
+    }
+  }
+
+  function categorySearchFilter(q) {
+    _categorySearchRenderDropdown(q.toLowerCase());
+    const dd = document.getElementById('category-search-dropdown');
+    if (dd) dd.style.display = '';
+  }
+
+  function categorySearchKey(e) {
+    if (e.key === 'Escape') { _categorySearchClose(); e.target.blur(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#category-search-dropdown .sector-dd-item');
+      if (first) first.click();
+    }
+  }
+
+  function _categorySearchRenderDropdown(q) {
+    const dd = document.getElementById('category-search-dropdown');
+    if (!dd) return;
+    const cats = _getCategoryOptsFromAtivos();
+    const opts = [{ val: 'todas', label: 'Todas as categorias' }, ...cats.map(c => ({ val: c, label: c }))];
+    const filtered = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
+    dd.innerHTML = filtered.length === 0
+      ? `<div class="sector-dd-empty">Nenhuma categoria encontrada</div>`
+      : filtered.map(o => `<div class="sector-dd-item${_categorySearchVal === o.val ? ' active' : ''}"
+          onmousedown="categorySearchSelect('${o.val.replace(/'/g,"\\'")}',event)">${o.label}</div>`).join('');
+  }
+
+  function categorySearchSelect(val, event) {
+    if (event) event.preventDefault();
+    _categorySearchVal = val;
+    const inp = document.getElementById('main-category-filter-input');
+    if (inp) inp.value = val === 'todas' ? '' : val;
+    _categorySearchClose();
+    renderCards();
+    if (typeof updateNotifBadge === 'function') updateNotifBadge();
+  }
+
+  function _categorySearchClose() {
+    const dd = document.getElementById('category-search-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+
+  // ── FORM SETOR SEARCH (campo digitável de setor no modal Novo Ativo) ──
+  let _formSetorOpts = [];
+  let _formSetorClickBound = false;
+
+  function formSetorSetOptions(opts) { _formSetorOpts = opts; }
+
+  function formSetorOpen() {
+    _formSetorRenderDropdown(document.getElementById('ativo-setor-input')?.value?.toLowerCase() || '');
+    const dd = document.getElementById('form-setor-dropdown');
+    if (dd) dd.style.display = '';
+    if (!_formSetorClickBound) {
+      document.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('#form-setor-wrap')) _formSetorClose();
+      });
+      _formSetorClickBound = true;
+    }
+  }
+
+  function formSetorToggle() {
+    const dd = document.getElementById('form-setor-dropdown');
+    if (!dd) return;
+    if (dd.style.display === 'none' || !dd.style.display) {
+      document.getElementById('ativo-setor-input')?.focus();
+      formSetorOpen();
+    } else {
+      _formSetorClose();
+    }
+  }
+
+  function formSetorFilter(q) {
+    _formSetorRenderDropdown(q.toLowerCase());
+    const dd = document.getElementById('form-setor-dropdown');
+    if (dd) dd.style.display = '';
+    document.getElementById('ativo-setor').value = '';
+  }
+
+  function formSetorKey(e) {
+    if (e.key === 'Escape') { _formSetorClose(); e.target.blur(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#form-setor-dropdown .sector-dd-item');
+      if (first) first.click();
+    }
+  }
+
+  function _formSetorRenderDropdown(q) {
+    const dd = document.getElementById('form-setor-dropdown');
+    if (!dd) return;
+    const curVal = document.getElementById('ativo-setor').value;
+    const filtered = q ? _formSetorOpts.filter(s => s.toLowerCase().includes(q)) : _formSetorOpts;
+    dd.innerHTML = filtered.length === 0
+      ? `<div class="sector-dd-empty">Nenhum setor encontrado</div>`
+      : filtered.map(s => `<div class="sector-dd-item${curVal === s ? ' active' : ''}"
+          onmousedown="formSetorSelect('${s.replace(/'/g,"\\'")}',event)">${s}</div>`).join('');
+  }
+
+  function formSetorSelect(val, event) {
+    if (event) event.preventDefault();
+    document.getElementById('ativo-setor').value = val;
+    document.getElementById('ativo-setor-input').value = val;
+    _formSetorClose();
+  }
+
+  function _formSetorClose() {
+    const dd = document.getElementById('form-setor-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+
+  // ── FORM CATEGORIA SEARCH (campo digitável de categoria no modal Novo Ativo) ──
+  let _formCategoriaOpts = [];
+  let _formCategoriaClickBound = false;
+
+  function formCategoriaSetOptions(opts) { _formCategoriaOpts = opts; }
+
+  function formCategoriaOpen() {
+    _formCategoriaRenderDropdown(document.getElementById('ativo-categoria-input')?.value?.toLowerCase() || '');
+    const dd = document.getElementById('form-categoria-dropdown');
+    if (dd) dd.style.display = '';
+    if (!_formCategoriaClickBound) {
+      document.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('#form-categoria-wrap')) _formCategoriaClose();
+      });
+      _formCategoriaClickBound = true;
+    }
+  }
+
+  function formCategoriaToggle() {
+    const dd = document.getElementById('form-categoria-dropdown');
+    if (!dd) return;
+    if (dd.style.display === 'none' || !dd.style.display) {
+      document.getElementById('ativo-categoria-input')?.focus();
+      formCategoriaOpen();
+    } else {
+      _formCategoriaClose();
+    }
+  }
+
+  function formCategoriaFilter(q) {
+    _formCategoriaRenderDropdown(q.toLowerCase());
+    const dd = document.getElementById('form-categoria-dropdown');
+    if (dd) dd.style.display = '';
+    document.getElementById('ativo-categoria').value = '';
+  }
+
+  function formCategoriaKey(e) {
+    if (e.key === 'Escape') { _formCategoriaClose(); e.target.blur(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#form-categoria-dropdown .sector-dd-item');
+      if (first) first.click();
+    }
+  }
+
+  function _formCategoriaRenderDropdown(q) {
+    const dd = document.getElementById('form-categoria-dropdown');
+    if (!dd) return;
+    const curVal = document.getElementById('ativo-categoria').value;
+    const filtered = q ? _formCategoriaOpts.filter(c => c.toLowerCase().includes(q)) : _formCategoriaOpts;
+    dd.innerHTML = filtered.length === 0
+      ? `<div class="sector-dd-empty">Nenhuma categoria encontrada</div>`
+      : filtered.map(c => `<div class="sector-dd-item${curVal === c ? ' active' : ''}"
+          onmousedown="formCategoriaSelect('${c.replace(/'/g,"\\'")}',event)">${c}</div>`).join('');
+  }
+
+  function formCategoriaSelect(val, event) {
+    if (event) event.preventDefault();
+    document.getElementById('ativo-categoria').value = val;
+    document.getElementById('ativo-categoria-input').value = val;
+    _formCategoriaClose();
+  }
+
+  function _formCategoriaClose() {
+    const dd = document.getElementById('form-categoria-dropdown');
     if (dd) dd.style.display = 'none';
   }
 
@@ -4655,7 +4885,7 @@
   function renderCards() {
     const grid = document.getElementById('assets-grid');
     const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
-    const fCat = document.getElementById('main-category-filter').value;
+    const fCat = (typeof categorySearchGetValue === 'function') ? categorySearchGetValue() : 'todas';
     const fBusca = _normalizeSearch(document.getElementById('ativos-search-input')?.value);
 
     const filtrados = state.ativos
