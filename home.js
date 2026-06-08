@@ -889,7 +889,7 @@
       const setor  = _esc(a?.setor || r?.setor || '—');
       const data   = _fmtDate((p.dataPublicacao || '').split('T')[0]);
       const por    = _esc(p.publicadoPorNome || '—');
-      const fn     = t ? `openTarefaDetalhe('${t.id}')` : '';
+      const fn     = `viewPublicacao('${p.id}')`;
       const iniciais = (p.publicadoPorNome || '?').split(' ')
         .filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('');
       const isMinha = userId && p.publicadoPorId === userId;
