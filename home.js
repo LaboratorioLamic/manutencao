@@ -23,6 +23,9 @@
   let _hupPage   = 0;    // página atual das publicações (5 por página)
   let _falhaTabByAtivo = {}; // { [ativoKey]: 'falha'|'causa'|'deteccao'|'dano' }
   let _falhaPage = 0;        // página atual do bloco "OTs de Ativos com Falha" (3 por página)
+  const KPI_CARDS_PER_PAGE = 6;
+  let _kpiCardPage = 0;      // página atual do modal de cards KPI (ativosEmUso / ativosParados)
+  let _kpiCardTipo = '';     // tipo do KPI aberto atualmente no modal
 
   // ── HELPERS DE DATA ──────────────────────────────────────────
   function _initPeriodo(modo) {
@@ -795,29 +798,24 @@
         };
 
       case 'ativosEmUso':
-        return { titulo: 'Ativos em Uso', cols: ['Nome', 'Código', 'Setor', 'Categoria'],
-          rows: (k.ativosEmUsoList || []).map(a => {
+        return {
+          titulo: 'Ativos em Uso',
+          cards: (k.ativosEmUsoList || []).map(a => {
             const idx = (state?.ativos || []).indexOf(a);
-            return {
-              cells: [_esc(a.nome), _esc(a.codigo || '—'), _esc(a.setor || '—'), _esc(a.categoria || '—')],
-              fn: idx >= 0 ? _fn(`visualizarAtivo(${idx})`) : '',
-            };
+            return { ativo: a, idx, tipo: 'em_uso', otsAssoc: [] };
           }),
         };
 
       case 'ativosParados':
-        return { titulo: 'Ativos Parados', cols: ['Nome', 'Código', 'Setor', 'Categoria', 'OTs Associadas'],
-          rows: (k.ativosParadosList || []).map(a => {
+        return {
+          titulo: 'Ativos Parados',
+          cards: (k.ativosParadosList || []).map(a => {
             const idx = (state?.ativos || []).indexOf(a);
             const otsAssoc = (a.pausaOTs || []).map(id => {
               const ot = (typeof otState !== 'undefined' ? otState.ordens : []).find(o => o.id === id);
-              return ot ? _esc(ot.numero || id) : _esc(id);
-            }).join(', ') || '—';
-            return {
-              cells: [_esc(a.nome), _esc(a.codigo || '—'), _esc(a.setor || '—'), _esc(a.categoria || '—'),
-                `<span style="font-size:11px;color:var(--text-secondary)">${otsAssoc}</span>`],
-              fn: idx >= 0 ? _fn(`visualizarAtivo(${idx})`) : '',
-            };
+              return ot ? { numero: ot.numero || id, id: ot.id } : { numero: id, id };
+            });
+            return { ativo: a, idx, tipo: 'em_pausa', otsAssoc };
           }),
         };
 
@@ -1445,34 +1443,152 @@
   };
 
   // ── MODAL KPI PÚBLICO ────────────────────────────────────────
-  window.homeOpenKPI = function (tipo) {
-    _ensureKPIModal();
-    const k = calcKPIs();
-    const data = _buildKPIData(tipo, k);
+  function _renderAtivoCard(card) {
+    const { ativo: a, idx, tipo, otsAssoc } = card;
+    const initials = (a.nome || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0].toUpperCase()).join('');
+    const isParado = tipo === 'em_pausa';
+    const stripeClass = isParado ? 'stripe-amber' : 'stripe-green';
+    const avClass    = isParado ? 'av-amber'  : 'av-green';
+    const sbClass    = isParado ? 'sb-amber'  : 'sb-green';
+    const sbLabel    = isParado ? 'Parado'    : 'Em Uso';
+    const sbIcon     = isParado
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+    const clickFn = idx >= 0 ? `homeCloseKPI();visualizarAtivo(${idx})` : '';
 
-    document.getElementById('hkm-title').textContent = data.titulo;
-    const n = data.rows.length;
-    document.getElementById('hkm-count').textContent = `${n} item${n !== 1 ? 's' : ''}`;
+    const dv = (v) => v && v !== '-' && v !== '—'
+      ? `<div class="hkm-ac-dv">${_esc(v)}</div>`
+      : `<div class="hkm-ac-dv dv-muted">—</div>`;
 
+    const otsBlock = isParado && otsAssoc.length > 0
+      ? `<div class="hkm-ac-footer">
+          <div class="hkm-ac-ots">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+            OTs: <strong>${otsAssoc.map(o => _esc(o.numero)).join(', ')}</strong>
+          </div>
+          ${clickFn ? `<div class="hkm-ac-open-btn">Ver ativo <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div>` : ''}
+        </div>`
+      : clickFn
+        ? `<div class="hkm-ac-footer">
+            <div></div>
+            <div class="hkm-ac-open-btn">Ver ativo <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></div>
+          </div>`
+        : '';
+
+    return `<div class="hkm-asset-card" ${clickFn ? `onclick="${clickFn}"` : ''}>
+      <div class="hkm-ac-stripe ${stripeClass}"></div>
+      <div class="hkm-ac-top">
+        <div class="hkm-ac-avatar ${avClass}">${initials}</div>
+        <div class="hkm-ac-info">
+          <div class="hkm-ac-name" title="${_esc(a.nome)}">${_esc(a.nome)}</div>
+          ${a.codigo ? `<div class="hkm-ac-code">${_esc(a.codigo)}</div>` : ''}
+        </div>
+        <div class="hkm-ac-status-badge ${sbClass}">${sbIcon}${sbLabel}</div>
+      </div>
+      <div class="hkm-ac-meta">
+        ${a.setor ? `<span class="hkm-ac-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${_esc(a.setor)}</span>` : ''}
+        ${a.categoria ? `<span class="hkm-ac-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>${_esc(a.categoria)}</span>` : ''}
+      </div>
+      <div class="hkm-ac-details">
+        <div class="hkm-ac-detail-item">
+          <div class="hkm-ac-dl">Marca</div>
+          ${dv(a.marca)}
+        </div>
+        <div class="hkm-ac-detail-item">
+          <div class="hkm-ac-dl">Modelo</div>
+          ${dv(a.modelo)}
+        </div>
+        <div class="hkm-ac-detail-item">
+          <div class="hkm-ac-dl">Nº de Série</div>
+          ${dv(a.serie)}
+        </div>
+        <div class="hkm-ac-detail-item">
+          <div class="hkm-ac-dl">Fornecedor</div>
+          ${dv(a.fornecedor)}
+        </div>
+      </div>
+      ${otsBlock}
+    </div>`;
+  }
+
+  function _renderKpiCards(cards) {
     const body = document.getElementById('hkm-body');
+    const n = cards.length;
+    document.getElementById('hkm-count').textContent = `${n} ativo${n !== 1 ? 's' : ''}`;
     if (n === 0) {
       body.innerHTML = `<div class="hkm-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
           <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
-        <span>Nenhum item encontrado</span>
+        <span>Nenhum ativo encontrado</span>
       </div>`;
+      return;
+    }
+    const totalPages = Math.max(1, Math.ceil(n / KPI_CARDS_PER_PAGE));
+    if (_kpiCardPage >= totalPages) _kpiCardPage = totalPages - 1;
+    const page = cards.slice(_kpiCardPage * KPI_CARDS_PER_PAGE, (_kpiCardPage + 1) * KPI_CARDS_PER_PAGE);
+
+    const pagination = totalPages > 1 ? `
+      <div class="hkm-pagination">
+        <button class="hkm-pg-btn" onclick="homeKpiPrevPage()" ${_kpiCardPage === 0 ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span class="hkm-pg-info">${_kpiCardPage + 1} / ${totalPages}</span>
+        <button class="hkm-pg-btn" onclick="homeKpiNextPage()" ${_kpiCardPage >= totalPages - 1 ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>` : '';
+
+    body.innerHTML = `<div class="hkm-asset-grid">${page.map(_renderAtivoCard).join('')}</div>${pagination}`;
+  }
+
+  window.homeKpiPrevPage = function () {
+    if (_kpiCardPage > 0) { _kpiCardPage--; _refreshKpiModal(); }
+  };
+  window.homeKpiNextPage = function () {
+    _kpiCardPage++;
+    _refreshKpiModal();
+  };
+  function _refreshKpiModal() {
+    const k = calcKPIs();
+    const data = _buildKPIData(_kpiCardTipo, k);
+    if (data.cards) _renderKpiCards(data.cards);
+  }
+
+  window.homeOpenKPI = function (tipo) {
+    _ensureKPIModal();
+    _kpiCardTipo = tipo;
+    _kpiCardPage = 0;
+    const k = calcKPIs();
+    const data = _buildKPIData(tipo, k);
+
+    document.getElementById('hkm-title').textContent = data.titulo;
+    const body = document.getElementById('hkm-body');
+
+    if (data.cards) {
+      _renderKpiCards(data.cards);
     } else {
-      body.innerHTML = `<table class="hkm-table">
-        <thead><tr>${data.cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
-        <tbody>
-          ${data.rows.map(r =>
-            `<tr ${r.fn ? `onclick="${r.fn}" class="hkm-clickable"` : ''}>
-              ${r.cells.map(c => `<td>${c}</td>`).join('')}
-            </tr>`
-          ).join('')}
-        </tbody>
-      </table>`;
+      const n = (data.rows || []).length;
+      document.getElementById('hkm-count').textContent = `${n} item${n !== 1 ? 's' : ''}`;
+      if (n === 0) {
+        body.innerHTML = `<div class="hkm-empty">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <span>Nenhum item encontrado</span>
+        </div>`;
+      } else {
+        body.innerHTML = `<table class="hkm-table">
+          <thead><tr>${data.cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${data.rows.map(r =>
+              `<tr ${r.fn ? `onclick="${r.fn}" class="hkm-clickable"` : ''}>
+                ${r.cells.map(c => `<td>${c}</td>`).join('')}
+              </tr>`
+            ).join('')}
+          </tbody>
+        </table>`;
+      }
     }
 
     document.getElementById('home-kpi-modal').classList.add('open');

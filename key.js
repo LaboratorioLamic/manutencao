@@ -48,39 +48,34 @@ function _verifyPwd(plain, stored) {
 
 // ── PERSISTÊNCIA ─────────────────────────────────────────────
 function _saveAuth() {
-  localStorage.setItem(AUTH_KEY, JSON.stringify(authState));
+  window.dbSave(AUTH_KEY, authState);
 }
 
-function _loadAuth() {
-  try {
-    const raw = localStorage.getItem(AUTH_KEY);
-    if (!raw) return;
-    const d = JSON.parse(raw);
-    if (d && typeof d === 'object') {
-      authState.users  = Array.isArray(d.users)  ? d.users  : [];
-      authState.groups = Array.isArray(d.groups) ? d.groups : [];
-      authState.allowRegistration = d.allowRegistration !== false;
-      // Migração: unifica criarUsuarios/editarUsuarios/deletarUsuarios → gerenciarUsuarios
-      authState.groups.forEach(g => {
-        if (!g.permissoes?.config) return;
-        const c = g.permissoes.config;
-        if ('criarUsuarios' in c || 'editarUsuarios' in c || 'deletarUsuarios' in c) {
-          c.gerenciarUsuarios = !!(c.criarUsuarios || c.editarUsuarios || c.deletarUsuarios);
-          delete c.criarUsuarios; delete c.editarUsuarios; delete c.deletarUsuarios;
-        }
-        // Migração: renomeia os → ot
-        if (g.permissoes.os) { g.permissoes.ot = g.permissoes.os; delete g.permissoes.os; }
-      });
-      // Migração: reconstrói lista de cargos a partir dos usuários se não existir
-      if (Array.isArray(d.cargos) && d.cargos.length > 0) {
-        authState.cargos = d.cargos;
-      } else {
-        authState.cargos = [...new Set(authState.users.map(u => u.cargo).filter(Boolean))]
-          .sort((a, b) => a.localeCompare(b, 'pt-BR'));
-      }
+function _applyAuthData(d) {
+  if (!d || typeof d !== 'object') return;
+  authState.users  = Array.isArray(d.users)  ? d.users  : [];
+  authState.groups = Array.isArray(d.groups) ? d.groups : [];
+  authState.allowRegistration = d.allowRegistration !== false;
+  // Migração: unifica criarUsuarios/editarUsuarios/deletarUsuarios → gerenciarUsuarios
+  authState.groups.forEach(g => {
+    if (!g.permissoes?.config) return;
+    const c = g.permissoes.config;
+    if ('criarUsuarios' in c || 'editarUsuarios' in c || 'deletarUsuarios' in c) {
+      c.gerenciarUsuarios = !!(c.criarUsuarios || c.editarUsuarios || c.deletarUsuarios);
+      delete c.criarUsuarios; delete c.editarUsuarios; delete c.deletarUsuarios;
     }
-  } catch {}
+    // Migração: renomeia os → ot
+    if (g.permissoes.os) { g.permissoes.ot = g.permissoes.os; delete g.permissoes.os; }
+  });
+  // Migração: reconstrói lista de cargos a partir dos usuários se não existir
+  if (Array.isArray(d.cargos) && d.cargos.length > 0) {
+    authState.cargos = d.cargos;
+  } else {
+    authState.cargos = [...new Set(authState.users.map(u => u.cargo).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }
 }
+
 
 // ── UTILITÁRIOS ──────────────────────────────────────────────
 function _authUid() {
@@ -297,23 +292,73 @@ function _restoreSession() {
 let _sectorModalCallback = null;
 
 // ── INICIALIZAÇÃO ─────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', function () {
-  _loadAuth();
+// ── Tela de erro de conexão ───────────────────────────────────
+function _showConnectionError() {
+  // Bloqueia qualquer acesso offline: fecha sessão e exibe tela de erro
+  currentSession = null;
+  document.body.classList.add('auth-locked');
+  const overlay = document.getElementById('auth-overlay');
+  if (overlay) overlay.style.display = 'flex';
+  showAuthScreen('no-connection');
+}
 
-  // Garantir logout automático ao atualizar a página.
+// ── INICIALIZAÇÃO ─────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function () {
   localStorage.removeItem('auth-session');
 
-  if (_restoreSession()) {
-    _unlockApp();
-    return;
-  }
+  // Aguarda Firebase SDK inicializar, depois aguarda confirmação de conexão real
+  window._dbReady.then(() => {
+    // Firebase .info/connected demora ~1-3s para confirmar; aguarda até 8s
+    const _connTimeout = setTimeout(() => {
+      if (!window._dbConnected) _showConnectionError();
+    }, 8000);
 
-  if (!authHasAdmin()) {
-    showAuthScreen('first-admin');
-  } else {
-    showAuthScreen('login');
-  }
+    // Monitora mudanças de conexão durante toda a sessão
+    window._onDbConnectionChange = (connected) => {
+      if (connected) {
+        clearTimeout(_connTimeout);
+        _onFirebaseConnected();
+      } else {
+        // Perdeu conexão após estar online → bloqueia imediatamente
+        if (_authInitialized) _showConnectionError();
+      }
+    };
+
+    // Se já estava conectado antes do handler ser registrado
+    if (window._dbConnected) {
+      clearTimeout(_connTimeout);
+      _onFirebaseConnected();
+    }
+  });
 });
+
+let _authInitialized = false;
+
+function _onFirebaseConnected() {
+  if (_authInitialized) return; // já inicializou; reconexão não refaz login
+  _authInitialized = true;
+
+  window.dbLoad(AUTH_KEY).then((data) => {
+    _applyAuthData(data);
+
+    window.dbListen(AUTH_KEY, (liveData) => {
+      _applyAuthData(liveData);
+      if (typeof renderUsersTable  === 'function') renderUsersTable();
+      if (typeof renderGroupsTable === 'function') renderGroupsTable();
+    });
+
+    if (_restoreSession()) {
+      _unlockApp();
+      return;
+    }
+
+    if (!authHasAdmin()) {
+      showAuthScreen('first-admin');
+    } else {
+      showAuthScreen('login');
+    }
+  });
+}
 
 function showAuthScreen(name) {
   document.querySelectorAll('.auth-screen').forEach(el => el.classList.remove('active'));
@@ -571,8 +616,9 @@ function authDoRegister() {
 // ── MODAL GENÉRICO DE SETORES ─────────────────────────────────
 function _openSectorModal(currentSelected, callback, availableSetores) {
   _sectorModalCallback = callback;
-  const setores = availableSetores ||
+  const rawSetores = availableSetores ||
     ((typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : []);
+  const setores = [...rawSetores].sort((a, b) => a.localeCompare(b, 'pt'));
   const list = document.getElementById('sector-modal-list');
   if (!list) return;
 

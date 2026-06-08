@@ -17,6 +17,46 @@
 <!-- ══════════ AUTH OVERLAY ══════════ -->
 <div id="auth-overlay" class="auth-overlay">
 
+  <!-- TELA: CARREGANDO (padrão enquanto Firebase responde) -->
+  <div id="auth-screen-loading" class="auth-screen active">
+    <div class="auth-loading-wrap">
+      <div class="auth-loading-logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+      </div>
+      <div class="auth-loading-name">Manutenção LAMIC</div>
+      <div class="auth-loading-spinner"><span></span><span></span><span></span></div>
+    </div>
+  </div>
+
+  <!-- TELA: SEM CONEXÃO -->
+  <div id="auth-screen-no-connection" class="auth-screen">
+    <div class="auth-card auth-noconn-card">
+      <div class="auth-noconn-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+          <line x1="1" y1="1" x2="23" y2="23"/>
+          <path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/>
+          <path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/>
+          <path d="M10.71 5.05A16 16 0 0 1 22.56 9"/>
+          <path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/>
+          <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+          <line x1="12" y1="20" x2="12.01" y2="20"/>
+        </svg>
+      </div>
+      <div class="auth-noconn-title">Sem conexão com o servidor</div>
+      <div class="auth-noconn-msg">
+        O acesso ao sistema requer conexão com o banco de dados.<br>
+        Verifique sua internet e tente novamente.
+      </div>
+      <button class="auth-btn auth-btn-primary" onclick="location.reload()">
+        Tentar novamente
+      </button>
+    </div>
+  </div>
+
   <!-- TELA: LOGIN -->
   <div id="auth-screen-login" class="auth-screen">
     <div class="auth-card">
@@ -885,9 +925,18 @@
                   style="width:200px;height:36px;font-size:13px;">
               </div>
             </div>
-            <select id="main-sector-filter" class="field-select" style="min-width: 200px;" onchange="renderCards();updateNotifBadge()">
-              <option value="todos">Setor (Todos)</option>
-            </select>
+            <div class="sector-search-wrap" id="sector-search-wrap" style="position:relative;">
+              <input id="main-sector-filter-input" type="text" class="field-input sector-search-input"
+                placeholder="Setor (Todos)" autocomplete="off"
+                oninput="sectorSearchFilter(this.value)"
+                onfocus="sectorSearchOpen()"
+                onkeydown="sectorSearchKey(event)"
+                style="min-width:180px;height:36px;font-size:13px;padding-right:28px;">
+              <span class="sector-search-caret" onclick="sectorSearchToggle()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <div id="sector-search-dropdown" class="sector-search-dropdown" style="display:none;"></div>
+            </div>
             <button id="btn-editar-setor-toolbar" class="btn btn-outline btn-icon" onclick="openSetorModal()" title="Novo Setor">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
@@ -1172,9 +1221,9 @@
         </div>
 
         <div class="form-field">
-          <label class="field-label">Equipamento <span class="required">*</span></label>
+          <label class="field-label">Ativo <span class="required">*</span></label>
           <div class="autocomplete-wrapper">
-            <input type="text" id="rotina-equip-input" class="field-input" placeholder="Digite o nome do equipamento..." autocomplete="off"
+            <input type="text" id="rotina-equip-input" class="field-input" placeholder="Pesquisar ativo..." autocomplete="off"
               oninput="filterEquipAutocomplete()" onfocus="filterEquipAutocomplete()" onblur="setTimeout(()=>closeEquipDropdown(),180)">
             <div class="autocomplete-dropdown" id="rotina-equip-dropdown"></div>
           </div>
@@ -1483,10 +1532,13 @@
         </div>
 
         <div class="form-field">
-          <label class="field-label">Equipamento <span class="required">*</span></label>
-          <select id="tarefa-equip-select" class="field-select" onchange="onTarefaEquipChange()">
-            <option value="">Selecione o equipamento...</option>
-          </select>
+          <label class="field-label">Ativo <span class="required">*</span></label>
+          <div class="ativo-search-wrap" id="tarefa-equip-wrap" style="position:relative;">
+            <input type="text" id="tarefa-equip-input" class="field-input" placeholder="Pesquisar ativo..." autocomplete="off"
+              oninput="onTarefaEquipSearch()" onfocus="onTarefaEquipFocus()" onblur="onTarefaEquipBlur()">
+            <input type="hidden" id="tarefa-equip-select" value="">
+            <div id="tarefa-equip-dropdown" class="ativo-search-dropdown" style="display:none;"></div>
+          </div>
         </div>
 
         <div class="form-field">
@@ -2088,27 +2140,24 @@
 </div>
 
 <!-- ══════════ MODAIS EXISTENTES ══════════ -->
-<div class="modal-overlay" id="modal-ativo">
-  <div class="modal">
-    <div class="modal-header">
-      <div class="modal-header-left">
-        <div class="modal-header-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-        </div>
-        <div>
-          <div class="modal-title" id="modal-ativo-title">Novo Ativo</div>
-          <div class="modal-subtitle">Preencha os dados do equipamento</div>
-        </div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px;">
-        <button id="btn-hist-ativo" class="modal-close" style="display:none;" onclick="openRastreabilidadeModal('ativo')" title="Rastreabilidade de edições">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        </button>
-        <button class="modal-close" onclick="closeModal('modal-ativo')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-      </div>
+<div class="right-drawer" id="modal-ativo">
+  <div class="drawer-header">
+    <div class="drawer-header-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
     </div>
+    <div>
+      <div class="drawer-title" id="modal-ativo-title">Novo Ativo</div>
+      <div class="drawer-subtitle">Preencha os dados do equipamento</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
+      <button id="btn-hist-ativo" class="drawer-close" style="display:none;" onclick="openRastreabilidadeModal('ativo')" title="Rastreabilidade de edições">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </button>
+      <button class="drawer-close" onclick="closeModal('modal-ativo')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+  </div>
 
-    <div class="modal-body">
+  <div class="drawer-body">
 
       <div class="form-section">
         <div class="form-section-title">
@@ -2216,19 +2265,18 @@
         </div>
       </div>
 
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('modal-ativo')">Cancelar</button>
-      <button class="btn btn-primary" onclick="salvarAtivo()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
-        Salvar Ativo
-      </button>
-    </div>
+  </div>
+  <div class="drawer-footer">
+    <button class="btn btn-outline" onclick="closeModal('modal-ativo')">Cancelar</button>
+    <button class="btn btn-primary" onclick="salvarAtivo()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      Salvar Ativo
+    </button>
   </div>
 </div>
 
 <div class="modal-overlay" id="modal-setor">
-  <div class="modal sm">
+  <div class="modal wide">
     <div class="modal-header">
       <div class="modal-header-left">
         <div class="modal-header-icon">
@@ -2244,7 +2292,7 @@
     <div class="modal-body">
       <div class="form-field">
         <label class="field-label">Setores cadastrados</label>
-        <div id="setor-list" style="display:grid;gap:8px;"></div>
+        <div id="setor-list" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;"></div>
       </div>
       <div class="form-field" style="margin-bottom:0;">
         <label class="field-label">Nome do Setor</label>
@@ -2259,7 +2307,7 @@
 </div>
 
 <div class="modal-overlay" id="modal-categoria">
-  <div class="modal sm">
+  <div class="modal wide">
     <div class="modal-header">
       <div class="modal-header-left">
         <div class="modal-header-icon">
@@ -2275,7 +2323,7 @@
     <div class="modal-body">
       <div class="form-field">
         <label class="field-label">Categorias cadastradas</label>
-        <div id="categoria-list" style="display:grid;gap:8px;"></div>
+        <div id="categoria-list" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;"></div>
       </div>
       <div class="form-field" style="margin-bottom:0;">
         <label class="field-label">Nome da Categoria</label>
@@ -2381,7 +2429,7 @@
 
 <!-- ══════════ MODAL SELEÇÃO DE SETORES ══════════ -->
 <div class="modal-overlay" id="modal-sector-select">
-  <div class="modal sm">
+  <div class="modal md">
     <div class="modal-header">
       <div class="modal-header-left">
         <div class="modal-header-icon">
@@ -2894,6 +2942,12 @@
   </div>
 </div>
 
+<script>
+  window._dbReady = new Promise(resolve => { window._dbReadyResolve = resolve; });
+</script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script src="bd.js"></script>
 <script src="key.js"></script>
 <script src="upload.js"></script>
 <script src="script.js"></script>

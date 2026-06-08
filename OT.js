@@ -16,25 +16,41 @@ let otState = {
   }
 };
 
+// Flag: true após o Firebase responder pela primeira vez para OT
+let _otFirebaseReady = false;
+
 function otSave() {
-  localStorage.setItem(OT_KEY, JSON.stringify(otState));
+  // Só salva após o Firebase ter respondido ao menos uma vez
+  if (_otFirebaseReady) {
+    window.dbSave(OT_KEY, otState);
+  }
 }
+
+function _applyOtData(d) {
+  if (!d || typeof d !== 'object') return;
+  if (Array.isArray(d.ordens))      otState.ordens      = d.ordens;
+  if (Array.isArray(d.publicacoes)) otState.publicacoes = d.publicacoes;
+  if (d.catalogos && typeof d.catalogos === 'object') {
+    const c = d.catalogos;
+    if (Array.isArray(c.tiposFalha))   otState.catalogos.tiposFalha   = c.tiposFalha;
+    if (Array.isArray(c.causasRaiz))   otState.catalogos.causasRaiz   = c.causasRaiz;
+    if (Array.isArray(c.metodosDetec)) otState.catalogos.metodosDetec = c.metodosDetec;
+    if (Array.isArray(c.tiposDano))    otState.catalogos.tiposDano    = c.tiposDano;
+  }
+}
+
 function otLoad() {
-  try {
-    const raw = localStorage.getItem(OT_KEY);
-    if (!raw) return;
-    const d = JSON.parse(raw);
-    if (!d || typeof d !== 'object') return;
-    if (Array.isArray(d.ordens))      otState.ordens      = d.ordens;
-    if (Array.isArray(d.publicacoes)) otState.publicacoes = d.publicacoes;
-    if (d.catalogos && typeof d.catalogos === 'object') {
-      const c = d.catalogos;
-      if (Array.isArray(c.tiposFalha))   otState.catalogos.tiposFalha   = c.tiposFalha;
-      if (Array.isArray(c.causasRaiz))   otState.catalogos.causasRaiz   = c.causasRaiz;
-      if (Array.isArray(c.metodosDetec)) otState.catalogos.metodosDetec = c.metodosDetec;
-      if (Array.isArray(c.tiposDano))    otState.catalogos.tiposDano    = c.tiposDano;
-    }
-  } catch { /* ignora */ }
+  window._dbReady.then(() => {
+    window.dbListen(OT_KEY, (data) => {
+      const firstLoad = !_otFirebaseReady;
+      _otFirebaseReady = true;
+      _applyOtData(data);
+      // Atualiza a view OT se estiver visível
+      _otRenderView_mode();
+      // Na primeira carga, re-renderiza o home para que os KPIs de OT apareçam com dados reais
+      if (firstLoad && typeof renderHome === 'function') renderHome();
+    });
+  });
 }
 
 // ── CONSTANTES ────────────────────────────────────────────────
@@ -1610,7 +1626,7 @@ function otSaveForm() {
   otSave();
   otCloseModal('modal-ot-form');
   _otRenderKanban();
-  if (_wasFromAtivoView && typeof _renderAtivoOTs === 'function') _renderAtivoOTs();
+  if (_wasFromAtivoView && typeof window._renderAtivoOTs === 'function') window._renderAtivoOTs();
   showToast(_otFormId ? 'OT atualizada.' : 'OT criada com sucesso!', 'success');
 }
 
@@ -2433,21 +2449,20 @@ function _otInjectModals() {
 function _otModalsHTML() {
   return `
 <!-- ══ MODAL CRIAR/EDITAR OT ══ -->
-<div class="modal-overlay modal-ot-form" id="modal-ot-form">
-  <div class="modal wide">
-    <div class="modal-header">
-      <div class="modal-header-left">
-        <div class="modal-header-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        </div>
-        <div><div class="modal-title" id="ot-form-title">Nova Ordem de Trabalho</div>
-          <div class="modal-subtitle">Preencha os dados da OT</div></div>
-      </div>
-      <button class="modal-close" onclick="otCloseModal('modal-ot-form')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
+<div class="ot-form-drawer" id="modal-ot-form">
+  <div class="drawer-header">
+    <div class="drawer-header-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
     </div>
-    <div class="ot-modal-tabs">
+    <div>
+      <div class="drawer-title" id="ot-form-title">Nova Ordem de Trabalho</div>
+      <div class="drawer-subtitle">Preencha os dados da OT</div>
+    </div>
+    <button class="drawer-close" style="margin-left:auto;" onclick="otCloseModal('modal-ot-form')">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="ot-modal-tabs" style="flex-shrink:0;">
       <button class="ot-modal-tab-btn active" data-tab="dados" onclick="otSwitchFormTab('dados')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         Dados da OT
@@ -2458,7 +2473,7 @@ function _otModalsHTML() {
         <span class="ot-modal-tab-badge">0</span>
       </button>
     </div>
-    <div class="modal-body" style="padding:0;">
+    <div class="drawer-body" style="padding:0;overflow-y:auto;flex:1;">
       <!-- ABA DADOS -->
       <div class="ot-modal-tab-panel active" data-tab="dados" style="padding:24px 28px;">
         <div class="form-section">
@@ -2637,14 +2652,13 @@ function _otModalsHTML() {
         </div>
       </div>
     </div>
-    <div class="modal-footer">
+    <div class="drawer-footer">
       <button class="btn btn-outline" onclick="otCloseModal('modal-ot-form')">Cancelar</button>
       <button class="btn btn-primary" onclick="otSaveForm()" id="btn-ot-form-save">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:15px;height:15px;"><polyline points="20 6 9 17 4 12"/></svg>
         <span id="ot-form-save-lbl">Criar OT</span>
       </button>
     </div>
-  </div>
 </div>
 
 <!-- ══ MODAL VIEW OT ══ -->

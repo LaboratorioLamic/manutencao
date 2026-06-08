@@ -12,14 +12,17 @@ function _empCanManage() {
   return typeof authHasPermission === 'function' && authHasPermission('config.gerenciarEmpresas');
 }
 
-function empSave() { localStorage.setItem(EMP_KEY, JSON.stringify(empState)); }
+function empSave() {
+  window.dbSave(EMP_KEY, empState);
+}
+
 function empLoad() {
-  try {
-    const raw = localStorage.getItem(EMP_KEY);
-    if (!raw) return;
-    const d = JSON.parse(raw);
-    if (d && Array.isArray(d.empresas)) empState.empresas = d.empresas;
-  } catch { /* ignora */ }
+  window._dbReady.then(() => {
+    window.dbListen(EMP_KEY, (data) => {
+      if (data && Array.isArray(data.empresas)) empState.empresas = data.empresas;
+      empRenderTable();
+    });
+  });
 }
 
 // ── ESTADO LOCAL ──────────────────────────────────────────────

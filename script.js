@@ -11,7 +11,10 @@
   };
 
   function saveState() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    // Só salva após o Firebase ter respondido ao menos uma vez (evita sobrescrever dados reais com estado padrão)
+    if (_stateFirebaseReady) {
+      window.dbSave(STORAGE_KEY, state);
+    }
     refreshTaskFlagsUI();
   }
 
@@ -66,22 +69,28 @@
       renderHistoricoTable(_historicoTarefaId);
     }
   }
-  function loadState() {
-    try { return JSON.parse(localStorage.getItem(STORAGE_KEY)); } catch { return null; }
-  }
+  function loadState() { return null; } // substituído por Firebase
 
-  const storedState = loadState();
-  if (storedState && typeof storedState === 'object') {
-    state = {
-      setores: Array.isArray(storedState.setores) ? storedState.setores : state.setores,
-      categorias: Array.isArray(storedState.categorias) ? storedState.categorias : state.categorias,
-      ativos: Array.isArray(storedState.ativos) ? storedState.ativos : state.ativos,
-      tiposRotina: Array.isArray(storedState.tiposRotina) ? storedState.tiposRotina : state.tiposRotina,
-      rotinas: Array.isArray(storedState.rotinas) ? storedState.rotinas : state.rotinas,
-      tarefas: Array.isArray(storedState.tarefas) ? storedState.tarefas : state.tarefas,
-      publicacoes: Array.isArray(storedState.publicacoes) ? storedState.publicacoes : state.publicacoes
-    };
-  }
+  // Flag: true após o Firebase responder pela primeira vez (null = banco vazio é igualmente válido)
+  let _stateFirebaseReady = false;
+
+  window._dbReady.then(() => {
+    window.dbListen(STORAGE_KEY, (data) => {
+      _stateFirebaseReady = true; // Firebase respondeu — saves agora são seguros
+      if (data && typeof data === 'object') {
+        state = {
+          setores:    Array.isArray(data.setores)    ? data.setores    : state.setores,
+          categorias: Array.isArray(data.categorias) ? data.categorias : state.categorias,
+          ativos:     Array.isArray(data.ativos)     ? data.ativos     : state.ativos,
+          tiposRotina:Array.isArray(data.tiposRotina)? data.tiposRotina: state.tiposRotina,
+          rotinas:    Array.isArray(data.rotinas)    ? data.rotinas    : state.rotinas,
+          tarefas:    Array.isArray(data.tarefas)    ? data.tarefas    : state.tarefas,
+          publicacoes:Array.isArray(data.publicacoes)? data.publicacoes: state.publicacoes
+        };
+      }
+      refreshTaskFlagsUI();
+    });
+  });
 
   // ── UTILITÁRIOS ──
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
@@ -308,7 +317,7 @@
     const ativo = state.ativos[equipamentoIdx];
     if (!ativo) return false;
     if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
-    const fSetor = document.getElementById('main-sector-filter')?.value || 'todos';
+    const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
     const fCat   = document.getElementById('main-category-filter')?.value || 'todas';
     if (fSetor !== 'todos' && ativo.setor !== fSetor) return false;
     if (fCat !== 'todas' && ativo.categoria !== fCat) return false;
@@ -534,14 +543,10 @@
     if (btnHistTarefa) btnHistTarefa.style.display = id ? '' : 'none';
     document.getElementById('tarefa-save-label').textContent = id ? 'Salvar Alterações' : 'Salvar Tarefa';
 
-    // Popula select de equipamentos que possuem rotinas
-    const equipIdxSet = [...new Set(state.rotinas.map(r => r.equipamentoIdx))];
-    const equipSel = document.getElementById('tarefa-equip-select');
-    equipSel.innerHTML = '<option value="">Selecione o equipamento...</option>' +
-      equipIdxSet.map(i => {
-        const a = state.ativos[i];
-        return a ? `<option value="${i}">${a.nome} — ${a.codigo}</option>` : '';
-      }).join('');
+    // Reset autocomplete ativo
+    document.getElementById('tarefa-equip-input').value = '';
+    document.getElementById('tarefa-equip-select').value = '';
+    document.getElementById('tarefa-equip-dropdown').style.display = 'none';
 
     // Limpar campos
     document.getElementById('tarefa-titulo').value = '';
@@ -572,7 +577,7 @@
 
     if (editing) {
       document.getElementById('tarefa-titulo').value = editing.titulo || '';
-      equipSel.value = editing.equipamentoIdx;
+      _tarefaSetAtivo(editing.equipamentoIdx);
       onTarefaEquipChange();
       document.getElementById('tarefa-rotina-select').value = editing.rotinaId;
       onTarefaRotinaChange();
@@ -614,7 +619,7 @@
       // Pré-preenche a partir de uma rotina específica
       const r = state.rotinas.find(r => r.id === preRotinaId);
       if (r) {
-        equipSel.value = r.equipamentoIdx;
+        _tarefaSetAtivo(r.equipamentoIdx);
         onTarefaEquipChange();
         document.getElementById('tarefa-rotina-select').value = preRotinaId;
         onTarefaRotinaChange();
@@ -978,8 +983,46 @@
     closeTarefaDrawer();
   }
 
+  function _tarefaSetAtivo(idx) {
+    const a = state.ativos[idx];
+    if (a == null) return;
+    document.getElementById('tarefa-equip-select').value = idx;
+    document.getElementById('tarefa-equip-input').value = `${a.nome} — ${a.codigo}`;
+    document.getElementById('tarefa-equip-dropdown').style.display = 'none';
+  }
+
+  function _tarefaEquipRenderDropdown(items) {
+    const dd = document.getElementById('tarefa-equip-dropdown');
+    if (!items.length) { dd.style.display = 'none'; return; }
+    dd.innerHTML = items.map(({ idx, a }) =>
+      `<div class="ativo-search-item" onmousedown="event.preventDefault();_tarefaSetAtivo(${idx});onTarefaEquipChange();" >${a.nome} — ${a.codigo}</div>`
+    ).join('');
+    dd.style.display = '';
+  }
+
+  function onTarefaEquipSearch() {
+    const q = document.getElementById('tarefa-equip-input').value.toLowerCase();
+    document.getElementById('tarefa-equip-select').value = '';
+    const matches = state.ativos
+      .map((a, idx) => ({ idx, a }))
+      .filter(({ a }) => a && (`${a.nome} ${a.codigo}`).toLowerCase().includes(q))
+      .slice(0, 50);
+    _tarefaEquipRenderDropdown(matches);
+  }
+
+  function onTarefaEquipFocus() {
+    const cur = document.getElementById('tarefa-equip-select').value;
+    if (cur !== '') return;
+    const matches = state.ativos.map((a, idx) => ({ idx, a })).filter(({ a }) => a).slice(0, 50);
+    _tarefaEquipRenderDropdown(matches);
+  }
+
+  function onTarefaEquipBlur() {
+    setTimeout(() => { document.getElementById('tarefa-equip-dropdown').style.display = 'none'; }, 150);
+  }
+
   function onTarefaEquipChange() {
-    const equipIdx = parseInt(document.getElementById('tarefa-equip-select').value);
+    const equipIdx = parseInt(document.getElementById('tarefa-equip-select').value || '');
     const rotSel = document.getElementById('tarefa-rotina-select');
     document.getElementById('tarefa-rotina-info').style.display = 'none';
     setProximaDataDisplay('');
@@ -3655,9 +3698,10 @@
 
   // ── FILTROS DA ABA ROTINA ──
   function atualizarFiltrosRotina() {
-    const setores = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
+    const raw = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
+    const setores = [...raw].sort((a, b) => a.localeCompare(b, 'pt'));
     const setorOpts = setores.map(s => `<option value="${s}">${s}</option>`).join('');
-    const catOpts = state.categorias.map(c => `<option value="${c}">${c}</option>`).join('');
+    const catOpts = [...state.categorias].sort((a, b) => a.localeCompare(b, 'pt')).map(c => `<option value="${c}">${c}</option>`).join('');
     const fs = document.getElementById('filter-setor-rotina');
     const fc = document.getElementById('filter-cat-rotina');
     if (fs) fs.innerHTML = `<option value="">Setor (Todos)</option>` + setorOpts;
@@ -3762,7 +3806,7 @@
     document.getElementById('modal-ativo-title').textContent = index === null ? 'Novo Ativo' : 'Editar Ativo';
     const btnHistAtivo = document.getElementById('btn-hist-ativo');
     if (btnHistAtivo) btnHistAtivo.style.display = index !== null ? '' : 'none';
-    document.querySelector('#modal-ativo .modal-subtitle').textContent = index === null ? 'Preencha os dados do equipamento' : 'Altere os dados do equipamento';
+    document.querySelector('#modal-ativo .drawer-subtitle').textContent = index === null ? 'Preencha os dados do equipamento' : 'Altere os dados do equipamento';
 
     if (index === null) {
       document.querySelectorAll('#modal-ativo input, #modal-ativo textarea').forEach(el => el.value = '');
@@ -3783,7 +3827,7 @@
       _ativoStatusUI(ativo.statusUso || 'em_uso', ativo.pausaOTs || []);
     }
 
-    openModal('modal-ativo');
+    document.getElementById('modal-ativo').classList.add('open');
   }
 
   function visualizarAtivo(index, initialTab = 'info') {
@@ -4150,29 +4194,26 @@
   function openTarefaDrawerParaAtivo(idx) {
     openTarefaDrawer(null);
     setTimeout(() => {
-      const equipSel = document.getElementById('tarefa-equip-select');
-      if (equipSel) {
-        equipSel.value = idx;
-        onTarefaEquipChange();
-      }
+      _tarefaSetAtivo(idx);
+      onTarefaEquipChange();
     }, 50);
   }
 
   function editarAtivoAtual() {
-    closeModal('modal-visualizar');
     openAtivoModal(ativoEdicaoIndex);
   }
 
   function renderSetorModal() {
     const container = document.getElementById('setor-list');
-    container.innerHTML = state.setores.length === 0
-      ? `<div style="text-align:center;padding:12px 0;color:var(--text-muted);font-size:13px;">Nenhum setor cadastrado.</div>`
-      : state.setores.map((setor, index) => `
-      <div class="list-item-row">
-        <span class="list-item-name">${setor}</span>
-        <span class="list-item-actions">
-          <button class="btn btn-outline btn-icon" onclick="openSetorModal(${index})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
-          <button class="btn btn-outline btn-icon" onclick="removerSetor(${index})" title="Excluir" style="color:var(--red);border-color:rgba(230,57,70,0.3);" onmouseover="this.style.background='rgba(230,57,70,0.08)'" onmouseout="this.style.background=''"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+    const sorted = state.setores.map((s, i) => ({ s, i })).sort((a, b) => a.s.localeCompare(b.s, 'pt'));
+    container.innerHTML = sorted.length === 0
+      ? `<div style="grid-column:1/-1;text-align:center;padding:12px 0;color:var(--text-muted);font-size:13px;">Nenhum setor cadastrado.</div>`
+      : sorted.map(({ s: setor, i: index }) => `
+      <div class="setor-chip${setorEdicaoIndex === index ? ' editing' : ''}">
+        <span class="setor-chip-name" title="${setor}">${setor}</span>
+        <span class="setor-chip-actions">
+          <button onclick="openSetorModal(${index})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
+          <button onclick="removerSetor(${index})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </span>
       </div>
     `).join('');
@@ -4182,14 +4223,15 @@
 
   function renderCategoriaModal() {
     const container = document.getElementById('categoria-list');
-    container.innerHTML = state.categorias.length === 0
-      ? `<div style="text-align:center;padding:12px 0;color:var(--text-muted);font-size:13px;">Nenhuma categoria cadastrada.</div>`
-      : state.categorias.map((categoria, index) => `
-      <div class="list-item-row">
-        <span class="list-item-name">${categoria}</span>
-        <span class="list-item-actions">
-          <button class="btn btn-outline btn-icon" onclick="openCategoriaModal(${index})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
-          <button class="btn btn-outline btn-icon" onclick="removerCategoria(${index})" title="Excluir" style="color:var(--red);border-color:rgba(230,57,70,0.3);" onmouseover="this.style.background='rgba(230,57,70,0.08)'" onmouseout="this.style.background=''"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg></button>
+    const sorted = state.categorias.map((c, i) => ({ c, i })).sort((a, b) => a.c.localeCompare(b.c, 'pt'));
+    container.innerHTML = sorted.length === 0
+      ? `<div style="grid-column:1/-1;text-align:center;padding:12px 0;color:var(--text-muted);font-size:13px;">Nenhuma categoria cadastrada.</div>`
+      : sorted.map(({ c: categoria, i: index }) => `
+      <div class="setor-chip${categoriaEdicaoIndex === index ? ' editing' : ''}">
+        <span class="setor-chip-name" title="${categoria}">${categoria}</span>
+        <span class="setor-chip-actions">
+          <button onclick="openCategoriaModal(${index})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
+          <button onclick="removerCategoria(${index})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </span>
       </div>
     `).join('');
@@ -4214,11 +4256,12 @@
   }
 
   function atualizarSelects() {
-    const setores = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
+    const raw = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
+    const setores = [...raw].sort((a, b) => a.localeCompare(b, 'pt'));
     const setorOptions = setores.map(s => `<option value="${s}">${s}</option>`).join('');
-    document.getElementById('main-sector-filter').innerHTML = `<option value="todos">Setor (Todos)</option>` + setorOptions;
+    sectorSearchSetOptions(setores);
     document.getElementById('ativo-setor').innerHTML = `<option value="">Selecione...</option>` + setorOptions;
-    const catOptions = state.categorias.map(c => `<option value="${c}">${c}</option>`).join('');
+    const catOptions = [...state.categorias].sort((a, b) => a.localeCompare(b, 'pt')).map(c => `<option value="${c}">${c}</option>`).join('');
     document.getElementById('main-category-filter').innerHTML = `<option value="todas">Todas</option>` + catOptions;
     document.getElementById('ativo-categoria').innerHTML = `<option value="">Selecione...</option>` + catOptions;
     atualizarFiltrosRotina();
@@ -4241,9 +4284,11 @@
     saveState();
     atualizarSelects();
     document.getElementById('input-novo-setor').value = '';
+    const wasEditing = setorEdicaoIndex >= 0;
     setorEdicaoIndex = -1;
     renderSetorModal();
-    closeModal('modal-setor');
+    if (wasEditing) closeModal('modal-setor');
+    document.getElementById('input-novo-setor')?.focus();
     showToast('Setor salvo!', 'success');
   }
 
@@ -4262,9 +4307,11 @@
     saveState();
     atualizarSelects();
     document.getElementById('input-nova-categoria').value = '';
+    const wasEditingCat = categoriaEdicaoIndex >= 0;
     categoriaEdicaoIndex = -1;
     renderCategoriaModal();
-    closeModal('modal-categoria');
+    if (wasEditingCat) closeModal('modal-categoria');
+    document.getElementById('input-nova-categoria')?.focus();
     showToast('Categoria salva!', 'success');
   }
 
@@ -4310,11 +4357,16 @@
     }
     saveState();
 
+    const editedIdx = ativoEdicaoIndex;
+    const wasEditing = editedIdx !== null;
     ativoEdicaoIndex = null;
     document.querySelectorAll('#modal-ativo input, #modal-ativo textarea').forEach(el => el.value = '');
     document.getElementById('ativo-setor').value = '';
     document.getElementById('ativo-categoria').value = '';
-    closeModal('modal-ativo');
+    document.getElementById('modal-ativo').classList.remove('open');
+    if (wasEditing && isModalOpen('modal-visualizar')) {
+      visualizarAtivo(editedIdx, getActiveSubTab('avtab', ['info', 'rotinas', 'tarefas', 'atividades']) || 'info');
+    }
     showToast('Ativo salvo com sucesso!', 'success');
   }
 
@@ -4480,6 +4532,96 @@
       .replace(/[^a-z0-9]/g, '');
   }
 
+  // ── SECTOR SEARCH (filtro digitável de setor na aba Ativos) ──
+  let _sectorSearchVal  = 'todos';
+  let _sectorSearchOpts = [];
+
+  function sectorSearchSetOptions(setores) {
+    _sectorSearchOpts = setores;
+    // Mantém valor atual se ainda existe, senão reseta
+    if (_sectorSearchVal !== 'todos' && !setores.includes(_sectorSearchVal)) {
+      _sectorSearchVal = 'todos';
+      const inp = document.getElementById('main-sector-filter-input');
+      if (inp) inp.value = '';
+    }
+  }
+
+  function sectorSearchGetValue() {
+    return _sectorSearchVal;
+  }
+
+  function sectorSearchSetValue(val) {
+    _sectorSearchVal = val;
+    const inp = document.getElementById('main-sector-filter-input');
+    if (inp) inp.value = val === 'todos' ? '' : val;
+  }
+
+  let _sectorSearchClickBound = false;
+
+  function sectorSearchOpen() {
+    _sectorSearchRenderDropdown('');
+    const dd = document.getElementById('sector-search-dropdown');
+    if (dd) dd.style.display = '';
+    if (!_sectorSearchClickBound) {
+      document.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('#sector-search-wrap')) _sectorSearchClose();
+      });
+      _sectorSearchClickBound = true;
+    }
+  }
+
+  function sectorSearchToggle() {
+    const dd = document.getElementById('sector-search-dropdown');
+    if (!dd) return;
+    if (dd.style.display === 'none' || !dd.style.display) {
+      document.getElementById('main-sector-filter-input')?.focus();
+      sectorSearchOpen();
+    } else {
+      _sectorSearchClose();
+    }
+  }
+
+  function sectorSearchFilter(q) {
+    _sectorSearchRenderDropdown(q.toLowerCase());
+    const dd = document.getElementById('sector-search-dropdown');
+    if (dd) dd.style.display = '';
+  }
+
+  function sectorSearchKey(e) {
+    if (e.key === 'Escape') { _sectorSearchClose(); e.target.blur(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#sector-search-dropdown .sector-dd-item');
+      if (first) first.click();
+    }
+  }
+
+  function _sectorSearchRenderDropdown(q) {
+    const dd = document.getElementById('sector-search-dropdown');
+    if (!dd) return;
+    const opts = [{ val: 'todos', label: 'Todos os setores' },
+      ..._sectorSearchOpts.map(s => ({ val: s, label: s }))];
+    const filtered = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
+    dd.innerHTML = filtered.length === 0
+      ? `<div class="sector-dd-empty">Nenhum setor encontrado</div>`
+      : filtered.map(o => `<div class="sector-dd-item${_sectorSearchVal === o.val ? ' active' : ''}"
+          onmousedown="sectorSearchSelect('${o.val.replace(/'/g,"\\'")}',event)">${o.label}</div>`).join('');
+  }
+
+  function sectorSearchSelect(val, event) {
+    if (event) event.preventDefault();
+    _sectorSearchVal = val;
+    const inp = document.getElementById('main-sector-filter-input');
+    if (inp) inp.value = val === 'todos' ? '' : val;
+    _sectorSearchClose();
+    renderCards();
+    if (typeof updateNotifBadge === 'function') updateNotifBadge();
+  }
+
+  function _sectorSearchClose() {
+    const dd = document.getElementById('sector-search-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+
   let _ativosSearchOpen = false;
 
   function toggleAtivosSearch() {
@@ -4512,7 +4654,7 @@
 
   function renderCards() {
     const grid = document.getElementById('assets-grid');
-    const fSetor = document.getElementById('main-sector-filter').value;
+    const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
     const fCat = document.getElementById('main-category-filter').value;
     const fBusca = _normalizeSearch(document.getElementById('ativos-search-input')?.value);
 
@@ -4612,7 +4754,7 @@
     const nPubs      = state.publicacoes.length;
     const nSetores   = state.setores.length;
     const nCats      = state.categorias.length;
-    const raw        = localStorage.getItem(STORAGE_KEY) || '';
+    const raw        = JSON.stringify(state) || '';
     const sizeKb     = (new Blob([raw]).size / 1024).toFixed(1);
     grid.innerHTML = [
       ['Ativos cadastrados', nAtivos],
