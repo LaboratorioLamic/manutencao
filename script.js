@@ -307,6 +307,7 @@
   function ativoPassesAtivosFilters(equipamentoIdx) {
     const ativo = state.ativos[equipamentoIdx];
     if (!ativo) return false;
+    if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
     const fSetor = document.getElementById('main-sector-filter')?.value || 'todos';
     const fCat   = document.getElementById('main-category-filter')?.value || 'todas';
     if (fSetor !== 'todos' && ativo.setor !== fSetor) return false;
@@ -377,6 +378,38 @@
         });
       }
     });
+
+    // Inclui OTs no período de alerta (apenas no contexto de ativos)
+    if (context === 'ativos' && typeof otState !== 'undefined') {
+      otState.ordens.forEach(o => {
+        if (['concluida', 'cancelada'].includes(o.status)) return;
+        if (!o.prazo) return;
+        if (!ativoPassesAtivosFilters(o.ativoIdx)) return;
+
+        const ativo = (o.ativoIdx !== null && o.ativoIdx !== undefined) ? state.ativos[o.ativoIdx] : null;
+        const due = new Date(o.prazo + 'T00:00:00');
+        const diffDays = Math.ceil((due - today) / 86400000);
+        const alertLimit = (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null)
+          ? (parseInt(o.prazoAlertaDias, 10) || 2) : 2;
+
+        if (diffDays < 0) {
+          alerts.push({
+            otId: o.id, equipamentoIdx: o.ativoIdx ?? null, proximaData: o.prazo,
+            tipo: 'danger', rotinaNome: o.numero || 'OT', equipNome: ativo ? ativo.nome : (o.titulo || '—'),
+            equipCodigo: ativo ? ativo.codigo : '', msg: `Vencida há ${Math.abs(diffDays)} dia(s)`, diffDays,
+            isOT: true, otTitulo: o.titulo || ''
+          });
+        } else if (diffDays <= alertLimit) {
+          alerts.push({
+            otId: o.id, equipamentoIdx: o.ativoIdx ?? null, proximaData: o.prazo,
+            tipo: 'warning', rotinaNome: o.numero || 'OT', equipNome: ativo ? ativo.nome : (o.titulo || '—'),
+            equipCodigo: ativo ? ativo.codigo : '', msg: `Vence em ${diffDays} dia(s)`, diffDays,
+            isOT: true, otTitulo: o.titulo || ''
+          });
+        }
+      });
+    }
+
     alerts.sort((a, b) => {
       if (a.tipo !== b.tipo) return a.tipo === 'danger' ? -1 : 1;
       return (a.diffDays ?? 0) - (b.diffDays ?? 0);
@@ -392,6 +425,22 @@
       if (f.cls === 'flag-danger') danger++;
       else if (f.cls === 'flag-warning') warning++;
     });
+    // Inclui OTs do ativo no período de alerta
+    if (typeof otState !== 'undefined') {
+      const today = new Date(); today.setHours(0,0,0,0);
+      otState.ordens.filter(o =>
+        !['concluida', 'cancelada'].includes(o.status) &&
+        o.prazo &&
+        o.ativoIdx === equipamentoIdx
+      ).forEach(o => {
+        const due = new Date(o.prazo + 'T00:00:00');
+        const diffDays = Math.ceil((due - today) / 86400000);
+        const alertLimit = (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null)
+          ? (parseInt(o.prazoAlertaDias, 10) || 2) : 2;
+        if (diffDays < 0) danger++;
+        else if (diffDays <= alertLimit) warning++;
+      });
+    }
     return { danger, warning, total: danger + warning };
   }
 
@@ -412,14 +461,25 @@
       list.innerHTML = '<div class="notif-empty">Nenhum alerta no momento</div>';
       return;
     }
-    list.innerHTML = alerts.map(a => `
-      <div class="notif-item" onclick="openAlertaFromAtivos('${a.tarefaId}');document.getElementById('ativos-notif-dropdown').classList.remove('open')">
+    list.innerHTML = alerts.map(a => {
+      const onclick = a.isOT
+        ? `otOpenView('${a.otId}');document.getElementById('ativos-notif-dropdown').classList.remove('open')`
+        : `openAlertaFromAtivos('${a.tarefaId}');document.getElementById('ativos-notif-dropdown').classList.remove('open')`;
+      const label = a.isOT
+        ? `<span style="font-size:10px;font-weight:700;color:var(--cyan);background:rgba(0,180,216,0.12);border-radius:4px;padding:1px 5px;margin-left:4px;vertical-align:middle;">OT</span>`
+        : '';
+      const subline = a.isOT && a.otTitulo
+        ? `${a.otTitulo} · ${a.msg} · ${formatDate(a.proximaData)}`
+        : `${a.equipCodigo ? a.equipCodigo + ' · ' : ''}${a.msg} · ${formatDate(a.proximaData)}`;
+      return `
+      <div class="notif-item" onclick="${onclick}">
         <div class="notif-dot ${a.tipo}"></div>
         <div class="notif-text">
-          <strong>${a.rotinaNome}</strong> — ${a.equipNome}
-          <small>${a.equipCodigo ? a.equipCodigo + ' · ' : ''}${a.msg} · ${formatDate(a.proximaData)}</small>
+          <strong>${a.rotinaNome}</strong>${label} — ${a.equipNome}
+          <small>${subline}</small>
         </div>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
 
   function openAlertaFromAtivos(tarefaId) {
@@ -3873,12 +3933,22 @@
     const container = document.getElementById('ativo-ots-list');
     if (!container) return;
 
+    const canCreate = typeof authHasPermission !== 'function' || authHasPermission('ot.criar');
+    const btnNovaOT = canCreate
+      ? `<button class="btn btn-primary btn-sm" style="gap:6px;font-size:12.5px;"
+            onclick="otOpenFormForAtivo(${idx})">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nova OT
+        </button>`
+      : '';
+
     const ordens = (typeof otState !== 'undefined' ? otState.ordens : [])
       .filter(o => Number(o.ativoIdx) === idx && !['concluida','cancelada'].includes(o.status))
       .sort((a, b) => (b.criadoEm || '') < (a.criadoEm || '') ? -1 : 1);
 
     if (ordens.length === 0) {
       container.innerHTML = `
+        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">${btnNovaOT}</div>
         <div class="avot-empty">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
           <strong>Nenhuma OT em aberto</strong>
@@ -3908,7 +3978,8 @@
     const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('pt-BR') : '—';
     const isVencida = o => o.prazo && new Date(o.prazo + 'T00:00:00') < new Date();
 
-    container.innerHTML = `<div class="avot-list">` + ordens.map(o => {
+    container.innerHTML = `<div style="display:flex;justify-content:flex-end;margin-bottom:12px;">${btnNovaOT}</div>
+    <div class="avot-list">` + ordens.map(o => {
       const sev  = SEV_CFG[o.severidade]  || { label: o.severidade || '—', cls: 'avot-sev-media' };
       const st   = ST_CFG[o.status]       || { label: o.status || '—',     cls: 'avot-st-pendente' };
       const tipo = TIPO_CFG[o.tipo]       || { label: o.tipo || '—',       cls: 'avot-tipo-corretiva' };
@@ -3946,6 +4017,7 @@
       </div>`;
     }).join('') + `</div>`;
   }
+  window._renderAtivoOTs = _renderAtivoOTs;
 
   function _renderAtivoRotinas() {
     const idx = ativoEdicaoIndex;
@@ -4442,7 +4514,6 @@
     const grid = document.getElementById('assets-grid');
     const fSetor = document.getElementById('main-sector-filter').value;
     const fCat = document.getElementById('main-category-filter').value;
-    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
     const fBusca = _normalizeSearch(document.getElementById('ativos-search-input')?.value);
 
     const filtrados = state.ativos
@@ -4454,7 +4525,7 @@
         } else {
           if (item.statusUso === 'em_desuso') return false;
         }
-        if (visSetores && !visSetores.includes(item.setor)) return false;
+        if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(item)) return false;
         const matchSetor = fSetor === 'todos' || item.setor === fSetor;
         const matchCat = fCat === 'todas' || item.categoria === fCat;
         if (!matchSetor || !matchCat) return false;

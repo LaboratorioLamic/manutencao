@@ -250,6 +250,10 @@ function authUpdateUserProfile(userId, updates) {
   if (idx < 0) return { ok: false, error: 'Usuário não encontrado.' };
 
   if (updates.password) {
+    if (!updates.currentPassword)
+      return { ok: false, error: 'Informe a senha atual para alterar a senha.' };
+    if (authState.users[idx].passwordHash !== _hashPwd(updates.currentPassword))
+      return { ok: false, error: 'Senha atual incorreta.' };
     if (updates.password !== updates.confirmPassword)
       return { ok: false, error: 'As senhas não conferem.' };
     if (updates.password.length < 4)
@@ -672,10 +676,12 @@ function openUserProfileModal() {
     : (authState.groups.find(g => g.id === user.grupoId)?.nome || '—');
   _setTextEl('profile-grupo', grpName);
 
-  const np = document.getElementById('profile-new-password');
-  const cp = document.getElementById('profile-confirm-password');
-  if (np) np.value = '';
-  if (cp) cp.value = '';
+  const curp = document.getElementById('profile-current-password');
+  const np   = document.getElementById('profile-new-password');
+  const cp   = document.getElementById('profile-confirm-password');
+  if (curp) curp.value = '';
+  if (np)   np.value   = '';
+  if (cp)   cp.value   = '';
 
   const errEl = document.getElementById('profile-error');
   if (errEl) errEl.style.display = 'none';
@@ -689,10 +695,11 @@ function closeUserProfileModal() {
 }
 
 function saveUserProfile() {
-  const newPwd  = document.getElementById('profile-new-password')?.value  || '';
+  const curPwd  = document.getElementById('profile-current-password')?.value || '';
+  const newPwd  = document.getElementById('profile-new-password')?.value     || '';
   const confPwd = document.getElementById('profile-confirm-password')?.value || '';
   const updates = {};
-  if (newPwd) { updates.password = newPwd; updates.confirmPassword = confPwd; }
+  if (newPwd) { updates.currentPassword = curPwd; updates.password = newPwd; updates.confirmPassword = confPwd; }
 
   const result = authUpdateUserProfile(currentSession.userId, updates);
   if (result.ok) {

@@ -108,7 +108,8 @@ const OT_CHECKLIST_TPL = {
 };
 
 // ── ESTADO LOCAL DO MÓDULO ────────────────────────────────────
-let _otFormId    = null; // null = nova OT, string = editar
+let _otFormId        = null; // null = nova OT, string = editar
+let _otFromAtivoView = false; // true quando form foi aberto via otOpenFormForAtivo
 let _otViewId    = null; // OT aberta na view
 let _otSubTemp   = [];   // subtarefas em edição
 let _otAtivoIdx  = null; // ativo selecionado no form
@@ -1131,9 +1132,10 @@ function otOpenForm(id) {
       showToast('Você não tem permissão para editar OTs.', 'error'); return;
     }
   }
-  _otFormId   = id;
-  _otAtivoIdx = null;
-  _otRespId   = null;
+  _otFormId        = id;
+  _otFromAtivoView = false;
+  _otAtivoIdx      = null;
+  _otRespId        = null;
   const o     = id ? otState.ordens.find(x => x.id === id) : null;
 
   document.getElementById('ot-form-title').textContent   = id ? 'Editar OT' : 'Nova Ordem de Trabalho';
@@ -1371,6 +1373,19 @@ function otSelectAtivo(idx) {
   }
 }
 
+function otOpenFormForAtivo(idx) {
+  otOpenForm(null);
+  // Pré-vincula o ativo e marca origem para atualizar a lista ao salvar
+  _otAtivoIdx      = idx;
+  _otFromAtivoView = true;
+  _otRenderAtivoChip();
+  const ativo = typeof state !== 'undefined' ? state.ativos[idx] : null;
+  if (ativo?.setor) {
+    const setorEl = document.getElementById('ot-f-setor-display');
+    if (setorEl) setorEl.textContent = ativo.setor;
+  }
+}
+
 // ── TABS DO FORM ──────────────────────────────────────────────
 function otSwitchFormTab(tab) {
   const modal = document.getElementById('modal-ot-form');
@@ -1590,9 +1605,12 @@ function otSaveForm() {
     }
   }
 
+  const _wasFromAtivoView = _otFromAtivoView;
+  _otFromAtivoView = false;
   otSave();
   otCloseModal('modal-ot-form');
   _otRenderKanban();
+  if (_wasFromAtivoView && typeof _renderAtivoOTs === 'function') _renderAtivoOTs();
   showToast(_otFormId ? 'OT atualizada.' : 'OT criada com sucesso!', 'success');
 }
 

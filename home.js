@@ -20,7 +20,9 @@
   let _activeNotifTab = 'tarefas';
   let _homeOnlyMine   = false;
   let _hupMinhas = false; // toggle "Minhas Execuções" no card de últimas publicações
+  let _hupPage   = 0;    // página atual das publicações (5 por página)
   let _falhaTabByAtivo = {}; // { [ativoKey]: 'falha'|'causa'|'deteccao'|'dano' }
+  let _falhaPage = 0;        // página atual do bloco "OTs de Ativos com Falha" (3 por página)
 
   // ── HELPERS DE DATA ──────────────────────────────────────────
   function _initPeriodo(modo) {
@@ -117,12 +119,27 @@
     const tarefas     = state?.tarefas     || [];
     const publicacoes = state?.publicacoes || [];
 
-    const ordensVis   = ordens.filter(o => _inSetor(_otSetor(o)));
-    const ativosVis   = ativos.filter(a => _inSetor(a.setor));
+    // Filtro "Meus itens": restringe OTs, tarefas e pubs ao responsável logado
+    const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
+    const _uid  = _sess?.userId;
+    const _gid  = _sess?.grupoId;
+    function _isMine_ot(o) {
+      return o.responsavelId === _uid;
+    }
+    function _isMine_tarefa(t) {
+      const resp = t.responsaveis || { usuarios: [], grupos: [] };
+      return resp.usuarios.includes(_uid) || (_gid && resp.grupos.includes(_gid));
+    }
+    function _isMine_pub(p) {
+      return p.publicadoPorId === _uid;
+    }
+
+    const ordensVis   = ordens.filter(o => _inSetor(_otSetor(o)) && (!_homeOnlyMine || !_uid || _isMine_ot(o)));
+    const ativosVis   = ativos.filter(a => _inSetor(a.setor));  // ativos: sem filtro por responsável
     const rotinasVis  = rotinas.filter(r => _inSetor(r.setor));
-    const tarefasVis  = tarefas.filter(t => _inSetor(_tarefaSetor(t)));
+    const tarefasVis  = tarefas.filter(t => _inSetor(_tarefaSetor(t)) && (!_homeOnlyMine || !_uid || _isMine_tarefa(t)));
     const tarefasIds  = new Set(tarefasVis.map(t => t.id));
-    const pubsVis     = publicacoes.filter(p => tarefasIds.has(p.tarefaId));
+    const pubsVis     = publicacoes.filter(p => tarefasIds.has(p.tarefaId) && (!_homeOnlyMine || !_uid || _isMine_pub(p)));
 
     // OT counts
     const otByStatus = { pendente: 0, em_processo: 0, em_revisao: 0, concluida: 0, cancelada: 0 };
@@ -824,10 +841,17 @@
       .sort((a, b) => (b.dataPublicacao || '') > (a.dataPublicacao || '') ? 1 : -1);
 
     // Quando toggle ativo: filtra apenas do usuário logado
-    const pubs = (_hupMinhas && userId
+    const poolFiltrado = _hupMinhas && userId
       ? pool.filter(p => p.publicadoPorId === userId)
-      : pool
-    ).slice(0, 5);
+      : pool;
+
+    const HUP_PER_PAGE  = 5;
+    const HUP_MAX_PAGES = 10;
+    const poolLimitado  = poolFiltrado.slice(0, HUP_PER_PAGE * HUP_MAX_PAGES);
+    const totalPubs     = poolLimitado.length;
+    const totalPages    = Math.max(1, Math.ceil(totalPubs / HUP_PER_PAGE));
+    if (_hupPage >= totalPages) _hupPage = totalPages - 1;
+    const pubs = poolLimitado.slice(_hupPage * HUP_PER_PAGE, (_hupPage + 1) * HUP_PER_PAGE);
 
     const btnLabel = _hupMinhas ? 'Todas' : 'Minhas Execuções';
     const btnIcon  = _hupMinhas
@@ -899,9 +923,27 @@
       </div>`;
     }).join('');
 
+    const pageNums = totalPages > 1
+      ? Array.from({ length: totalPages }, (_, i) =>
+          `<button class="hup-page-btn${i === _hupPage ? ' hup-page-active' : ''}"
+            onclick="homeHupPage(${i})" ${i === _hupPage ? 'disabled' : ''}>${i + 1}</button>`
+        ).join('')
+      : '';
+    const pagination = totalPages > 1 ? `
+      <div class="hup-pagination">
+        <button class="hup-page-btn" onclick="homeHupPage(${_hupPage - 1})" ${_hupPage === 0 ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        ${pageNums}
+        <button class="hup-page-btn" onclick="homeHupPage(${_hupPage + 1})" ${_hupPage >= totalPages - 1 ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>` : '';
+
     return `<div class="home-chart-card">
       ${header}
       <div class="hup-feed">${items}</div>
+      ${pagination}
     </div>`;
   }
 
@@ -961,9 +1003,36 @@
     renderHome();
   };
 
+  window.homeFalhaPage = function (page) {
+    _falhaPage = page;
+    renderHome();
+  };
+
   function _renderMidCharts(k) {
     const entries = Object.entries(k.otsFalhaByAtivo);
     const totalOtsFalha = entries.reduce((s, [, e]) => s + e.ots.length, 0);
+
+    const HFA_PER_PAGE  = 3;
+    const hfaTotalPages = Math.max(1, Math.ceil(entries.length / HFA_PER_PAGE));
+    if (_falhaPage >= hfaTotalPages) _falhaPage = hfaTotalPages - 1;
+    const entriesPage   = entries.slice(_falhaPage * HFA_PER_PAGE, (_falhaPage + 1) * HFA_PER_PAGE);
+
+    const hfaPageNums = hfaTotalPages > 1
+      ? Array.from({ length: hfaTotalPages }, (_, i) =>
+          `<button class="hup-page-btn${i === _falhaPage ? ' hup-page-active' : ''}"
+            onclick="homeFalhaPage(${i})" ${i === _falhaPage ? 'disabled' : ''}>${i + 1}</button>`
+        ).join('')
+      : '';
+    const hfaPagination = hfaTotalPages > 1 ? `
+      <div class="hup-pagination" style="border-top:1px solid var(--border);padding:8px 16px 14px;">
+        <button class="hup-page-btn" onclick="homeFalhaPage(${_falhaPage - 1})" ${_falhaPage === 0 ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        ${hfaPageNums}
+        <button class="hup-page-btn" onclick="homeFalhaPage(${_falhaPage + 1})" ${_falhaPage >= hfaTotalPages - 1 ? 'disabled' : ''}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>` : '';
 
     return `<div class="home-mid-charts">
       <div class="home-chart-card home-falha-card">
@@ -974,8 +1043,9 @@
         <div class="home-chart-body home-falha-body">
           ${entries.length === 0
             ? `<div class="home-chart-empty">${_ico.chart}<span>Nenhuma OT corretiva com dados de falha</span></div>`
-            : `<div class="hfa-grid">${entries.map(([key, entry]) => _renderFalhaAtivo(key, entry)).join('')}</div>`}
+            : `<div class="hfa-grid">${entriesPage.map(([key, entry]) => _renderFalhaAtivo(key, entry)).join('')}</div>`}
         </div>
+        ${hfaPagination}
       </div>
       ${_renderUltimasPublicacoes()}
     </div>`;
@@ -1109,24 +1179,9 @@
         };
       });
 
-    // Filtro "Meus itens"
-    const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
-    let tarefaItemsVis = tarefaItems;
-    let otItemsVis     = otItems;
-    if (_homeOnlyMine && _sess) {
-      tarefaItemsVis = tarefaItems.filter(it => {
-        const t = k.tarefasAtrasadasList.find(x => x.id === it.id)
-               || k.tarefasProximasList.find(x => x.id === it.id);
-        if (!t) return false;
-        const resp = t.responsaveis || { usuarios: [], grupos: [] };
-        return resp.usuarios.includes(_sess.userId) ||
-               (_sess.grupoId && resp.grupos.includes(_sess.grupoId));
-      });
-      otItemsVis = otItems.filter(it => {
-        const o = k.ordensVis.find(x => x.id === it.id);
-        return o?.responsavelId === _sess.userId;
-      });
-    }
+    // Dados já chegam filtrados por _homeOnlyMine via calcKPIs
+    const tarefaItemsVis = tarefaItems;
+    const otItemsVis     = otItems;
 
     const tabT = _activeNotifTab === 'tarefas';
     const cntT = tarefaItemsVis.length;
@@ -1429,6 +1484,12 @@
 
   window.homeToggleMinhas = function () {
     _hupMinhas = !_hupMinhas;
+    _hupPage = 0;
+    renderHome();
+  };
+
+  window.homeHupPage = function (page) {
+    _hupPage = page;
     renderHome();
   };
 
