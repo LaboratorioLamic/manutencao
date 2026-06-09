@@ -782,16 +782,13 @@
         };
 
       case 'rotinasAtivas':
-        return { titulo: 'Rotinas Ativas', cols: ['Nome', 'Ativo / Setor', 'Tipo', 'Frequência'],
+        return { titulo: 'Rotinas Ativas', cols: ['Nome', 'Ativo / Setor', 'Tipo', 'Tarefas'],
           rows: (k.rotinasAtivasList || []).map(r => {
             const a = r.equipamentoIdx != null ? state?.ativos[r.equipamentoIdx] : null;
             const aInfo = a ? `${_esc(a.nome)}<small>${_esc(a.setor)}</small>` : _esc(r.setor || '—');
-            const freq = !r.frequencia ? 'N/A'
-              : r.frequencia === 'Sempre' ? 'Sempre'
-              : r.frequencia === 'DiaDaSemana' ? 'Dia da semana'
-              : r.fazerCada ? `A cada ${r.fazerCada} ${r.frequencia}` : 'N/A';
+            const numTarefas = (k.tarefasVisList || []).filter(t => t.rotinaId === r.id).length;
             return {
-              cells: [_esc(r.nome), aInfo, _esc(r.tipo), freq],
+              cells: [_esc(r.nome), aInfo, _esc(r.tipo), String(numTarefas)],
               fn: _fn(`viewRotina('${r.id}')`),
             };
           }),

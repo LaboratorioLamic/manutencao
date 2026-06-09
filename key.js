@@ -128,6 +128,25 @@ function authHasPermission(key) {
   return !!perm;
 }
 
+// Como 'visualizar' é uma permissão nova, grupos antigos não a têm definida.
+// Retorna true se a permissão não estiver definida (compatibilidade com grupos existentes).
+function authCanViewTab(tabId) {
+  if (!currentSession) return true;
+  if (currentSession.isAdmin) return true;
+  if (!currentSession.grupoId) return true;
+  const group = authState.groups.find(g => g.id === currentSession.grupoId);
+  if (!group?.permissoes) return true;
+  const catMap = { ativos: ['ativos','visualizar'], rotina: ['rotinas','visualizar'], os: ['ot','visualizar'] };
+  const path = catMap[tabId];
+  if (!path) return true;
+  let perm = group.permissoes;
+  for (const p of path) {
+    if (perm === undefined || perm === null) return true;
+    perm = perm[p];
+  }
+  return perm === undefined ? true : !!perm;
+}
+
 function authGetVisibleSetores() {
   if (!currentSession) return null;
   if (currentSession.isAdmin) return null;
@@ -513,12 +532,27 @@ function applyPermissions() {
   vis('nav-config', canConfig);
   vis('nav-section-sistema', canConfig);
 
+  // Abas principais — usa fallback true para grupos sem a permissão definida
+  const canAtivos  = authCanViewTab('ativos');
+  const canRotinas = authCanViewTab('rotina');
+  const canOT      = authCanViewTab('os');
+  vis('nav-ativos', canAtivos);
+  vis('nav-rotina', canRotinas);
+  vis('nav-os',     canOT);
+
   // Toggle de cadastro (apenas admin vê)
   vis('cfg-allow-registration-row', currentSession.isAdmin);
 
   // Se a aba config estiver ativa, navegar para o primeiro painel visível
   if (document.getElementById('tab-config')?.classList.contains('active')) {
     if (typeof _switchConfigTabFirst === 'function') _switchConfigTabFirst();
+  }
+
+  // Redirecionar para Início se a aba ativa ficou oculta
+  const activeNavId = document.querySelector('.nav-item.active')?.id;
+  const tabHiddenMap = { 'nav-ativos': !canAtivos, 'nav-rotina': !canRotinas, 'nav-os': !canOT, 'nav-config': !canConfig };
+  if (activeNavId && tabHiddenMap[activeNavId] && typeof switchTab === 'function') {
+    switchTab('inicio');
   }
 }
 
@@ -1361,15 +1395,16 @@ function deleteUser(id) {
 // ═══════════════════════════════════════════════════════════════
 
 const PERM_STRUCTURE = {
-  ativos:     { label: 'Ativos',           keys: ['criar','editar','excluir','editarSetor','editarCategoria'] },
-  rotinas:    { label: 'Rotinas',          keys: ['criar','editar','excluir','editarTipo'] },
+  ativos:     { label: 'Ativos',           keys: ['visualizar','criar','editar','excluir','editarSetor','editarCategoria'] },
+  rotinas:    { label: 'Rotinas',          keys: ['visualizar','criar','editar','excluir','editarTipo'] },
   tarefas:    { label: 'Tarefas',          keys: ['criar','editar','excluir','publicar'] },
   atividades: { label: 'Atividades',       keys: ['editar','excluir','gerenciarAnexos'] },
-  ot:         { label: 'OT',               keys: ['criarOT','editarOT','excluirOT','alterarStatus','realizarPublicacoes','editarPublicacoes','excluirPublicacoes'] },
+  ot:         { label: 'OT',               keys: ['visualizar','criarOT','editarOT','excluirOT','alterarStatus','realizarPublicacoes','editarPublicacoes','excluirPublicacoes'] },
   config:     { label: 'Configurações',    keys: ['visualizarConfig','backup','gerenciarUsuarios','gerenciarGrupos','gerenciarEmpresas'] }
 };
 
 const PERM_LABELS = {
+  visualizar:'Visualizar aba',
   criar:'Criar', editar:'Editar', excluir:'Excluir', gerenciarAnexos:'Gerenciar Anexos', publicar:'Publicar',
   editarSetor:'Editar setores', editarCategoria:'Editar categorias', editarTipo:'Editar tipos',
   criarOT:'Criar OT', editarOT:'Editar OT', excluirOT:'Excluir OT',

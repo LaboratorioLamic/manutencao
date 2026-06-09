@@ -228,6 +228,24 @@
   // ── NAVEGAÇÃO ──
   const TAB_TITLES = { inicio:'Início', ativos:'Ativos', rotina:'Rotina', os:'Ordens de Trabalho', config:'Configurações' };
   function switchTab(tabId) {
+    // Guardas de permissão — verificar antes de qualquer alteração no DOM
+    if (['ativos','rotina','os'].includes(tabId)) {
+      if (typeof authCanViewTab === 'function' && !authCanViewTab(tabId)) {
+        showToast('Sem permissão para visualizar esta aba.', 'error');
+        switchTab('inicio');
+        return;
+      }
+    }
+    if (tabId === 'config') {
+      if (typeof authHasPermission === 'function' &&
+          typeof currentSession    !== 'undefined' && currentSession &&
+          !currentSession.isAdmin  && !authHasPermission('config.visualizarConfig')) {
+        showToast('Sem permissão para acessar as configurações.', 'error');
+        switchTab('inicio');
+        return;
+      }
+    }
+
     document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
     document.getElementById('tab-' + tabId)?.classList.add('active');
@@ -247,14 +265,6 @@
       if (typeof renderHome === 'function') renderHome();
     }
     if (tabId === 'config') {
-      // Guarda de permissão: bloqueia acesso sem visualizarConfig
-      if (typeof authHasPermission === 'function' &&
-          typeof currentSession    !== 'undefined' && currentSession &&
-          !currentSession.isAdmin  && !authHasPermission('config.visualizarConfig')) {
-        showToast('Sem permissão para acessar as configurações.', 'error');
-        switchTab('ativos');
-        return;
-      }
       _switchConfigTabFirst();
     }
   }

@@ -2604,9 +2604,6 @@ function _otModalsHTML() {
       <div class="drawer-title" id="ot-form-title">Nova Ordem de Trabalho</div>
       <div class="drawer-subtitle">Preencha os dados da OT</div>
     </div>
-    <button class="drawer-close" style="margin-left:auto;" onclick="otCloseModal('modal-ot-form')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-    </button>
   </div>
   <div class="ot-modal-tabs" style="flex-shrink:0;">
       <button class="ot-modal-tab-btn active" data-tab="dados" onclick="otSwitchFormTab('dados')">

@@ -1206,14 +1206,6 @@
       <div class="drawer-title" id="drawer-rotina-title">Nova Rotina</div>
       <div class="drawer-subtitle" id="drawer-rotina-subtitle">Preencha os dados da rotina de manutenção</div>
     </div>
-    <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
-      <button id="btn-hist-rotina" class="drawer-close" style="display:none;" onclick="openRastreabilidadeModal('rotina')" title="Rastreabilidade de edições">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      </button>
-      <button class="drawer-close" onclick="closeRotinaDrawer()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
   </div>
 
   <!-- Tabs -->
@@ -1279,6 +1271,9 @@
   </div><!-- /drawer-body -->
 
   <div class="drawer-footer">
+    <button id="btn-hist-rotina" class="btn btn-outline" style="display:none;" onclick="openRastreabilidadeModal('rotina')" title="Rastreabilidade de edições">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </button>
     <button class="btn btn-outline" onclick="closeRotinaDrawer()">Cancelar</button>
     <button class="btn btn-primary" onclick="saveRotina()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
@@ -1490,14 +1485,6 @@
     <div>
       <div class="drawer-title" id="drawer-tarefa-title">Nova Tarefa</div>
       <div class="drawer-subtitle">Programe a execução de uma rotina</div>
-    </div>
-    <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
-      <button id="btn-hist-tarefa" class="drawer-close" style="display:none;" onclick="openRastreabilidadeModal('tarefa')" title="Rastreabilidade de edições">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      </button>
-      <button class="drawer-close" onclick="closeTarefaDrawer()">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
     </div>
   </div>
 
@@ -1785,6 +1772,9 @@
         </div>
       </div>
     </div>
+    <button id="btn-hist-tarefa" class="btn btn-outline" style="display:none;" onclick="openRastreabilidadeModal('tarefa')" title="Rastreabilidade de edições">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </button>
     <button class="btn btn-outline" onclick="closeTarefaDrawer()">Cancelar</button>
     <button class="btn btn-primary" onclick="saveTarefa()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/></svg>
@@ -2149,12 +2139,6 @@
       <div class="drawer-title" id="modal-ativo-title">Novo Ativo</div>
       <div class="drawer-subtitle">Preencha os dados do equipamento</div>
     </div>
-    <div style="display:flex;align-items:center;gap:4px;margin-left:auto;">
-      <button id="btn-hist-ativo" class="drawer-close" style="display:none;" onclick="openRastreabilidadeModal('ativo')" title="Rastreabilidade de edições">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      </button>
-      <button class="drawer-close" onclick="closeModal('modal-ativo')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-    </div>
   </div>
 
   <div class="drawer-body">
@@ -2291,6 +2275,9 @@
 
   </div>
   <div class="drawer-footer">
+    <button id="btn-hist-ativo" class="btn btn-outline" style="display:none;" onclick="openRastreabilidadeModal('ativo')" title="Rastreabilidade de edições">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:16px;height:16px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </button>
     <button class="btn btn-outline" onclick="closeModal('modal-ativo')">Cancelar</button>
     <button class="btn btn-primary" onclick="salvarAtivo()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
