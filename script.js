@@ -942,7 +942,7 @@
     const input = document.getElementById('tarefa-checklist-novo-item');
     const texto = input.value.trim();
     if (!texto) return;
-    checklistTarefaTemp.push({ id: uid(), texto });
+    checklistTarefaTemp.push({ id: uid(), texto, comentarioObrigatorio: false });
     input.value = '';
     renderTarefaChecklistBuilder();
     atualizarAbaTarefaChecklist();
@@ -965,6 +965,13 @@
     renderTarefaChecklistBuilder();
   }
 
+  function toggleTarefaChecklistComentario(id) {
+    const item = checklistTarefaTemp.find(i => i.id === id);
+    if (!item) return;
+    item.comentarioObrigatorio = !item.comentarioObrigatorio;
+    renderTarefaChecklistBuilder();
+  }
+
   function renderTarefaChecklistBuilder() {
     const container = document.getElementById('tarefa-checklist-builder');
     if (!container) return;
@@ -976,6 +983,9 @@
       <div class="checklist-item-row">
         <div class="checklist-item-num">${i + 1}</div>
         <div class="checklist-item-text">${item.texto}</div>
+        <button class="checklist-item-del checklist-coment-toggle${item.comentarioObrigatorio ? ' active' : ''}" onclick="toggleTarefaChecklistComentario('${item.id}')" title="${item.comentarioObrigatorio ? 'Comentário obrigatório (clique para remover)' : 'Marcar como comentário obrigatório'}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </button>
         <button class="checklist-item-del" onclick="editTarefaChecklistItem('${item.id}')" title="Editar" style="color:var(--cyan);">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
         </button>
@@ -1811,6 +1821,7 @@
   // ── PUBLICAR TAREFA ──
   // ══════════════════════════════════════════
   let pubChecklistState = {};
+  let pubChecklistComentarios = {};
   let pubAnexos = [];
 
   function _getUploadPrefixo(ctx) {
@@ -1910,9 +1921,13 @@
       String(now.getHours()).padStart(2, '0') + ':' + String(now.getMinutes()).padStart(2, '0');
     document.getElementById('pub-notas').value = '';
     _pubSetEmpresaTecnico(t.empresaPadrao || '', t.respPadrao || '');
+    // Abre o terceiro automaticamente se a tarefa já tem realizadoPorTerceiro configurado
     const terceiroSection = document.getElementById('pub-terceiro-section');
+    const terceiroCb      = document.getElementById('pub-terceiro-checkbox');
     if (terceiroSection) terceiroSection.style.display = t.realizadoPorTerceiro ? '' : 'none';
+    if (terceiroCb) terceiroCb.checked = !!t.realizadoPorTerceiro;
     pubChecklistState = {};
+    pubChecklistComentarios = {};
     pubAnexos = [];
     renderPubAnexos();
     if (typeof resetUploadZone === 'function') resetUploadZone('pub');
@@ -1939,24 +1954,18 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/></svg>
           Checklist Geral — marque todos os itens
         </div>`;
-        html += rotinaChecklist.map(it => `
-          <div class="pub-check-item" id="pcheck-${it.id}" onclick="togglePubCheck('${it.id}', ${allItems.length})">
-            <div class="pub-check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
-            <span class="pub-check-text">${it.texto}</span>
-          </div>`).join('');
+        html += rotinaChecklist.map(it => _renderPubCheckItem(it, allItems.length)).join('');
       }
       if (tarefaChecklist.length > 0) {
         html += `<div class="form-section-title" style="margin-bottom:6px;margin-top:${rotinaChecklist.length > 0 ? '14px' : '0'};">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/></svg>
           Checklist da Tarefa — marque todos os itens
         </div>`;
-        html += tarefaChecklist.map(it => `
-          <div class="pub-check-item" id="pcheck-${it.id}" onclick="togglePubCheck('${it.id}', ${allItems.length})">
-            <div class="pub-check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
-            <span class="pub-check-text">${it.texto}</span>
-          </div>`).join('');
+        html += tarefaChecklist.map(it => _renderPubCheckItem(it, allItems.length)).join('');
       }
       document.getElementById('pub-checklist').innerHTML = html;
+      // Abre automaticamente campos obrigatórios
+      allItems.forEach(it => { if (it.comentarioObrigatorio) _openPubComentario(it.id); });
       updatePubProgress(allItems.length);
     } else {
       section.style.display = 'none';
@@ -1964,6 +1973,23 @@
 
     closeModal('modal-tarefa-detalhe');
     openModal('modal-publicar');
+  }
+
+  function togglePubTerceiro() {
+    const cb      = document.getElementById('pub-terceiro-checkbox');
+    const section = document.getElementById('pub-terceiro-section');
+    if (!section || !cb) return;
+    // Sincroniza: se chamado pelo onclick da toggle-row, inverte o checkbox
+    if (document.activeElement !== cb) cb.checked = !cb.checked;
+    const nowOpen = cb.checked;
+    section.style.display = nowOpen ? '' : 'none';
+    if (!nowOpen) {
+      const empInput = document.getElementById('pub-empresa-responsavel');
+      const tecInput = document.getElementById('pub-tecnico-responsavel');
+      if (empInput) empInput.value = '';
+      if (tecInput) { tecInput.value = ''; tecInput.disabled = true; }
+      _pubEmpresaId = null;
+    }
   }
 
   function cancelarPublicacao() {
@@ -1991,6 +2017,36 @@
     _editPubAnexosOriginais = [];
     if (typeof resetUploadZone === 'function') resetUploadZone('edit-pub');
     closeModal('modal-editar-pub');
+  }
+
+  function _renderPubCheckItem(it, total) {
+    const obrig = !!it.comentarioObrigatorio;
+    return `
+      <div class="pub-check-item-wrap" id="pwrap-${it.id}">
+        <div class="pub-check-item" id="pcheck-${it.id}" onclick="togglePubCheck('${it.id}', ${total})">
+          <div class="pub-check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+          <span class="pub-check-text">${it.texto}</span>
+          <button class="pub-check-coment-btn${obrig ? ' obrig' : ''}" onclick="event.stopPropagation();togglePubComentario('${it.id}')" title="${obrig ? 'Comentário obrigatório' : 'Adicionar comentário'}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          </button>
+        </div>
+        <div class="pub-check-coment-field" id="pcoment-${it.id}" style="display:none;">
+          <textarea id="pcoment-txt-${it.id}" class="pub-check-coment-input" placeholder="Comentário${obrig ? ' (obrigatório)' : ''}..." rows="2" oninput="pubChecklistComentarios['${it.id}']=this.value"></textarea>
+        </div>
+      </div>`;
+  }
+
+  function _openPubComentario(itemId) {
+    const field = document.getElementById('pcoment-' + itemId);
+    if (field) field.style.display = '';
+  }
+
+  function togglePubComentario(itemId) {
+    const field = document.getElementById('pcoment-' + itemId);
+    if (!field) return;
+    const isOpen = field.style.display !== 'none';
+    field.style.display = isOpen ? 'none' : '';
+    if (!isOpen) document.getElementById('pcoment-txt-' + itemId)?.focus();
   }
 
   function togglePubCheck(itemId, total) {
@@ -2033,6 +2089,9 @@
     if (checkItems.length > 0) {
       const allChecked = checkItems.every(it => pubChecklistState[it.id]);
       if (!allChecked) { showToast('Marque todos os itens do checklist para publicar.', 'error'); return; }
+      // Valida comentários obrigatórios
+      const semComent = checkItems.filter(it => it.comentarioObrigatorio && !(pubChecklistComentarios[it.id] || '').trim());
+      if (semComent.length > 0) { showToast('Preencha o comentário obrigatório dos itens marcados.', 'error'); semComent.forEach(it => _openPubComentario(it.id)); return; }
     }
 
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
@@ -2042,9 +2101,10 @@
       dataRealizada,
       dataPublicacao: new Date().toISOString().split('T')[0],
       checklistMarcado: checkItems.map(it => it.id),
+      checklistComentarios: Object.keys(pubChecklistComentarios).length > 0 ? { ...pubChecklistComentarios } : undefined,
       notas: document.getElementById('pub-notas').value.trim(),
-      empresaResponsavel: t.realizadoPorTerceiro ? (document.getElementById('pub-empresa-responsavel').value.trim() || null) : null,
-      tecnicoResponsavel: t.realizadoPorTerceiro ? (document.getElementById('pub-tecnico-responsavel').value.trim() || null) : null,
+      empresaResponsavel: (document.getElementById('pub-terceiro-section')?.style.display !== 'none') ? (document.getElementById('pub-empresa-responsavel').value.trim() || null) : null,
+      tecnicoResponsavel: (document.getElementById('pub-terceiro-section')?.style.display !== 'none') ? (document.getElementById('pub-tecnico-responsavel').value.trim() || null) : null,
       anexos: pubAnexos.slice(),
       publicadoPorId:   _sess?.userId       || null,
       publicadoPorNome: _sess?.nomeCompleto || _sess?.username || null
@@ -3422,13 +3482,20 @@
     const input = document.getElementById('checklist-novo-item');
     const texto = input.value.trim();
     if (!texto) return;
-    checklistTemp.push({ id: uid(), texto });
+    checklistTemp.push({ id: uid(), texto, comentarioObrigatorio: false });
     input.value = '';
     renderChecklistBuilder();
   }
 
   function removeChecklistItem(id) {
     checklistTemp = checklistTemp.filter(i => i.id !== id);
+    renderChecklistBuilder();
+  }
+
+  function toggleChecklistComentario(id) {
+    const item = checklistTemp.find(i => i.id === id);
+    if (!item) return;
+    item.comentarioObrigatorio = !item.comentarioObrigatorio;
     renderChecklistBuilder();
   }
 
@@ -3444,6 +3511,9 @@
       <div class="checklist-item-row">
         <div class="checklist-item-num">${i + 1}</div>
         <div class="checklist-item-text">${item.texto}</div>
+        <button class="checklist-item-del checklist-coment-toggle${item.comentarioObrigatorio ? ' active' : ''}" onclick="toggleChecklistComentario('${item.id}')" title="${item.comentarioObrigatorio ? 'Comentário obrigatório (clique para remover)' : 'Marcar como comentário obrigatório'}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </button>
         <button class="checklist-item-del" onclick="removeChecklistItem('${item.id}')" title="Remover">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>

@@ -1345,6 +1345,34 @@
   .pub-check-box svg { width: 11px; height: 11px; display: none; }
   .pub-check-item.checked .pub-check-box svg { display: block; }
   .pub-check-text { font-size: 13px; color: var(--text-primary); flex: 1; font-weight: 500; }
+
+  /* Balão de comentário por item do checklist */
+  .pub-check-item-wrap { display: flex; flex-direction: column; }
+  .pub-check-coment-btn {
+    flex-shrink: 0; width: 26px; height: 26px; border: none; background: transparent;
+    color: var(--text-muted); cursor: pointer; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    transition: var(--transition);
+  }
+  .pub-check-coment-btn:hover { background: rgba(0,168,204,0.1); color: var(--cyan); }
+  .pub-check-coment-btn.obrig { color: #f4a261; }
+  .pub-check-coment-btn.obrig:hover { background: rgba(244,162,97,0.12); }
+  .pub-check-coment-field { padding: 5px 0 2px 44px; }
+  .pub-check-coment-input {
+    width: 100%; box-sizing: border-box;
+    border: 1.5px solid var(--border); border-radius: 7px;
+    padding: 7px 10px; font-size: 12.5px; color: var(--text-primary);
+    background: var(--bg); resize: none; outline: none;
+    transition: border-color .15s; font-family: inherit;
+  }
+  .pub-check-coment-input:focus { border-color: var(--cyan); }
+
+  /* Toggle de comentário obrigatório no builder do checklist */
+  .checklist-coment-toggle { color: var(--text-muted) !important; }
+  .checklist-coment-toggle:hover { background: rgba(0,168,204,0.1) !important; color: var(--cyan) !important; }
+  .checklist-coment-toggle.active { color: #f4a261 !important; background: rgba(244,162,97,0.12) !important; }
+  .checklist-coment-toggle.active:hover { background: rgba(244,162,97,0.2) !important; }
+
   .pub-checklist-progress {
     display: flex; align-items: center; gap: 10px;
     padding: 10px 14px; border-radius: 8px;

@@ -428,11 +428,49 @@
 .ot-sub-ev-btn.has-evidence { background: rgba(42,157,143,0.12); color: #2a9d8f; }
 .ot-sub-ev-btn.has-evidence:hover { background: rgba(42,157,143,0.22); }
 
+/* Badge de comentário obrigatório */
+.ot-sub-comt-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 10px; font-weight: 600; color: #f4a261;
+  background: rgba(244,162,97,0.1); border: 1px solid rgba(244,162,97,0.25);
+  padding: 1px 6px; border-radius: 10px;
+}
+
+/* Botão de balão no builder do form */
+.ot-sub-comt-toggle { color: var(--text-muted) !important; }
+.ot-sub-comt-toggle:hover { background: rgba(0,168,204,0.1) !important; color: var(--cyan) !important; }
+.ot-sub-comt-toggle.active { color: #f4a261 !important; background: rgba(244,162,97,0.12) !important; }
+.ot-sub-comt-toggle.active:hover { background: rgba(244,162,97,0.2) !important; }
+
+/* Wrap e campo de comentário na view */
+.ot-sub-item-wrap { display: flex; flex-direction: column; }
+.ot-sub-comt-field { padding: 5px 0 2px 44px; }
+.ot-sub-comt-input {
+  width: 100%; box-sizing: border-box;
+  border: 1.5px solid var(--border); border-radius: 7px;
+  padding: 7px 10px; font-size: 12.5px; color: var(--text-primary);
+  background: var(--bg); resize: none; outline: none;
+  transition: border-color .15s; font-family: inherit;
+}
+.ot-sub-comt-input:focus { border-color: var(--cyan); }
+
+/* Botão de balão na view */
+.ot-sub-view-comt-btn { color: var(--text-muted) !important; }
+.ot-sub-view-comt-btn:hover { background: rgba(0,168,204,0.1) !important; color: var(--cyan) !important; }
+.ot-sub-view-comt-btn.obrig { color: #f4a261 !important; }
+.ot-sub-view-comt-btn.obrig:hover { background: rgba(244,162,97,0.12) !important; }
+
+/* Comentário salvo exibido na meta da subtarefa concluída */
+.ot-sub-comt-display {
+  display: inline-flex; align-items: flex-start; gap: 3px;
+  font-size: 11px; color: var(--text-secondary); font-style: italic;
+}
+
 .ot-sub-add-row {
   display: flex; gap: 8px; margin-top: 4px;
 }
 .ot-sub-add-options {
-  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 8px;
   padding: 8px 12px;
   background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
 }

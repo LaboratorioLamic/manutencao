@@ -1455,10 +1455,14 @@ function _otRenderSubList() {
         <div class="ot-sub-desc">${_escHtml(s.descricao)}</div>
         <div class="ot-sub-meta">
           ${s.exigeEvidencia ? `<span class="ot-sub-ev-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:10px;height:10px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg> Exige evidência</span>` : ''}
+          ${s.comentarioObrigatorio ? `<span class="ot-sub-comt-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:10px;height:10px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> Comentário obrigatório</span>` : ''}
           ${s.concluidoPorNome ? `<span>✓ ${_escHtml(s.concluidoPorNome)}</span>` : ''}
         </div>
       </div>
       <div class="ot-sub-actions">
+        <button class="ot-sub-del-btn ot-sub-comt-toggle${s.comentarioObrigatorio ? ' active' : ''}" onclick="otToggleSubComentario(${i})" title="${s.comentarioObrigatorio ? 'Comentário obrigatório (clique para remover)' : 'Exigir comentário ao concluir'}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </button>
         <button class="ot-sub-del-btn" onclick="otRemoveSub(${i})" title="Remover">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -1487,12 +1491,15 @@ function otToggleSub(i) {
 function otAddSub() {
   const input = document.getElementById('ot-sub-new-input');
   const ev    = document.getElementById('ot-sub-new-ev');
+  const comt  = document.getElementById('ot-sub-new-comt');
   const desc  = input?.value.trim();
   if (!desc) { showToast('Descreva a subtarefa.', 'error'); input?.focus(); return; }
-  _otSubTemp.push({ id: _otUid(), descricao: desc, exigeEvidencia: !!(ev?.checked), concluida: false,
-    concluidoPorId: null, concluidoPorNome: null, concluidoEm: null, anexos: [] });
+  _otSubTemp.push({ id: _otUid(), descricao: desc, exigeEvidencia: !!(ev?.checked),
+    comentarioObrigatorio: !!(comt?.checked),
+    concluida: false, concluidoPorId: null, concluidoPorNome: null, concluidoEm: null, comentario: null, anexos: [] });
   if (input) input.value = '';
   if (ev)    ev.checked  = false;
+  if (comt)  comt.checked = false;
   _otRenderSubList();
 }
 
@@ -1501,13 +1508,20 @@ function otRemoveSub(i) {
   _otRenderSubList();
 }
 
+function otToggleSubComentario(i) {
+  if (!_otSubTemp[i]) return;
+  _otSubTemp[i].comentarioObrigatorio = !_otSubTemp[i].comentarioObrigatorio;
+  _otRenderSubList();
+}
+
 function otLoadSubTemplate() {
   const tipo = document.getElementById('ot-f-tipo')?.value;
   const tpl  = OT_CHECKLIST_TPL[tipo] || [];
   if (tpl.length === 0) { showToast('Nenhum template para este tipo.', 'info'); return; }
   const novos = tpl.filter(desc => !_otSubTemp.some(s => s.descricao === desc))
-    .map(desc => ({ id: _otUid(), descricao: desc, exigeEvidencia: false, concluida: false,
-      concluidoPorId: null, concluidoPorNome: null, concluidoEm: null, anexos: [] }));
+    .map(desc => ({ id: _otUid(), descricao: desc, exigeEvidencia: false,
+      comentarioObrigatorio: false,
+      concluida: false, concluidoPorId: null, concluidoPorNome: null, concluidoEm: null, comentario: null, anexos: [] }));
   _otSubTemp.push(...novos);
   _otRenderSubList();
   showToast(`${novos.length} subtarefa(s) do template adicionadas.`, 'success');
@@ -1838,10 +1852,15 @@ ${o.status === 'cancelada' ? `<div class="detail-note" style="border-left-color:
     const hasEvidence = evPubs.length > 0;
     const evPubId = hasEvidence ? evPubs[0].id : null;
     const blocked = !s.concluida && s.exigeEvidencia && !hasEvidence && canEdit;
+    const comtObrig = !!(s.comentarioObrigatorio);
+    const subViewId = `otsub-view-${o.id}-${i}`;
     const clickAction = canEdit
-      ? (blocked ? `showToast('Adicione uma publicação de evidência vinculada a esta subtarefa antes de concluir.','error')` : `otViewToggleSub('${o.id}',${i})`)
+      ? (blocked
+          ? `showToast('Adicione uma publicação de evidência vinculada a esta subtarefa antes de concluir.','error')`
+          : `otViewToggleSubClick('${o.id}',${i},'${subViewId}')`)
       : '';
-    return `<div class="ot-sub-item${s.concluida ? ' done' : ''}" style="cursor:${canEdit ? 'pointer' : 'default'}" onclick="${clickAction}">
+    return `<div class="ot-sub-item-wrap">
+    <div class="ot-sub-item${s.concluida ? ' done' : ''}" style="cursor:${canEdit ? 'pointer' : 'default'}" onclick="${clickAction}">
       <div class="ot-sub-check${s.concluida ? ' checked' : ''}${blocked ? ' blocked' : ''}">
         ${blocked ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;color:#b45309;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`
           : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>`}
@@ -1850,13 +1869,26 @@ ${o.status === 'cancelada' ? `<div class="detail-note" style="border-left-color:
         <div class="ot-sub-desc">${_escHtml(s.descricao)}</div>
         <div class="ot-sub-meta">
           ${s.exigeEvidencia && !s.concluida ? `<span class="ot-sub-ev-badge">${hasEvidence ? '✓ Evidência vinculada' : 'Exige evidência'}</span>` : ''}
+          ${comtObrig && !s.concluida ? `<span class="ot-sub-comt-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:10px;height:10px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> Comentário obrigatório</span>` : ''}
           ${s.concluidoPorNome ? `<span>✓ ${_escHtml(s.concluidoPorNome)} · ${s.concluidoEm ? _fmtDateTime(s.concluidoEm) : ''}</span>` : ''}
+          ${s.concluida && s.comentario ? `<span class="ot-sub-comt-display"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:10px;height:10px;flex-shrink:0;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg> ${_escHtml(s.comentario)}</span>` : ''}
         </div>
       </div>
-      ${s.exigeEvidencia && !s.concluida && canEdit ? `<button class="ot-sub-ev-btn${hasEvidence ? ' has-evidence' : ''}" title="${hasEvidence ? 'Ver evidência' : 'Adicionar evidência'}"
-        onclick="event.stopPropagation();${hasEvidence ? `otOpenPubView('${evPubId}')` : `otOpenPubModalFromSub('${s.id}')`}">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
-      </button>` : ''}
+      <div class="ot-sub-actions">
+        ${!s.concluida && canEdit ? `<button class="ot-sub-del-btn ot-sub-view-comt-btn${comtObrig ? ' obrig' : ''}" title="${comtObrig ? 'Comentário obrigatório' : 'Adicionar comentário'}"
+          onclick="event.stopPropagation();otToggleViewSubComt('${subViewId}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </button>` : ''}
+        ${s.exigeEvidencia && !s.concluida && canEdit ? `<button class="ot-sub-ev-btn${hasEvidence ? ' has-evidence' : ''}" title="${hasEvidence ? 'Ver evidência' : 'Adicionar evidência'}"
+          onclick="event.stopPropagation();${hasEvidence ? `otOpenPubView('${evPubId}')` : `otOpenPubModalFromSub('${s.id}')`}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg>
+        </button>` : ''}
+      </div>
+    </div>
+    ${!s.concluida && canEdit ? `<div class="ot-sub-comt-field" id="${subViewId}" style="display:${comtObrig ? '' : 'none'};">
+      <textarea class="ot-sub-comt-input" id="${subViewId}-txt" placeholder="Comentário${comtObrig ? ' (obrigatório)' : ''}..." rows="2"
+        onclick="event.stopPropagation()" oninput="event.stopPropagation()"></textarea>
+    </div>` : ''}
     </div>`;
   }).join('')}
   </div>` : `<div class="checklist-empty-tip">Nenhuma subtarefa ainda.</div>`}
@@ -2032,6 +2064,50 @@ function _otPubEntryHTML(p) {
     ${anexos.length > 0 ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">${anexos.length} anexo(s)</div>` : ''}
   </div>
 </div>`;
+}
+
+function otToggleViewSubComt(subViewId) {
+  const field = document.getElementById(subViewId);
+  if (!field) return;
+  const isOpen = field.style.display !== 'none';
+  field.style.display = isOpen ? 'none' : '';
+  if (!isOpen) document.getElementById(subViewId + '-txt')?.focus();
+}
+
+function otViewToggleSubClick(otId, i, subViewId) {
+  const idx = otState.ordens.findIndex(x => x.id === otId);
+  if (idx < 0) return;
+  const s = otState.ordens[idx].subtarefas[i];
+  if (!s) return;
+  // Se está concluindo e tem comentário obrigatório, valida
+  if (!s.concluida && s.comentarioObrigatorio) {
+    const txt = document.getElementById(subViewId + '-txt');
+    const comentario = txt ? txt.value.trim() : '';
+    if (!comentario) {
+      showToast('Preencha o comentário obrigatório antes de concluir.', 'error');
+      const field = document.getElementById(subViewId);
+      if (field) field.style.display = '';
+      txt?.focus();
+      return;
+    }
+    // Salva comentário e conclui
+    const currentTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'subtarefas';
+    const sess = typeof currentSession !== 'undefined' ? currentSession : null;
+    s.concluida = true;
+    s.comentario = comentario;
+    s.concluidoPorId   = sess?.userId       || null;
+    s.concluidoPorNome = sess?.nomeCompleto || null;
+    s.concluidoEm      = new Date().toISOString();
+    otSave();
+    _otRenderKanban();
+    _otRenderView(otState.ordens[idx]);
+    otSwitchViewTab(currentTab);
+    return;
+  }
+  // Sem restrição de comentário: comportamento normal
+  // Ao desconcluir, limpa o comentário também
+  if (s.concluida) s.comentario = null;
+  otViewToggleSub(otId, i);
 }
 
 function otViewToggleSub(otId, i) {
@@ -2660,6 +2736,10 @@ function _otModalsHTML() {
           <label>
             <input type="checkbox" id="ot-sub-new-ev">
             Exige evidência fotográfica ao concluir
+          </label>
+          <label>
+            <input type="checkbox" id="ot-sub-new-comt">
+            Exige comentário ao concluir
           </label>
         </div>
       </div>

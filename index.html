@@ -1972,22 +1972,36 @@
         <div id="pub-file-preview" style="display:none;"></div>
         <div id="pub-anexo-list" class="anexo-list" style="margin-top:8px;"></div>
       </div>
-      <div id="pub-terceiro-section" style="display:none;margin-top:14px;">
-        <div class="form-row">
-          <div class="form-field" style="margin-bottom:0;">
-            <label class="field-label">Empresa Responsável</label>
-            <div class="autocomplete-wrapper">
-              <input type="text" id="pub-empresa-responsavel" class="field-input" placeholder="Pesquisar empresa..." autocomplete="off"
-                oninput="pubEmpresaFilter()" onfocus="pubEmpresaFilter()" onblur="setTimeout(()=>pubEmpresaClose(),180)">
-              <div class="autocomplete-dropdown" id="pub-empresa-responsavel-dd"></div>
+      <div style="margin-top:14px;">
+        <div class="form-field" style="margin-bottom:0;">
+          <div class="toggle-row" style="cursor:pointer;" onclick="togglePubTerceiro()">
+            <div style="flex:1;min-width:0;">
+              <div class="toggle-row-title">Realizado por terceiro</div>
+              <div class="toggle-sub">Registra empresa e técnico responsável nesta publicação</div>
             </div>
+            <label class="toggle-switch" style="flex-shrink:0;margin-left:14px;" onclick="event.stopPropagation()">
+              <input type="checkbox" id="pub-terceiro-checkbox" onchange="togglePubTerceiro()">
+              <span class="toggle-slider"></span>
+            </label>
           </div>
-          <div class="form-field" style="margin-bottom:0;">
-            <label class="field-label">Técnico Responsável</label>
-            <div class="autocomplete-wrapper">
-              <input type="text" id="pub-tecnico-responsavel" class="field-input" placeholder="Selecione uma empresa primeiro" autocomplete="off"
-                oninput="pubTecnicoFilter()" onfocus="pubTecnicoFilter()" onblur="setTimeout(()=>pubTecnicoClose(),180)" disabled>
-              <div class="autocomplete-dropdown" id="pub-tecnico-responsavel-dd"></div>
+        </div>
+        <div id="pub-terceiro-section" style="display:none;margin-top:8px;">
+          <div class="form-row">
+            <div class="form-field" style="margin-bottom:0;">
+              <label class="field-label">Empresa Responsável</label>
+              <div class="autocomplete-wrapper">
+                <input type="text" id="pub-empresa-responsavel" class="field-input" placeholder="Pesquisar empresa..." autocomplete="off"
+                  oninput="pubEmpresaFilter()" onfocus="pubEmpresaFilter()" onblur="setTimeout(()=>pubEmpresaClose(),180)">
+                <div class="autocomplete-dropdown" id="pub-empresa-responsavel-dd"></div>
+              </div>
+            </div>
+            <div class="form-field" style="margin-bottom:0;">
+              <label class="field-label">Técnico Responsável</label>
+              <div class="autocomplete-wrapper">
+                <input type="text" id="pub-tecnico-responsavel" class="field-input" placeholder="Selecione uma empresa primeiro" autocomplete="off"
+                  oninput="pubTecnicoFilter()" onfocus="pubTecnicoFilter()" onblur="setTimeout(()=>pubTecnicoClose(),180)" disabled>
+                <div class="autocomplete-dropdown" id="pub-tecnico-responsavel-dd"></div>
+              </div>
             </div>
           </div>
         </div>
