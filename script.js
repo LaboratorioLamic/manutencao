@@ -3514,8 +3514,11 @@
   }
 
   function openTipoModal() {
+    _tipoEdicaoIdx = -1;
     renderTipoList();
     document.getElementById('input-novo-tipo').value = '';
+    const btn = document.getElementById('tipo-save-btn');
+    if (btn) btn.textContent = 'Adicionar';
     openModal('modal-tipo');
   }
 
@@ -3526,7 +3529,11 @@
       <div class="list-item-row">
         <span class="list-item-name">${t}${fixed.includes(t) ? ' <span style="font-size:10px;color:var(--text-muted);">(padrão)</span>' : ''}</span>
         <span class="list-item-actions">
-          ${!fixed.includes(t) ? `<button class="btn btn-outline btn-icon" onclick="removerTipo(${i})" style="color:var(--red);" title="Remover">
+          ${!fixed.includes(t) ? `
+          <button class="btn btn-outline btn-icon" onclick="editarTipo(${i})" title="Editar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          <button class="btn btn-outline btn-icon" onclick="removerTipo(${i})" style="color:var(--red);" title="Remover">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
           </button>` : ''}
         </span>
@@ -3534,22 +3541,53 @@
   }
 
   function salvarTipo() {
-    const val = document.getElementById('input-novo-tipo').value.trim();
-    if (!val || state.tiposRotina.includes(val)) return;
-    state.tiposRotina.push(val);
-    saveState();
-    renderTipoList();
-    populateTipoSelect();
-    document.getElementById('input-novo-tipo').value = '';
+    salvarTipoEdicao();
   }
 
   function removerTipo(idx) {
     const fixed = ['Preventivo', 'Rotina'];
     if (fixed.includes(state.tiposRotina[idx])) return;
+    const nome = state.tiposRotina[idx];
+    const emUso = state.rotinas.some(r => r.tipo === nome);
+    if (emUso) { showToast('Não é possível excluir: há rotinas cadastradas com este tipo.', 'error'); return; }
     state.tiposRotina.splice(idx, 1);
     saveState();
     renderTipoList();
     populateTipoSelect();
+  }
+
+  let _tipoEdicaoIdx = -1;
+
+  function editarTipo(idx) {
+    const fixed = ['Preventivo', 'Rotina'];
+    if (fixed.includes(state.tiposRotina[idx])) return;
+    _tipoEdicaoIdx = idx;
+    document.getElementById('input-novo-tipo').value = state.tiposRotina[idx];
+    const btn = document.getElementById('tipo-save-btn');
+    if (btn) { btn.textContent = 'Salvar'; }
+  }
+
+  function salvarTipoEdicao() {
+    const val = document.getElementById('input-novo-tipo').value.trim();
+    if (!val) return;
+    if (_tipoEdicaoIdx >= 0) {
+      const oldVal = state.tiposRotina[_tipoEdicaoIdx];
+      if (oldVal !== val) {
+        if (state.tiposRotina.includes(val)) { showToast('Já existe um tipo com esse nome.', 'error'); return; }
+        state.tiposRotina[_tipoEdicaoIdx] = val;
+        state.rotinas.forEach(r => { if (r.tipo === oldVal) r.tipo = val; });
+      }
+      _tipoEdicaoIdx = -1;
+      const btn = document.getElementById('tipo-save-btn');
+      if (btn) btn.textContent = 'Adicionar';
+    } else {
+      if (state.tiposRotina.includes(val)) return;
+      state.tiposRotina.push(val);
+    }
+    saveState();
+    renderTipoList();
+    populateTipoSelect();
+    document.getElementById('input-novo-tipo').value = '';
   }
 
   // ── VER / EDITAR / DELETAR ROTINA ──
@@ -3776,10 +3814,53 @@
   function toggleRotinaStatus() {
     const r = state.rotinas.find(r => r.id === rotinaViewId);
     if (!r) return;
-    const novoStatus = r.status === 'Inativo' ? 'Ativo' : 'Inativo';
-    r.status = novoStatus;
+    if (r.status !== 'Inativo') {
+      _showPausarRotinaConfirm();
+      return;
+    }
+    r.status = 'Ativo';
     saveState();
-    showToast(`Rotina ${novoStatus === 'Inativo' ? 'inativada' : 'ativada'} com sucesso!`, 'success');
+    renderRotinaViewInfo();
+    renderRotinasTable();
+    showToast('Rotina ativada com sucesso!', 'success');
+  }
+
+  function _showPausarRotinaConfirm() {
+    const existing = document.getElementById('modal-pausar-rotina');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'modal-pausar-rotina';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);';
+    overlay.innerHTML = `
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px 32px;max-width:400px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+        <div style="width:64px;height:64px;border-radius:50%;background:rgba(230,160,0,0.15);border:2px solid rgba(230,160,0,0.4);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="rgb(230,160,0)" stroke-width="2" stroke-linecap="round" style="width:32px;height:32px;">
+            <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+          </svg>
+        </div>
+        <div style="font-size:18px;font-weight:700;color:var(--text-primary);margin-bottom:8px;">Pausar Rotina?</div>
+        <div style="font-size:14px;color:var(--text-muted);line-height:1.6;margin-bottom:28px;">
+          A rotina será <strong style="color:rgb(230,160,0);">inativada</strong> e não gerará novas tarefas enquanto estiver pausada.<br>Você pode reativar a qualquer momento.
+        </div>
+        <div style="display:flex;gap:10px;justify-content:center;">
+          <button onclick="document.getElementById('modal-pausar-rotina').remove()" style="flex:1;padding:10px 0;border-radius:8px;border:1px solid var(--border);background:transparent;color:var(--text-secondary);font-size:14px;cursor:pointer;">Cancelar</button>
+          <button onclick="_confirmarPausarRotina()" style="flex:1;padding:10px 0;border-radius:8px;border:none;background:rgb(230,160,0);color:#000;font-size:14px;font-weight:600;cursor:pointer;">Sim, pausar</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  }
+
+  function _confirmarPausarRotina() {
+    const overlay = document.getElementById('modal-pausar-rotina');
+    if (overlay) overlay.remove();
+    const r = state.rotinas.find(r => r.id === rotinaViewId);
+    if (!r) return;
+    r.status = 'Inativo';
+    saveState();
+    renderRotinaViewInfo();
+    renderRotinasTable();
+    showToast('Rotina inativada com sucesso!', 'success');
   }
 
   function editarRotinaAtual() {
@@ -4349,6 +4430,9 @@
   }
 
   function removerSetor(index) {
+    const nome = state.setores[index];
+    const emUso = state.ativos.some(a => a.setor === nome);
+    if (emUso) { showToast('Não é possível excluir: há ativos cadastrados neste setor.', 'error'); return; }
     state.setores.splice(index, 1);
     saveState();
     atualizarSelects();
@@ -4357,6 +4441,9 @@
   }
 
   function removerCategoria(index) {
+    const nome = state.categorias[index];
+    const emUso = state.ativos.some(a => a.categoria === nome);
+    if (emUso) { showToast('Não é possível excluir: há ativos cadastrados nesta categoria.', 'error'); return; }
     state.categorias.splice(index, 1);
     saveState();
     atualizarSelects();

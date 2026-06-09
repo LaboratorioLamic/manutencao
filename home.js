@@ -799,7 +799,8 @@
           titulo: 'Ativos em Uso',
           cards: (k.ativosEmUsoList || []).map(a => {
             const idx = (state?.ativos || []).indexOf(a);
-            return { ativo: a, idx, tipo: 'em_uso', otsAssoc: [] };
+            const alertCounts = typeof getAtivoAlertCounts === 'function' ? getAtivoAlertCounts(idx) : { danger: 0, warning: 0, total: 0 };
+            return { ativo: a, idx, tipo: 'em_uso', otsAssoc: [], alertCounts };
           }),
         };
 
@@ -1189,7 +1190,7 @@
          </div>`
       : tarefaItemsVis.map(it =>
           `<div class="home-notif-item"
-            onclick="openTarefaDetalhe('${it.id}')">
+            onclick="openPublicarModalDireto('${it.id}')">
             <div class="home-notif-dot" style="background:${it.dot}"></div>
             <div class="home-notif-content">
               <div class="home-notif-title">${_esc(it.titulo)}</div>
@@ -1441,10 +1442,10 @@
 
   // ── MODAL KPI PÚBLICO ────────────────────────────────────────
   function _renderAtivoCard(card) {
-    const { ativo: a, idx, tipo, otsAssoc } = card;
+    const { ativo: a, idx, tipo, otsAssoc, alertCounts } = card;
     const initials = (a.nome || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0].toUpperCase()).join('');
     const isParado = tipo === 'em_pausa';
-    const stripeClass = isParado ? 'stripe-amber' : 'stripe-green';
+    const stripeClass = isParado ? 'stripe-amber' : (alertCounts?.danger > 0 ? 'stripe-red' : alertCounts?.warning > 0 ? 'stripe-amber' : 'stripe-green');
     const avClass    = isParado ? 'av-amber'  : 'av-green';
     const sbClass    = isParado ? 'sb-amber'  : 'sb-green';
     const sbLabel    = isParado ? 'Parado'    : 'Em Uso';
@@ -1452,6 +1453,34 @@
       ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
       : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
     const clickFn = idx >= 0 ? `homeCloseKPI();visualizarAtivo(${idx})` : '';
+
+    // Ícones de alerta ao lado do badge "Em Uso"
+    let alertIcons = '';
+    if (!isParado && alertCounts && alertCounts.total > 0) {
+      const _alertChip = (count, color, bg, border, hoverBg, svgPath, tipText) =>
+        `<span title="${tipText}" onclick="event.stopPropagation();homeCloseKPI();visualizarAtivo(${idx})"
+          onmouseenter="this.style.background='${hoverBg}';this.style.transform='scale(1.08)'"
+          onmouseleave="this.style.background='${bg}';this.style.transform='scale(1)'"
+          style="display:inline-flex;align-items:center;gap:4px;padding:3px 7px 3px 5px;background:${bg};border:1px solid ${border};border-radius:20px;color:${color};font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;user-select:none;line-height:1;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;flex-shrink:0;">${svgPath}</svg>
+          ${count}
+        </span>`;
+      if (alertCounts.danger > 0)
+        alertIcons += _alertChip(
+          alertCounts.danger,
+          '#e63946', 'rgba(230,57,70,0.13)', 'rgba(230,57,70,0.35)', 'rgba(230,57,70,0.22)',
+          `<circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>`,
+          `${alertCounts.danger} atividade${alertCounts.danger !== 1 ? 's' : ''} vencida${alertCounts.danger !== 1 ? 's' : ''}`
+        );
+      if (alertCounts.warning > 0)
+        alertIcons += _alertChip(
+          alertCounts.warning,
+          '#f4a261', 'rgba(244,162,97,0.13)', 'rgba(244,162,97,0.35)', 'rgba(244,162,97,0.22)',
+          `<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>`,
+          `${alertCounts.warning} atividade${alertCounts.warning !== 1 ? 's' : ''} no prazo`
+        );
+    }
+    const alertBlock = '';
 
     const dv = (v) => v && v !== '-' && v !== '—'
       ? `<div class="hkm-ac-dv">${_esc(v)}</div>`
@@ -1480,7 +1509,10 @@
           <div class="hkm-ac-name" title="${_esc(a.nome)}">${_esc(a.nome)}</div>
           ${a.codigo ? `<div class="hkm-ac-code">${_esc(a.codigo)}</div>` : ''}
         </div>
-        <div class="hkm-ac-status-badge ${sbClass}">${sbIcon}${sbLabel}</div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          ${alertIcons}
+          <div class="hkm-ac-status-badge ${sbClass}">${sbIcon}${sbLabel}</div>
+        </div>
       </div>
       <div class="hkm-ac-meta">
         ${a.setor ? `<span class="hkm-ac-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${_esc(a.setor)}</span>` : ''}
@@ -1504,6 +1536,7 @@
           ${dv(a.fornecedor)}
         </div>
       </div>
+      ${alertBlock}
       ${otsBlock}
     </div>`;
   }
