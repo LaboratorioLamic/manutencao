@@ -395,13 +395,13 @@
       if (diffDays < 0) {
         alerts.push({
           tarefaId: t.id, equipamentoIdx: t.equipamentoIdx, proximaData: t.proximaData,
-          tipo: 'danger', rotinaNome: rotina.nome, equipNome: ativo.nome, equipCodigo: ativo.codigo,
+          tipo: 'danger', rotinaNome: rotina.nome, tarefaNome: t.titulo || rotina.nome, equipNome: ativo.nome, equipCodigo: ativo.codigo,
           msg: `Vencida há ${Math.abs(diffDays)} dia(s)`, diffDays
         });
       } else if (diffDays <= (t.lembrete || 3)) {
         alerts.push({
           tarefaId: t.id, equipamentoIdx: t.equipamentoIdx, proximaData: t.proximaData,
-          tipo: 'warning', rotinaNome: rotina.nome, equipNome: ativo.nome, equipCodigo: ativo.codigo,
+          tipo: 'warning', rotinaNome: rotina.nome, tarefaNome: t.titulo || rotina.nome, equipNome: ativo.nome, equipCodigo: ativo.codigo,
           msg: `Vence em ${diffDays} dia(s)`, diffDays
         });
       }
@@ -503,7 +503,7 @@
       <div class="notif-item" onclick="${onclick}">
         <div class="notif-dot ${a.tipo}"></div>
         <div class="notif-text">
-          <strong>${a.rotinaNome}</strong>${label} — ${a.equipNome}
+          <strong>${a.isOT ? a.rotinaNome : (a.tarefaNome || a.rotinaNome)}</strong>${label} — ${a.equipNome}
           <small>${subline}</small>
         </div>
       </div>`;
