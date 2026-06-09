@@ -374,6 +374,12 @@ function _otRenderFilterAtivoList(q) {
     .filter(a => {
       if (!idxComOTs.has(a._idx)) return false;
       return !q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      const sa = (a.setor || '').toLowerCase(), sb = (b.setor || '').toLowerCase();
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      const ca = (a.codigo || '').toLowerCase(), cb = (b.codigo || '').toLowerCase();
+      return ca < cb ? -1 : ca > cb ? 1 : 0;
     });
 
   if (ativos.length === 0) {
@@ -1360,7 +1366,13 @@ function _otRenderAtivoSearchList(q) {
   const list = document.getElementById('ot-ativo-search-list');
   if (!list || typeof state === 'undefined') return;
   const ativos = state.ativos.map((a, i) => ({ ...a, _idx: i }))
-    .filter(a => a.statusUso !== 'em_desuso' && (!q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q)));
+    .filter(a => a.statusUso !== 'em_desuso' && (!q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q)))
+    .sort((a, b) => {
+      const sa = (a.setor || '').toLowerCase(), sb = (b.setor || '').toLowerCase();
+      if (sa !== sb) return sa < sb ? -1 : 1;
+      const ca = (a.codigo || '').toLowerCase(), cb = (b.codigo || '').toLowerCase();
+      return ca < cb ? -1 : ca > cb ? 1 : 0;
+    });
   if (ativos.length === 0) {
     list.innerHTML = '<div class="autocomplete-empty">Nenhum ativo encontrado</div>';
     return;

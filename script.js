@@ -1025,6 +1025,12 @@
     const matches = state.ativos
       .map((a, idx) => ({ idx, a }))
       .filter(({ a }) => a && (`${a.nome} ${a.codigo}`).toLowerCase().includes(q))
+      .sort((x, y) => {
+        const sa = (x.a.setor || '').toLowerCase(), sb = (y.a.setor || '').toLowerCase();
+        if (sa !== sb) return sa < sb ? -1 : 1;
+        const ca = (x.a.codigo || '').toLowerCase(), cb = (y.a.codigo || '').toLowerCase();
+        return ca < cb ? -1 : ca > cb ? 1 : 0;
+      })
       .slice(0, 50);
     _tarefaEquipRenderDropdown(matches);
   }
@@ -1032,7 +1038,16 @@
   function onTarefaEquipFocus() {
     const cur = document.getElementById('tarefa-equip-select').value;
     if (cur !== '') return;
-    const matches = state.ativos.map((a, idx) => ({ idx, a })).filter(({ a }) => a).slice(0, 50);
+    const matches = state.ativos
+      .map((a, idx) => ({ idx, a }))
+      .filter(({ a }) => a)
+      .sort((x, y) => {
+        const sa = (x.a.setor || '').toLowerCase(), sb = (y.a.setor || '').toLowerCase();
+        if (sa !== sb) return sa < sb ? -1 : 1;
+        const ca = (x.a.codigo || '').toLowerCase(), cb = (y.a.codigo || '').toLowerCase();
+        return ca < cb ? -1 : ca > cb ? 1 : 0;
+      })
+      .slice(0, 50);
     _tarefaEquipRenderDropdown(matches);
   }
 
@@ -3208,6 +3223,14 @@
       .filter(({ a }) => {
         if (visSetores && !visSetores.includes(a.setor)) return false;
         return !q || a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q) || a.setor.toLowerCase().includes(q);
+      })
+      .sort((x, y) => {
+        const sa = (x.a.setor || '').toLowerCase();
+        const sb = (y.a.setor || '').toLowerCase();
+        if (sa !== sb) return sa < sb ? -1 : 1;
+        const ca = (x.a.codigo || '').toLowerCase();
+        const cb = (y.a.codigo || '').toLowerCase();
+        return ca < cb ? -1 : ca > cb ? 1 : 0;
       });
 
     if (found.length === 0) {
@@ -3303,9 +3326,16 @@
     const q = document.getElementById('rotina-equip-input').value.toLowerCase();
     const dd = document.getElementById('rotina-equip-dropdown');
     if (!q) { dd.innerHTML = ''; dd.classList.remove('open'); return; }
-    const matches = state.ativos.map((a, i) => ({ a, i })).filter(({ a }) =>
-      a.statusUso !== 'em_desuso' &&
-      (a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q)));
+    const matches = state.ativos.map((a, i) => ({ a, i }))
+      .filter(({ a }) =>
+        a.statusUso !== 'em_desuso' &&
+        (a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q)))
+      .sort((x, y) => {
+        const sa = (x.a.setor || '').toLowerCase(), sb = (y.a.setor || '').toLowerCase();
+        if (sa !== sb) return sa < sb ? -1 : 1;
+        const ca = (x.a.codigo || '').toLowerCase(), cb = (y.a.codigo || '').toLowerCase();
+        return ca < cb ? -1 : ca > cb ? 1 : 0;
+      });
     if (matches.length === 0) {
       dd.innerHTML = '<div class="autocomplete-empty">Nenhum equipamento encontrado</div>';
     } else {
@@ -4953,6 +4983,14 @@
           if (!haystack.includes(fBusca)) return false;
         }
         return true;
+      })
+      .sort((x, y) => {
+        const sa = (x.item.setor || '').toLowerCase();
+        const sb = (y.item.setor || '').toLowerCase();
+        if (sa !== sb) return sa < sb ? -1 : 1;
+        const ca = (x.item.codigo || '').toLowerCase();
+        const cb = (y.item.codigo || '').toLowerCase();
+        return ca < cb ? -1 : ca > cb ? 1 : 0;
       });
 
     if (filtrados.length === 0) {
