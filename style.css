@@ -1170,36 +1170,42 @@
     font-size: 11px; font-weight: 600;
   }
 
-  /* ── CHECKLIST BUILDER ── */
+
+  /* ── CHECKLIST DA TAREFA ── */
   .checklist-builder { display: flex; flex-direction: column; gap: 8px; }
   .checklist-add-row { display: flex; gap: 8px; margin-bottom: 16px; }
   .checklist-item-row {
     display: flex; align-items: center; gap: 10px;
     background: var(--bg); border: 1.5px solid var(--border);
-    border-radius: 8px; padding: 10px 12px;
+    border-radius: 10px; padding: 10px 12px;
     transition: var(--transition);
   }
-  .checklist-item-row:hover { border-color: #c4cfe0; }
+  .checklist-item-row:hover { border-color: var(--cyan); box-shadow: 0 2px 8px rgba(0,168,204,0.07); }
   .checklist-item-num {
-    width: 22px; height: 22px; border-radius: 50%; background: var(--cyan-light);
-    border: 1px solid rgba(0,168,204,0.2); color: var(--cyan);
-    font-size: 11px; font-weight: 700; display: flex; align-items: center;
-    justify-content: center; flex-shrink: 0;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--cyan-light); border: 1px solid rgba(0,168,204,0.2);
+    color: var(--cyan); font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
   }
-  .checklist-item-text { flex: 1; font-size: 13px; color: var(--text-primary); }
+  .checklist-item-text { flex: 1; font-size: 13px; color: var(--text-primary); font-weight: 500; }
   .checklist-item-del {
-    width: 26px; height: 26px; border: none; background: transparent;
-    color: var(--text-muted); cursor: pointer; border-radius: 6px;
+    width: 28px; height: 28px; border: none; background: transparent;
+    color: var(--text-muted); cursor: pointer; border-radius: 7px;
     display: flex; align-items: center; justify-content: center;
     transition: var(--transition); flex-shrink: 0;
   }
   .checklist-item-del:hover { background: rgba(230,57,70,0.1); color: var(--red); }
   .checklist-item-del svg { width: 13px; height: 13px; }
   .checklist-empty-tip {
-    text-align: center; padding: 24px; color: var(--text-muted);
+    text-align: center; padding: 28px 20px; color: var(--text-muted);
     font-size: 13px; border: 1.5px dashed var(--border);
     border-radius: var(--radius); background: var(--bg);
   }
+  /* Botão balão de comentário obrigatório no builder */
+  .checklist-coment-toggle { color: var(--text-muted) !important; }
+  .checklist-coment-toggle:hover { background: rgba(0,168,204,0.1) !important; color: var(--cyan) !important; }
+  .checklist-coment-toggle.active { color: #f4a261 !important; background: rgba(244,162,97,0.12) !important; }
+  .checklist-coment-toggle.active:hover { background: rgba(244,162,97,0.2) !important; }
 
   /* ── MODAL BUSCA DE ATIVO ── */
   .ativo-search-input-wrap { position: relative; margin-bottom: 16px; }
@@ -1346,6 +1352,16 @@
   .pub-check-item.checked .pub-check-box svg { display: block; }
   .pub-check-text { font-size: 13px; color: var(--text-primary); flex: 1; font-weight: 500; }
 
+  /* Botão "Selecionar todos" — checklist e subtarefas */
+  .btn-select-all-checks {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 6px; border: 1.5px solid var(--border);
+    background: transparent; color: var(--text-secondary);
+    font-size: 11.5px; font-weight: 600; cursor: pointer;
+    transition: var(--transition);
+  }
+  .btn-select-all-checks:hover { border-color: var(--green); color: var(--green); background: rgba(42,157,143,0.07); }
+
   /* Balão de comentário por item do checklist */
   .pub-check-item-wrap { display: flex; flex-direction: column; }
   .pub-check-coment-btn {
@@ -1367,11 +1383,6 @@
   }
   .pub-check-coment-input:focus { border-color: var(--cyan); }
 
-  /* Toggle de comentário obrigatório no builder do checklist */
-  .checklist-coment-toggle { color: var(--text-muted) !important; }
-  .checklist-coment-toggle:hover { background: rgba(0,168,204,0.1) !important; color: var(--cyan) !important; }
-  .checklist-coment-toggle.active { color: #f4a261 !important; background: rgba(244,162,97,0.12) !important; }
-  .checklist-coment-toggle.active:hover { background: rgba(244,162,97,0.2) !important; }
 
   .pub-checklist-progress {
     display: flex; align-items: center; gap: 10px;

@@ -1089,12 +1089,9 @@
     const r = state.rotinas.find(r => r.id === rotinaId);
     if (!r) return;
     const ativo  = state.ativos[r.equipamentoIdx];
-    const nCheck = r.checklist?.length || 0;
-
     document.getElementById('tinfo-tipo').textContent  = r.tipo;
     document.getElementById('tinfo-setor').textContent = ativo?.setor || '—';
     document.getElementById('tinfo-cat').textContent   = ativo?.categoria || '—';
-    document.getElementById('tinfo-check').textContent = nCheck > 0 ? `${nCheck} item${nCheck>1?'s':''}` : 'Sem checklist';
 
     infoBox.style.display = '';
   }
@@ -1115,7 +1112,7 @@
     codigo:'Código', frequencia:'Frequência', fazerCada:'Fazer a cada',
     repetir:'Repetir', vezes:'Vezes', lembrete:'Lembrete', dataTarefa:'Data da Tarefa',
     observacoes:'Observações', anexoObrigatorio:'Exigir Anexo',
-    checklistTarefa:'Checklist da Tarefa', checklist:'Checklist Geral',
+    checklistTarefa:'Checklist da Tarefa',
     responsaveis:'Responsáveis', diasSemana:'Dias da Semana'
   };
 
@@ -1684,24 +1681,8 @@
     ].join('') : '';
 
     // Checklist
-    const checklistRotina  = rotina?.checklist || [];
     const checklistTarefa  = t.checklistTarefa || [];
-    const temChecklistGeral  = checklistRotina.length > 0;
     const temChecklistTarefa = checklistTarefa.length > 0;
-
-    const checklistGeraldHtml = temChecklistGeral ? `
-      <div class="task-detail-section">
-        <div class="task-detail-section-title">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-          Checklist Geral da Rotina
-        </div>
-        <div style="display:flex;flex-direction:column;gap:5px;">
-          ${checklistRotina.map(it => `<div class="detail-checklist-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0;color:var(--text-muted);"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
-            <span style="font-size:13px;color:var(--text-secondary);">${it.texto}</span>
-          </div>`).join('')}
-        </div>
-      </div>` : '';
 
     const checklistTarefaHtml = temChecklistTarefa ? `
       <div class="task-detail-section">
@@ -1780,7 +1761,6 @@
         <div style="display:flex;flex-wrap:wrap;gap:6px;">${respChipsHtml}</div>
       </div>` : ''}
 
-      ${checklistGeraldHtml}
       ${checklistTarefaHtml}`;
 
     const btnPub = document.getElementById('btn-publicar-tarefa');
@@ -1940,33 +1920,27 @@
       if (reqLabel) reqLabel.style.display = t.anexoObrigatorio ? '' : 'none';
     }
 
-    // Checklists separados — Geral (rotina) e da Tarefa, ambos exibidos se existirem
+    // Checklist da Tarefa
     const section = document.getElementById('pub-checklist-section');
     const tarefaChecklist = t.checklistTarefa || [];
-    const rotinaChecklist = rotina?.checklist || [];
-    const allItems = [...rotinaChecklist, ...tarefaChecklist]; // todos para validação
 
-    if (allItems.length > 0) {
+    if (tarefaChecklist.length > 0) {
       section.style.display = '';
-      let html = '';
-      if (rotinaChecklist.length > 0) {
-        html += `<div class="form-section-title" style="margin-bottom:6px;margin-top:0;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/></svg>
-          Checklist Geral — marque todos os itens
+      let html = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <div class="form-section-title" style="margin-bottom:0;border:none;padding:0;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/></svg>
+            Checklist da Tarefa — marque todos os itens
+          </div>
+          <button type="button" id="btn-selecionar-checklist" class="btn-select-all-checks" onclick="selecionarTodosChecklist()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:12px;height:12px;"><polyline points="20 6 9 17 4 12"/></svg>
+            <span id="btn-selecionar-checklist-label">Selecionar todos</span>
+          </button>
         </div>`;
-        html += rotinaChecklist.map(it => _renderPubCheckItem(it, allItems.length)).join('');
-      }
-      if (tarefaChecklist.length > 0) {
-        html += `<div class="form-section-title" style="margin-bottom:6px;margin-top:${rotinaChecklist.length > 0 ? '14px' : '0'};">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/></svg>
-          Checklist da Tarefa — marque todos os itens
-        </div>`;
-        html += tarefaChecklist.map(it => _renderPubCheckItem(it, allItems.length)).join('');
-      }
+      html += tarefaChecklist.map(it => _renderPubCheckItem(it, tarefaChecklist.length)).join('');
       document.getElementById('pub-checklist').innerHTML = html;
-      // Abre automaticamente campos obrigatórios
-      allItems.forEach(it => { if (it.comentarioObrigatorio) _openPubComentario(it.id); });
-      updatePubProgress(allItems.length);
+      tarefaChecklist.forEach(it => { if (it.comentarioObrigatorio) _openPubComentario(it.id); });
+      updatePubProgress(tarefaChecklist.length);
     } else {
       section.style.display = 'none';
     }
@@ -2023,7 +1997,7 @@
     const obrig = !!it.comentarioObrigatorio;
     return `
       <div class="pub-check-item-wrap" id="pwrap-${it.id}">
-        <div class="pub-check-item" id="pcheck-${it.id}" onclick="togglePubCheck('${it.id}', ${total})">
+        <div class="pub-check-item" id="pcheck-${it.id}" data-comt-obrig="${obrig ? '1' : ''}" onclick="togglePubCheck('${it.id}', ${total})">
           <div class="pub-check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
           <span class="pub-check-text">${it.texto}</span>
           <button class="pub-check-coment-btn${obrig ? ' obrig' : ''}" onclick="event.stopPropagation();togglePubComentario('${it.id}')" title="${obrig ? 'Comentário obrigatório' : 'Adicionar comentário'}">
@@ -2049,9 +2023,56 @@
     if (!isOpen) document.getElementById('pcoment-txt-' + itemId)?.focus();
   }
 
+  function _atualizarBtnSelecionarChecklist(allItems) {
+    const btn   = document.getElementById('btn-selecionar-checklist');
+    const label = document.getElementById('btn-selecionar-checklist-label');
+    if (!btn || !label) return;
+    const todosElegiveis = allItems.filter(it => {
+      const comtObrig = !!it.comentarioObrigatorio;
+      const comtPreenchido = !!(pubChecklistComentarios[it.id] || '').trim();
+      return !comtObrig || comtPreenchido;
+    });
+    const todosMarcados = todosElegiveis.length > 0 && todosElegiveis.every(it => !!pubChecklistState[it.id]);
+    label.textContent = todosMarcados ? 'Desmarcar todos' : 'Selecionar todos';
+    btn.dataset.modo = todosMarcados ? 'desmarcar' : 'selecionar';
+  }
+
+  function selecionarTodosChecklist() {
+    const t = state.tarefas.find(t => t.id === tarefaDetalheId);
+    if (!t) return;
+    const allItems = t.checklistTarefa || [];
+    const btn = document.getElementById('btn-selecionar-checklist');
+    const desmarcar = btn?.dataset.modo === 'desmarcar';
+    allItems.forEach(it => {
+      if (desmarcar) {
+        pubChecklistState[it.id] = false;
+        document.getElementById('pcheck-' + it.id)?.classList.remove('checked');
+      } else {
+        if (!!pubChecklistState[it.id]) return;
+        const comtObrig = !!it.comentarioObrigatorio;
+        const comtPreenchido = !!(pubChecklistComentarios[it.id] || '').trim();
+        if (comtObrig && !comtPreenchido) return;
+        pubChecklistState[it.id] = true;
+        document.getElementById('pcheck-' + it.id)?.classList.add('checked');
+      }
+    });
+    updatePubProgress(allItems.length);
+    _atualizarBtnSelecionarChecklist(allItems);
+  }
+
   function togglePubCheck(itemId, total) {
-    pubChecklistState[itemId] = !pubChecklistState[itemId];
     const el = document.getElementById('pcheck-' + itemId);
+    // Se está tentando marcar e tem comentário obrigatório, valida primeiro
+    if (!pubChecklistState[itemId] && el?.dataset.comtObrig === '1') {
+      const comentario = (pubChecklistComentarios[itemId] || '').trim();
+      if (!comentario) {
+        _openPubComentario(itemId);
+        document.getElementById('pcoment-txt-' + itemId)?.focus();
+        showToast('Preencha o comentário antes de marcar este item.', 'error');
+        return;
+      }
+    }
+    pubChecklistState[itemId] = !pubChecklistState[itemId];
     el.classList.toggle('checked', !!pubChecklistState[itemId]);
     updatePubProgress(total);
   }
@@ -2060,6 +2081,8 @@
     const done = Object.values(pubChecklistState).filter(Boolean).length;
     document.getElementById('pub-progress-label').textContent = `${done} / ${total} itens marcados`;
     document.getElementById('pub-progress-bar').style.width = total > 0 ? `${(done/total)*100}%` : '0%';
+    const t = state.tarefas.find(t => t.id === tarefaDetalheId);
+    if (t) _atualizarBtnSelecionarChecklist(t.checklistTarefa || []);
   }
 
   function publicarTarefa() {
@@ -2082,14 +2105,11 @@
       showToast('Adicione pelo menos 1 anexo para publicar esta tarefa.', 'error'); return;
     }
 
-    // Valida ambos os checklists separadamente
-    const tarefaChecklist = t.checklistTarefa || [];
-    const rotinaChecklist = rotina?.checklist || [];
-    const checkItems = [...rotinaChecklist, ...tarefaChecklist];
+    // Valida checklist da tarefa
+    const checkItems = t.checklistTarefa || [];
     if (checkItems.length > 0) {
       const allChecked = checkItems.every(it => pubChecklistState[it.id]);
       if (!allChecked) { showToast('Marque todos os itens do checklist para publicar.', 'error'); return; }
-      // Valida comentários obrigatórios
       const semComent = checkItems.filter(it => it.comentarioObrigatorio && !(pubChecklistComentarios[it.id] || '').trim());
       if (semComent.length > 0) { showToast('Preencha o comentário obrigatório dos itens marcados.', 'error'); semComent.forEach(it => _openPubComentario(it.id)); return; }
     }
@@ -2504,8 +2524,6 @@
     const p = state.publicacoes.find(p => p.id === pubId);
     if (!p) return;
     const t = state.tarefas.find(t => t.id === p.tarefaId);
-    const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
-    const rotinaChecklist  = rotina?.checklist || [];
     const tarefaChecklist  = t?.checklistTarefa || [];
 
     function checkListHtml(items, label) {
@@ -2614,7 +2632,6 @@
         </div>`;
       })() : ''}
 
-      ${checkListHtml(rotinaChecklist, 'Checklist Geral Verificado')}
       ${checkListHtml(tarefaChecklist, 'Checklist da Tarefa Verificado')}
       ${anexosHtml}
       ${p.notas ? `
@@ -3323,12 +3340,10 @@
   // ── DRAWER DE ROTINA ──
   // ══════════════════════════════════════════
   let rotinaEdicaoId = null;
-  let checklistTemp = [];
 
   function openRotinaDrawer(id = null) {
     rotinaEdicaoId = id;
     const editing = id ? state.rotinas.find(r => r.id === id) : null;
-    checklistTemp = editing ? JSON.parse(JSON.stringify(editing.checklist || [])) : [];
 
     document.getElementById('drawer-rotina-title').textContent = id ? 'Editar Rotina' : 'Nova Rotina';
     const btnHistRotina = document.getElementById('btn-hist-rotina');
@@ -3355,7 +3370,6 @@
 
     populateTipoSelect();
     switchDrawerTab('operacao');
-    renderChecklistBuilder();
 
     document.getElementById('right-drawer').classList.add('open');
     document.getElementById('drawer-backdrop').classList.add('open');
@@ -3368,7 +3382,7 @@
   }
 
   function switchDrawerTab(tab) {
-    ['operacao','checklist'].forEach(t => {
+    ['operacao'].forEach(t => {
       document.getElementById('dtab-' + t).classList.toggle('active', t === tab);
       document.getElementById('dtab-btn-' + t).classList.toggle('active', t === tab);
     });
@@ -3459,7 +3473,6 @@
     const rotina = {
       id: rotinaEdicaoId || uid(),
       nome, tipo, equipamentoIdx: _selectedEquipIdx,
-      checklist: checklistTemp.slice(),
       status: rotinaExistente?.status || 'Ativo',
       _historico: rotinaExistente?._historico || []
     };
@@ -3477,48 +3490,6 @@
     closeRotinaDrawer();
   }
 
-  // ── CHECKLIST BUILDER ──
-  function addChecklistItem() {
-    const input = document.getElementById('checklist-novo-item');
-    const texto = input.value.trim();
-    if (!texto) return;
-    checklistTemp.push({ id: uid(), texto, comentarioObrigatorio: false });
-    input.value = '';
-    renderChecklistBuilder();
-  }
-
-  function removeChecklistItem(id) {
-    checklistTemp = checklistTemp.filter(i => i.id !== id);
-    renderChecklistBuilder();
-  }
-
-  function toggleChecklistComentario(id) {
-    const item = checklistTemp.find(i => i.id === id);
-    if (!item) return;
-    item.comentarioObrigatorio = !item.comentarioObrigatorio;
-    renderChecklistBuilder();
-  }
-
-  function renderChecklistBuilder() {
-    const container = document.getElementById('checklist-builder');
-    if (checklistTemp.length === 0) {
-      container.innerHTML = `<div class="checklist-empty-tip" id="checklist-empty-msg">
-        Nenhum item adicionado. O checklist é opcional — adicione itens acima.
-      </div>`;
-      return;
-    }
-    container.innerHTML = checklistTemp.map((item, i) => `
-      <div class="checklist-item-row">
-        <div class="checklist-item-num">${i + 1}</div>
-        <div class="checklist-item-text">${item.texto}</div>
-        <button class="checklist-item-del checklist-coment-toggle${item.comentarioObrigatorio ? ' active' : ''}" onclick="toggleChecklistComentario('${item.id}')" title="${item.comentarioObrigatorio ? 'Comentário obrigatório (clique para remover)' : 'Marcar como comentário obrigatório'}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        </button>
-        <button class="checklist-item-del" onclick="removeChecklistItem('${item.id}')" title="Remover">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>`).join('');
-  }
 
   // ── TIPOS DE ROTINA ──
   function populateTipoSelect() {

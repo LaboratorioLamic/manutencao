@@ -1443,7 +1443,7 @@ function _otRenderSubList() {
   const list = document.getElementById('ot-sub-list');
   if (!list) return;
   if (_otSubTemp.length === 0) {
-    list.innerHTML = `<div class="checklist-empty-tip">Nenhuma subtarefa ainda. Adicione ou use o template do tipo de OT.</div>`;
+    list.innerHTML = `<div class="checklist-empty-tip">Sem subtarefas.</div>`;
     return;
   }
   list.innerHTML = _otSubTemp.map((s, i) => `
@@ -1842,9 +1842,18 @@ ${o.status === 'cancelada' ? `<div class="detail-note" style="border-left-color:
 
 <div class="ot-modal-tab-panel" data-tab="subtarefas">
   ${sub.length > 0 ? `
-  <div class="form-section-title" style="margin-bottom:10px;">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-    Subtarefas — ${subDone}/${sub.length} (${pct}%)
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+    <div class="form-section-title" style="margin-bottom:0;border:none;padding:0;">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+      Subtarefas — ${subDone}/${sub.length} (${pct}%)
+    </div>
+    ${canEdit ? (() => {
+      const todasConcluidas = sub.length > 0 && sub.every(s => s.concluida);
+      return `<button type="button" id="btn-ot-selecionar-subs" class="btn-select-all-checks" onclick="otSelecionarTodasSubs('${o.id}')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:12px;height:12px;"><polyline points="20 6 9 17 4 12"/></svg>
+        <span id="btn-ot-selecionar-subs-label">${todasConcluidas ? 'Desmarcar todos' : 'Selecionar todos'}</span>
+      </button>`;
+    })() : ''}
   </div>
   <div class="ot-sub-list" style="margin-bottom:16px;">
   ${sub.map((s, i) => {
@@ -2066,6 +2075,50 @@ function _otPubEntryHTML(p) {
 </div>`;
 }
 
+function otSelecionarTodasSubs(otId) {
+  const idx = otState.ordens.findIndex(x => x.id === otId);
+  if (idx < 0) return;
+  const o = otState.ordens[idx];
+  const sess = typeof currentSession !== 'undefined' ? currentSession : null;
+  const currentTab = document.querySelector('#modal-ot-view .ot-modal-tab-btn.active')?.dataset.tab || 'subtarefas';
+  const todasConcluidas = o.subtarefas.length > 0 && o.subtarefas.every(s => s.concluida);
+
+  if (todasConcluidas) {
+    // Desmarcar todas
+    o.subtarefas.forEach(s => {
+      s.concluida = false;
+      s.comentario = null;
+      s.concluidoPorId = s.concluidoPorNome = s.concluidoEm = null;
+    });
+  } else {
+    // Selecionar elegíveis
+    let alterou = false;
+    o.subtarefas.forEach((s, i) => {
+      if (s.concluida) return;
+      const jaTemEvidencia = otState.publicacoes.some(p => p.otId === o.id && p.tipo === 'evidencia' && p.subtarefaId === s.id);
+      if (s.exigeEvidencia && !jaTemEvidencia) return;
+      if (s.comentarioObrigatorio) {
+        const subViewId = `otsub-view-${o.id}-${i}`;
+        const txt = document.getElementById(subViewId + '-txt');
+        const comentario = txt ? txt.value.trim() : '';
+        if (!comentario) return;
+        s.comentario = comentario;
+      }
+      s.concluida = true;
+      s.concluidoPorId   = sess?.userId       || null;
+      s.concluidoPorNome = sess?.nomeCompleto || null;
+      s.concluidoEm      = new Date().toISOString();
+      alterou = true;
+    });
+    if (!alterou) { showToast('Nenhuma subtarefa elegível para selecionar.', 'info'); return; }
+  }
+
+  otSave();
+  _otRenderKanban();
+  _otRenderView(o);
+  otSwitchViewTab(currentTab);
+}
+
 function otToggleViewSubComt(subViewId) {
   const field = document.getElementById(subViewId);
   if (!field) return;
@@ -2104,9 +2157,14 @@ function otViewToggleSubClick(otId, i, subViewId) {
     otSwitchViewTab(currentTab);
     return;
   }
-  // Sem restrição de comentário: comportamento normal
+  // Sem comentário obrigatório: salva o que estiver digitado (se houver) e conclui normalmente
   // Ao desconcluir, limpa o comentário também
-  if (s.concluida) s.comentario = null;
+  if (s.concluida) {
+    s.comentario = null;
+  } else {
+    const txt = document.getElementById(subViewId + '-txt');
+    s.comentario = txt ? (txt.value.trim() || null) : null;
+  }
   otViewToggleSub(otId, i);
 }
 

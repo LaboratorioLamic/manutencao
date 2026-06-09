@@ -1222,10 +1222,6 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.6 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.6a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
       Operação
     </button>
-    <button class="drawer-tab-btn" id="dtab-btn-checklist" onclick="switchDrawerTab('checklist')">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-      Checklist Geral
-    </button>
   </div>
 
   <!-- Body com os painéis -->
@@ -1279,29 +1275,6 @@
 
     </div><!-- /dtab-operacao -->
 
-    <!-- Painel: Checklist -->
-    <div id="dtab-checklist" class="drawer-tab-panel">
-      <div class="form-section-title" style="margin-bottom:16px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        Itens do Checklist
-      </div>
-      <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
-        Adicione os itens que deverão ser verificados durante a execução desta rotina. Todos os itens serão exigidos na publicação da tarefa.
-      </p>
-      <div class="checklist-add-row">
-        <input type="text" id="checklist-novo-item" class="field-input" placeholder="Descreva o item a verificar..."
-          onkeydown="if(event.key==='Enter'){addChecklistItem();event.preventDefault();}">
-        <button class="btn btn-primary" onclick="addChecklistItem()" style="white-space:nowrap;flex-shrink:0;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Adicionar
-        </button>
-      </div>
-      <div id="checklist-builder" class="checklist-builder">
-        <div class="checklist-empty-tip" id="checklist-empty-msg">
-          Nenhum item adicionado. O checklist é opcional — adicione itens acima.
-        </div>
-      </div>
-    </div><!-- /dtab-checklist -->
 
   </div><!-- /drawer-body -->
 
@@ -1615,17 +1588,6 @@
                 <div class="rotina-info-value" id="tinfo-cat">—</div>
               </div>
             </div>
-            <div class="rotina-info-cell">
-              <div class="rotina-info-cell-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
-                </svg>
-              </div>
-              <div>
-                <div class="rotina-info-label">Checklist Geral</div>
-                <div class="rotina-info-value" id="tinfo-check">—</div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -1794,7 +1756,7 @@
         Itens do Checklist da Tarefa
       </div>
       <p style="font-size:12.5px;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
-        Checklist específico desta tarefa. Será solicitado na publicação no lugar do Checklist Geral, caso preenchido.
+        Checklist específico desta tarefa. Será solicitado na publicação.
       </p>
       <div class="checklist-add-row">
         <input type="text" id="tarefa-checklist-novo-item" class="field-input" placeholder="Descreva o item..."
@@ -1940,7 +1902,6 @@
         </div>
       </div>
       <div id="pub-checklist-section" style="display:none;">
-
         <div id="pub-checklist" class="pub-checklist"></div>
         <div class="pub-checklist-progress">
           <span id="pub-progress-label">0 / 0 itens marcados</span>
