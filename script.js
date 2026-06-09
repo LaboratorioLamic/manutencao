@@ -191,6 +191,25 @@
     document.body.style.overflow = '';
   }
 
+  // ── DARK MODE ──
+  if (localStorage.getItem('darkMode') === '1') {
+    document.body.classList.add('dark-mode');
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    if (localStorage.getItem('darkMode') === '1') {
+      const btn = document.getElementById('dark-mode-btn');
+      if (btn) btn.classList.add('active');
+    }
+  });
+
+  function toggleDarkMode() {
+    const body = document.body;
+    const btn = document.getElementById('dark-mode-btn');
+    const on = body.classList.toggle('dark-mode');
+    btn.classList.toggle('active', on);
+    localStorage.setItem('darkMode', on ? '1' : '0');
+  }
+
   // ── TOAST ──
   let _toastTimer = null;
   function showToast(msg, type = 'success') {

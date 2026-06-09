@@ -27,10 +27,27 @@
     --radius-lg: 12px;
   }
 
+  /* ── DARK MODE VARIABLES ── */
+  body.dark-mode {
+    --bg: #0f1117;
+    --bg-card: #1a1d27;
+    --text-primary: #e8eaf0;
+    --text-secondary: #a0a8b8;
+    --text-muted: #6b7690;
+    --border: #2a2f42;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,0.35);
+    --shadow-md: 0 4px 16px rgba(0,0,0,0.45);
+    --shadow-lg: 0 8px 32px rgba(0,0,0,0.55);
+    --night: #090c14;
+    --night-mid: #0f1320;
+    --night-light: #161c2e;
+  }
+
   body {
     font-family: 'DM Sans', system-ui, sans-serif;
     background: var(--bg); color: var(--text-primary);
     min-height: 100vh; overflow-x: hidden;
+    transition: background 0.4s ease, color 0.4s ease;
   }
 
   /* ── BOTÕES GENÉRICOS ── */
@@ -111,6 +128,75 @@
   .nav-icon svg { width: 18px; height: 18px; }
 
   .sidebar-divider { height: 1px; background: rgba(255,255,255,0.06); margin: 10px 16px; }
+  /* ── DARK MODE TOGGLE ── */
+  .dark-mode-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px 10px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    flex-shrink: 0;
+  }
+  .dark-mode-label {
+    font-size: 12.5px; font-weight: 500;
+    color: rgba(255,255,255,0.45);
+    user-select: none; flex: 1;
+    transition: color 0.3s ease;
+  }
+  .dark-mode-btn {
+    background: none; border: none; cursor: pointer;
+    padding: 0; flex-shrink: 0;
+  }
+  .dm-track {
+    width: 52px; height: 28px;
+    background: rgba(255,255,255,0.1);
+    border-radius: 14px;
+    position: relative;
+    transition: background 0.4s ease;
+    border: 1px solid rgba(255,255,255,0.12);
+  }
+  .dark-mode-btn.active .dm-track {
+    background: rgba(0,168,204,0.25);
+    border-color: rgba(0,168,204,0.4);
+  }
+  .dm-thumb {
+    position: absolute; top: 3px; left: 3px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: linear-gradient(135deg, #f6c90e, #f9a825);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1), background 0.4s ease;
+    box-shadow: 0 1px 6px rgba(246,201,14,0.5);
+  }
+  .dark-mode-btn.active .dm-thumb {
+    transform: translateX(24px);
+    background: linear-gradient(135deg, #c8d8f0, #a0b4d8);
+    box-shadow: 0 1px 6px rgba(100,150,220,0.5);
+  }
+  .dm-sun, .dm-moon {
+    position: absolute; display: flex; align-items: center; justify-content: center;
+    width: 13px; height: 13px;
+    transition: opacity 0.3s ease, transform 0.4s ease;
+  }
+  .dm-sun svg, .dm-moon svg { width: 13px; height: 13px; }
+  .dm-sun { color: #fff; opacity: 1; transform: rotate(0deg) scale(1); }
+  .dm-moon { color: #c8d8f0; opacity: 0; transform: rotate(-30deg) scale(0.6); }
+  .dark-mode-btn.active .dm-sun { opacity: 0; transform: rotate(90deg) scale(0.6); }
+  .dark-mode-btn.active .dm-moon { opacity: 1; transform: rotate(0deg) scale(1); }
+
+  /* Sun rays pulse animation when idle */
+  @keyframes sun-pulse {
+    0%, 100% { box-shadow: 0 1px 6px rgba(246,201,14,0.5); }
+    50% { box-shadow: 0 1px 10px rgba(246,201,14,0.85); }
+  }
+  .dark-mode-btn:not(.active) .dm-thumb {
+    animation: sun-pulse 2.5s ease-in-out infinite;
+  }
+  @keyframes moon-glow {
+    0%, 100% { box-shadow: 0 1px 6px rgba(100,150,220,0.5); }
+    50% { box-shadow: 0 1px 10px rgba(100,150,220,0.9); }
+  }
+  .dark-mode-btn.active .dm-thumb {
+    animation: moon-glow 3s ease-in-out infinite;
+  }
+
   .sidebar-footer { border-top: 1px solid rgba(255,255,255,0.06); padding: 12px 10px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
   .sidebar-logout-btn {
     flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius);
@@ -2487,3 +2573,211 @@
   gap: 5px;
 }
 .btn-sm svg { width: 13px; height: 13px; }
+
+/* ══════════════════════════════════════════
+   DARK MODE — overrides for hardcoded colors
+   ══════════════════════════════════════════ */
+body.dark-mode .topbar,
+body.dark-mode .modal-box,
+body.dark-mode .modal-overlay .modal-box,
+body.dark-mode .toolbar,
+body.dark-mode .card,
+body.dark-mode .asset-card,
+body.dark-mode .ot-card,
+body.dark-mode .ot-detail-panel,
+body.dark-mode .filter-panel,
+body.dark-mode .dropdown-menu,
+body.dark-mode .tab-bar,
+body.dark-mode .section-header,
+body.dark-mode input[type="text"],
+body.dark-mode input[type="email"],
+body.dark-mode input[type="password"],
+body.dark-mode input[type="number"],
+body.dark-mode input[type="search"],
+body.dark-mode input[type="date"],
+body.dark-mode textarea,
+body.dark-mode select,
+body.dark-mode .field-select,
+body.dark-mode .ativo-status-btn,
+body.dark-mode .btn-outline {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+body.dark-mode input:focus,
+body.dark-mode textarea:focus,
+body.dark-mode select:focus {
+  background: var(--bg-card);
+}
+
+body.dark-mode .topbar {
+  box-shadow: 0 1px 0 var(--border);
+}
+
+body.dark-mode * {
+  transition: background-color 0.35s ease, border-color 0.35s ease, color 0.35s ease;
+}
+
+/* ══════════════════════════════════════════
+   DARK MODE — home.css / Início
+   ══════════════════════════════════════════ */
+
+/* Cards e containers brancos */
+body.dark-mode .home-kpi-card,
+body.dark-mode .home-chart-card,
+body.dark-mode .home-side-card,
+body.dark-mode .home-notif-card,
+body.dark-mode .home-filters,
+body.dark-mode .hkm-box,
+body.dark-mode .hkm-header,
+body.dark-mode .hfa-header,
+body.dark-mode .hfa-tab.active {
+  background: var(--bg-card);
+  border-color: var(--border);
+}
+
+/* Botões e controles brancos */
+body.dark-mode .home-period-btn,
+body.dark-mode .home-period-dropdown,
+body.dark-mode .hpm-nav-btn,
+body.dark-mode .hpm-mes,
+body.dark-mode .hpa-ano,
+body.dark-mode .home-custom-date,
+body.dark-mode .hup-toggle-btn {
+  background: var(--bg-card);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+body.dark-mode .home-period-dropdown {
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+
+/* Hover das opções do dropdown */
+body.dark-mode .home-period-option:hover,
+body.dark-mode .home-notif-item:hover,
+body.dark-mode .home-notif-tab:hover {
+  background: rgba(255,255,255,0.05);
+}
+
+body.dark-mode .home-period-option.active {
+  background: rgba(0,168,204,0.08);
+}
+
+/* Área de picker custom */
+body.dark-mode .home-period-custom,
+body.dark-mode .home-picker-wrap {
+  background: rgba(255,255,255,0.03);
+  border-color: var(--border);
+}
+
+/* Período range pill */
+body.dark-mode .home-period-range {
+  background: rgba(255,255,255,0.06);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+/* Barra de fundo dos gráficos horizontais */
+body.dark-mode .home-hbar-track {
+  background: rgba(255,255,255,0.07);
+}
+
+/* Tab de notificações ativa */
+body.dark-mode .home-notif-tab.active {
+  background: transparent;
+}
+
+/* Tabs de falha */
+body.dark-mode .hfa-tabs {
+  background: rgba(255,255,255,0.03);
+}
+body.dark-mode .hfa-tab.active {
+  background: var(--bg-card);
+}
+
+/* Card de falha */
+body.dark-mode .hfa-card {
+  background: rgba(255,255,255,0.03);
+  border-color: var(--border);
+}
+
+/* Badge contadores */
+body.dark-mode .home-chart-badge,
+body.dark-mode .home-side-total,
+body.dark-mode .hkm-count {
+  background: rgba(255,255,255,0.07);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+/* Setor tag no feed */
+body.dark-mode .hup-setor-tag {
+  background: rgba(255,255,255,0.06);
+  border-color: var(--border);
+}
+
+/* Dot da timeline */
+body.dark-mode .hup-dot {
+  border-color: var(--bg-card);
+}
+
+/* Footer dos cards de ativo no modal KPI */
+body.dark-mode .hkm-ac-footer {
+  background: rgba(255,255,255,0.03);
+  border-color: var(--border);
+}
+
+/* Tag de ativo no modal KPI */
+body.dark-mode .hkm-ac-tag {
+  background: rgba(255,255,255,0.06);
+}
+
+/* Cabeçalho sticky da tabela KPI */
+body.dark-mode .hkm-table thead th {
+  background: var(--night-mid);
+  border-color: var(--border);
+}
+
+/* Linha hover da tabela */
+body.dark-mode .hkm-clickable:hover {
+  background: rgba(255,255,255,0.04);
+}
+
+/* Cards de ativos no modal */
+body.dark-mode .hkm-asset-card {
+  background: rgba(255,255,255,0.03);
+  border-color: var(--border);
+}
+body.dark-mode .hkm-asset-card:hover {
+  box-shadow: 0 8px 28px rgba(0,0,0,0.5);
+}
+
+/* Botão de paginação */
+body.dark-mode .hup-page-btn,
+body.dark-mode .hkm-pg-btn {
+  background: var(--bg-card);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+body.dark-mode .hup-page-btn:hover:not(:disabled),
+body.dark-mode .hkm-pg-btn:hover:not(:disabled) {
+  background: rgba(255,255,255,0.07);
+  color: var(--text-primary);
+}
+
+/* Badges de status — ajuste de texto para modo escuro */
+body.dark-mode .notif-badge-gray {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-secondary);
+}
+body.dark-mode .hkm-st-pendente {
+  background: rgba(255,255,255,0.07);
+  color: var(--text-secondary);
+}
+body.dark-mode .hkm-ac-status-badge.sb-muted {
+  background: rgba(255,255,255,0.07);
+  color: var(--text-muted);
+  border-color: rgba(255,255,255,0.1);
+}
