@@ -197,6 +197,61 @@
     animation: moon-glow 3s ease-in-out infinite;
   }
 
+  /* ── OPTIMIZED MODE TOGGLE ── */
+  .opt-mode-row { border-top: none; padding-bottom: 4px; }
+  .opt-mode-btn .opt-dm-thumb {
+    background: rgba(255,255,255,0.22) !important;
+    color: rgba(255,255,255,0.55);
+    box-shadow: none !important;
+    animation: none !important;
+    transition: transform 0.3s ease, background 0.3s ease !important;
+  }
+  .opt-mode-btn.active .opt-dm-thumb {
+    transform: translateX(24px);
+    background: var(--green) !important;
+    color: #fff;
+    box-shadow: 0 1px 6px rgba(42,157,143,0.45) !important;
+  }
+  .opt-mode-btn.active .dm-track {
+    background: rgba(42,157,143,0.22) !important;
+    border-color: rgba(42,157,143,0.38) !important;
+  }
+
+  /* ── OPTIMIZED MODE EFFECTS ── */
+  body.optimized-mode *,
+  body.optimized-mode *::before,
+  body.optimized-mode *::after {
+    transition-duration: 1ms !important;
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  body.optimized-mode .sidebar-backdrop,
+  body.optimized-mode .modal-overlay {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+  body.optimized-mode .modal,
+  body.optimized-mode .right-drawer,
+  body.optimized-mode .notif-dropdown,
+  body.optimized-mode .autocomplete-dropdown,
+  body.optimized-mode .ativo-search-dropdown {
+    box-shadow: 0 2px 10px rgba(0,0,0,0.18) !important;
+  }
+  body.optimized-mode .asset-card:hover,
+  body.optimized-mode .btn-primary:hover,
+  body.optimized-mode .rotina-fab:hover,
+  body.optimized-mode .fab-btn:hover,
+  body.optimized-mode .ativo-search-card:hover,
+  body.optimized-mode .detail-card:hover,
+  body.optimized-mode .avot-card:hover {
+    transform: none !important;
+  }
+  body.optimized-mode body,
+  body.optimized-mode .tab-panel.active {
+    animation: none !important;
+  }
+
   .sidebar-footer { border-top: 1px solid rgba(255,255,255,0.06); padding: 12px 10px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
   .sidebar-logout-btn {
     flex-shrink: 0; width: 36px; height: 36px; border-radius: var(--radius);

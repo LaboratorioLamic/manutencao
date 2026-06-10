@@ -193,6 +193,25 @@
     document.body.style.overflow = '';
   }
 
+  // ── OPTIMIZED MODE ──
+  if (localStorage.getItem('optimizedMode') === '1') {
+    document.body.classList.add('optimized-mode');
+  }
+  document.addEventListener('DOMContentLoaded', function() {
+    if (localStorage.getItem('optimizedMode') === '1') {
+      const btn = document.getElementById('opt-mode-btn');
+      if (btn) btn.classList.add('active');
+    }
+  });
+
+  function toggleOptimizedMode() {
+    const body = document.body;
+    const btn = document.getElementById('opt-mode-btn');
+    const on = body.classList.toggle('optimized-mode');
+    btn.classList.toggle('active', on);
+    localStorage.setItem('optimizedMode', on ? '1' : '0');
+  }
+
   // ── DARK MODE ──
   if (localStorage.getItem('darkMode') === '1') {
     document.body.classList.add('dark-mode');
