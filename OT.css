@@ -257,10 +257,10 @@
   position: fixed; top: 0; right: -580px; bottom: 0;
   width: 560px; max-width: 100vw;
   background: var(--bg-card);
-  box-shadow: -8px 0 40px rgba(14,22,40,0.22);
+  box-shadow: -2px 0 20px rgba(14,22,40,0.15);
   z-index: 700;
   display: flex; flex-direction: column;
-  transition: right 0.35s cubic-bezier(0.4,0,0.2,1);
+  transition: right 0.22s cubic-bezier(0.4,0,0.2,1);
 }
 .ot-form-drawer.open { right: 0; }
 #modal-ot-view  { z-index: 700; }
