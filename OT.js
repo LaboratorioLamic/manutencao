@@ -513,8 +513,8 @@ function _otGetFiltered() {
     if (ativo) {
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
     } else if (o.setor) {
-      const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
-      if (visSetores && !visSetores.includes(o.setor)) return false;
+      const fakeAtivo = { setor: o.setor };
+      if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(fakeAtivo)) return false;
     }
     if (_otFilterAtivoIdx !== null && o.ativoIdx !== _otFilterAtivoIdx) return false;
     if (_otFilterMyOTs && sess) {
@@ -565,16 +565,16 @@ function _otRenderKanban() {
 }
 
 function _otCardDeadlineInfo(o) {
-  if (!o.prazo) return { diff: null, alertLimit: 2, cls: '', txt: '' };
+  if (!o.prazo) return { diff: null, alertLimit: null, cls: '', txt: '' };
   const today = new Date(); today.setHours(0,0,0,0);
   const d = new Date(o.prazo + 'T00:00:00');
   const diff = Math.ceil((d - today) / 86400000);
-  let alertLimit = 2;
+  let alertLimit = null;
   if (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null) {
     const parsed = parseInt(o.prazoAlertaDias, 10);
     if (!Number.isNaN(parsed) && parsed >= 0) alertLimit = parsed;
   }
-  const cls = diff < 0 ? 'ot-card-overdue' : (diff <= alertLimit ? 'ot-card-warning' : '');
+  const cls = diff < 0 ? 'ot-card-overdue' : (alertLimit !== null && diff <= alertLimit ? 'ot-card-warning' : '');
   const txt = diff < 0 ? `Vencida ${Math.abs(diff)}d` : (diff === 0 ? 'Vence hoje' : _fmtDate(o.prazo));
   return { diff, alertLimit, cls, txt };
 }
@@ -599,7 +599,7 @@ function _otCardHTML(o) {
 
   // Cor da barra lateral: vermelho=vencida, laranja=em alerta, senão usa severidade
   const deadlineSide = diff !== null && diff < 0 ? 'ot-card-side-overdue'
-    : (diff !== null && diff <= alertLimit ? 'ot-card-side-warning' : '');
+    : (diff !== null && alertLimit !== null && diff <= alertLimit ? 'ot-card-side-warning' : '');
 
   const terceiroHtml = o.terceirizado
     ? `<span class="ot-badge ot-badge-terceiro">Terceirizado</span>` : '';
@@ -1766,7 +1766,7 @@ function _otRenderView(o) {
   </div>
   ${o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null ? `<div class="detail-card">
     <div class="detail-label">Alerta</div>
-    <div class="detail-value">${_escHtml(String(o.prazoAlertaDias))} dia(s)</div>
+    <div class="detail-value">${o.prazoAlertaDias === 0 ? 'Mesmo dia' : _escHtml(String(o.prazoAlertaDias)) + ' dia(s)'}</div>
   </div>` : ''}
   ${o.dataConclusao ? `<div class="detail-card">
     <div class="detail-label">Data de Conclusão</div>

@@ -167,7 +167,7 @@
       if (t.status !== 'Ativo' || !t.proximaData) return false;
       const due  = new Date(t.proximaData + 'T00:00:00');
       const diff = Math.ceil((due - hoje) / 86400000);
-      return diff >= 0 && diff <= (t.lembrete || 3);
+      return diff >= 0 && t.lembrete !== null && t.lembrete !== undefined && diff <= t.lembrete;
     });
 
     // Publicações — campo "tipo" pode não existir em registros antigos;
@@ -1148,7 +1148,7 @@
           const todayP = new Date(); todayP.setHours(0,0,0,0);
           const dP = new Date(ot.prazo + 'T00:00:00');
           const diffP = Math.ceil((dP - todayP) / 86400000);
-          let alertLimit = 2;
+          let alertLimit = null;
           if (ot.prazoAlertaDias !== undefined && ot.prazoAlertaDias !== null) {
             const parsed = parseInt(ot.prazoAlertaDias, 10);
             if (!Number.isNaN(parsed) && parsed >= 0) alertLimit = parsed;
@@ -1157,7 +1157,7 @@
             prazoBadge = `<span class="home-notif-badge notif-badge-red" style="margin-left:4px">Vencida ${Math.abs(diffP)}d</span>`;
           } else if (diffP === 0) {
             prazoBadge = `<span class="home-notif-badge notif-badge-red" style="margin-left:4px">Vence hoje</span>`;
-          } else if (diffP <= alertLimit) {
+          } else if (alertLimit !== null && diffP <= alertLimit) {
             prazoBadge = `<span class="home-notif-badge notif-badge-amber" style="margin-left:4px">${diffP}d restante${diffP !== 1 ? 's' : ''}</span>`;
           }
         }

@@ -38,9 +38,12 @@
     const selCat   = document.getElementById('agenda-filter-cat');
     if (!selTipo || !selSetor || !selCat) return;
 
+    const ativosVisiveis = (typeof _userCanSeeAtivo === 'function')
+      ? state.ativos.filter(a => _userCanSeeAtivo(a))
+      : state.ativos;
     const tipos    = [...new Set(state.rotinas.map(r => r.tipo).filter(Boolean))].sort();
-    const setores  = [...new Set(state.ativos.map(a => a.setor).filter(Boolean))].sort();
-    const cats     = [...new Set(state.ativos.map(a => a.categoria).filter(Boolean))].sort();
+    const setores  = [...new Set(ativosVisiveis.map(a => a.setor).filter(Boolean))].sort();
+    const cats     = [...new Set(ativosVisiveis.map(a => a.categoria).filter(Boolean))].sort();
 
     const _rebuild = (sel, items, placeholder) => {
       const cur = sel.value;
@@ -240,10 +243,9 @@
   // VISIBILIDADE POR PERMISSÃO
   // ══════════════════════════════════════════
   function _tarefaVisivel(t) {
-    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
-    if (visSetores) {
+    if (typeof _userCanSeeAtivo === 'function') {
       const ativo = state.ativos[t.equipamentoIdx];
-      if (!ativo || !visSetores.includes(ativo.setor)) return false;
+      if (!ativo || !_userCanSeeAtivo(ativo)) return false;
     }
     return true;
   }

@@ -160,7 +160,9 @@
     const due = new Date(tarefa.proximaData + 'T00:00:00');
     const diff = Math.ceil((due - today) / 86400000);
     if (diff < 0) return { cls: 'flag-danger', icon: '!', label: `Vencida ${Math.abs(diff)}d` };
-    if (diff <= (tarefa.lembrete || 3)) return { cls: 'flag-warning', icon: '⚠', label: `${diff}d restantes` };
+    const lembrete = tarefa.lembrete;
+    if (lembrete === null || lembrete === undefined) return { cls: 'flag-ok', icon: '✓', label: `${diff}d` };
+    if (diff <= lembrete) return { cls: 'flag-warning', icon: '⚠', label: `${diff}d restantes` };
     return { cls: 'flag-ok', icon: '✓', label: `${diff}d` };
   }
 
@@ -408,7 +410,7 @@
           tipo: 'danger', rotinaNome: rotina.nome, tarefaNome: t.titulo || rotina.nome, equipNome: ativo.nome, equipCodigo: ativo.codigo,
           msg: `Vencida há ${Math.abs(diffDays)} dia(s)`, diffDays
         });
-      } else if (diffDays <= (t.lembrete || 3)) {
+      } else if (t.lembrete !== null && t.lembrete !== undefined && diffDays <= t.lembrete) {
         alerts.push({
           tarefaId: t.id, equipamentoIdx: t.equipamentoIdx, proximaData: t.proximaData,
           tipo: 'warning', rotinaNome: rotina.nome, tarefaNome: t.titulo || rotina.nome, equipNome: ativo.nome, equipCodigo: ativo.codigo,
@@ -427,8 +429,9 @@
         const ativo = (o.ativoIdx !== null && o.ativoIdx !== undefined) ? state.ativos[o.ativoIdx] : null;
         const due = new Date(o.prazo + 'T00:00:00');
         const diffDays = Math.ceil((due - today) / 86400000);
-        const alertLimit = (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null)
-          ? (parseInt(o.prazoAlertaDias, 10) || 2) : 2;
+        const _otAlertRaw = (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null)
+          ? parseInt(o.prazoAlertaDias, 10) : null;
+        const alertLimit = (_otAlertRaw !== null && !Number.isNaN(_otAlertRaw) && _otAlertRaw >= 0) ? _otAlertRaw : null;
 
         if (diffDays < 0) {
           alerts.push({
@@ -437,7 +440,7 @@
             equipCodigo: ativo ? ativo.codigo : '', msg: `Vencida há ${Math.abs(diffDays)} dia(s)`, diffDays,
             isOT: true, otTitulo: o.titulo || ''
           });
-        } else if (diffDays <= alertLimit) {
+        } else if (alertLimit !== null && diffDays <= alertLimit) {
           alerts.push({
             otId: o.id, equipamentoIdx: o.ativoIdx ?? null, proximaData: o.prazo,
             tipo: 'warning', rotinaNome: o.numero || 'OT', equipNome: ativo ? ativo.nome : (o.titulo || '—'),
@@ -473,10 +476,11 @@
       ).forEach(o => {
         const due = new Date(o.prazo + 'T00:00:00');
         const diffDays = Math.ceil((due - today) / 86400000);
-        const alertLimit = (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null)
-          ? (parseInt(o.prazoAlertaDias, 10) || 2) : 2;
+        const _otAlertRaw2 = (o.prazoAlertaDias !== undefined && o.prazoAlertaDias !== null)
+          ? parseInt(o.prazoAlertaDias, 10) : null;
+        const alertLimit = (_otAlertRaw2 !== null && !Number.isNaN(_otAlertRaw2) && _otAlertRaw2 >= 0) ? _otAlertRaw2 : null;
         if (diffDays < 0) danger++;
-        else if (diffDays <= alertLimit) warning++;
+        else if (alertLimit !== null && diffDays <= alertLimit) warning++;
       });
     }
     return { danger, warning, total: danger + warning };
@@ -1485,7 +1489,8 @@
     const equipIdx   = parseInt(document.getElementById('tarefa-equip-select').value);
     const rotinaId   = document.getElementById('tarefa-rotina-select').value;
     const data       = document.getElementById('tarefa-data').value;
-    const lembrete   = parseInt(document.getElementById('tarefa-lembrete').value) || 3;
+    const _lembreteRaw = document.getElementById('tarefa-lembrete').value;
+    const lembrete = (_lembreteRaw === '' || _lembreteRaw === null) ? null : (parseInt(_lembreteRaw, 10) >= 0 ? parseInt(_lembreteRaw, 10) : null);
     const proxima    = document.getElementById('tarefa-proxima-data').value;
     const status     = document.getElementById('tarefa-status').checked ? 'Ativo' : 'Inativo';
     const obs        = document.getElementById('tarefa-obs').value.trim();
@@ -1553,14 +1558,14 @@
 
     const fAtivoIdx  = state._ativoFiltroTarefasIdx ?? null;
     const fRotinaId  = state._rotinaFiltroTarefasId ?? null;
-    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
+    const fSetor     = document.getElementById('filter-setor-rotina')?.value || '';
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
     const { col: tSCol, dir: tSDir } = _tarefasSort;
     const allList = state.tarefas.filter(t => {
-      if (visSetores) {
-        const ativo = state.ativos[t.equipamentoIdx];
-        if (!ativo || !visSetores.includes(ativo.setor)) return false;
-      }
+      const ativo = state.ativos[t.equipamentoIdx];
+      if (!ativo) return false;
+      if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
+      if (fSetor && ativo.setor !== fSetor) return false;
       if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
       if (fRotinaId !== null && t.rotinaId !== fRotinaId) return false;
       if (_minhasTarefasAtivo && _sess) {
@@ -1630,7 +1635,7 @@
         </td>
         <td style="font-size:12.5px;">${formatDate(t.dataTarefa)}</td>
         <td style="font-size:12.5px;${t.proximaData ? '' : 'color:var(--text-muted);'}">${t.proximaData ? formatDate(t.proximaData) : '—'}</td>
-        <td style="font-size:12.5px;">${t.lembrete ? t.lembrete + ' dias' : '—'}</td>
+        <td style="font-size:12.5px;">${t.lembrete === 0 ? 'Mesmo dia' : t.lembrete ? t.lembrete + ' dias' : '—'}</td>
         <td>${statusChip}${nPubs > 0 ? `<span class="chip chip-cyan" style="margin-left:6px;">${nPubs} pub.</span>` : ''}</td>
       </tr>`;
     }).join('');
@@ -1752,7 +1757,7 @@
         <div class="rotina-view-grid">
           <div class="detail-card"><div class="detail-label">Data da Tarefa</div><div class="detail-value">${formatDate(t.dataTarefa)}</div></div>
           <div class="detail-card"><div class="detail-label">Próxima Data</div><div class="detail-value" style="color:var(--cyan);">${t.proximaData ? formatDate(t.proximaData) : '—'}</div></div>
-          ${t.frequencia !== 'Sempre' ? `<div class="detail-card"><div class="detail-label">Lembrete</div><div class="detail-value">${t.lembrete ? t.lembrete + ' dias antes' : '—'}</div></div>` : ''}
+          ${t.frequencia !== 'Sempre' ? `<div class="detail-card"><div class="detail-label">Lembrete</div><div class="detail-value">${t.lembrete === 0 ? 'Mesmo dia' : t.lembrete ? t.lembrete + ' dias antes' : '—'}</div></div>` : ''}
           <div class="detail-card"><div class="detail-label">Status</div><div class="detail-value">${t.status}</div></div>
           <div class="detail-card"><div class="detail-label">Publicações</div><div class="detail-value">${nPubs} registrada${nPubs !== 1 ? 's' : ''}</div></div>
         </div>
@@ -2689,7 +2694,7 @@
 
     const fAtivoIdx  = state._ativoFiltroAtividadesIdx ?? null;
     const fRotinaId  = state._rotinaFiltroAtividadesId ?? null;
-    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
+    const fSetor     = document.getElementById('filter-setor-rotina')?.value || '';
     const canEdit   = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
     const canDelete = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
@@ -2700,10 +2705,10 @@
         if (_minhasAtividadesAtivo && _sess && p.publicadoPorId !== _sess.userId) return false;
         const t = state.tarefas.find(t => t.id === p.tarefaId);
         if (!t) return false;
-        if (visSetores) {
-          const ativo = state.ativos[t.equipamentoIdx];
-          if (!ativo || !visSetores.includes(ativo.setor)) return false;
-        }
+        const ativo = state.ativos[t.equipamentoIdx];
+        if (!ativo) return false;
+        if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
+        if (fSetor && ativo.setor !== fSetor) return false;
         if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
         if (fRotinaId !== null && t.rotinaId !== fRotinaId) return false;
         return true;
@@ -2950,13 +2955,12 @@
     const fSetor  = document.getElementById('filter-setor-rotina')?.value || '';
     const fCat    = document.getElementById('filter-cat-rotina')?.value || '';
     const fAtivoIdx = state._ativoFiltroIdx ?? null;
-    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
 
     const { col: rSCol, dir: rSDir } = _rotinasSort;
     const allList = state.rotinas.filter(r => {
       const ativo = state.ativos[r.equipamentoIdx];
       if (!ativo) return false;
-      if (visSetores && !visSetores.includes(ativo.setor)) return false;
+      if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
       if (fAtivoIdx !== null && r.equipamentoIdx !== fAtivoIdx) return false;
       if (fTipo && r.tipo !== fTipo) return false;
       if (fSetor && ativo.setor !== fSetor) return false;

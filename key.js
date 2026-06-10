@@ -471,6 +471,7 @@ function openTopbarSectorFilter() {
     if (typeof renderTarefasTable       === 'function') renderTarefasTable();
     if (typeof renderAtividadesTable    === 'function') renderAtividadesTable();
     if (typeof _otRenderKanban          === 'function') _otRenderKanban();
+    if (typeof renderAgendaCalendario   === 'function') renderAgendaCalendario();
     if (typeof atualizarSelects         === 'function') atualizarSelects();
     if (typeof updateNotifBadge         === 'function') updateNotifBadge();
     if (typeof renderHome               === 'function') renderHome();
