@@ -95,7 +95,11 @@
     if (t.equipamentoIdx != null && typeof state !== 'undefined') {
       return state.ativos[t.equipamentoIdx]?.setor || '';
     }
-    return state?.rotinas?.find(r => r.id === t.rotinaId)?.setor || '';
+    const rotina = state?.rotinas?.find(r => r.id === t.rotinaId);
+    if (!rotina) return '';
+    if (rotina.setor) return rotina.setor;
+    if (rotina.equipamentoIdx != null) return state?.ativos[rotina.equipamentoIdx]?.setor || '';
+    return '';
   }
 
   function _inSetor(setor) {
@@ -139,7 +143,10 @@
 
     const ordensVis   = ordens.filter(o => _inSetor(_otSetor(o)) && (!_homeOnlyMine || !_uid || _isMine_ot(o)));
     const ativosVis   = ativos.filter(a => _inSetor(a.setor));  // ativos: sem filtro por responsável
-    const rotinasVis  = rotinas.filter(r => _inSetor(r.setor));
+    const rotinasVis  = rotinas.filter(r => {
+      const setor = r.setor || (r.equipamentoIdx != null ? ativos[r.equipamentoIdx]?.setor : '') || '';
+      return _inSetor(setor);
+    });
     const tarefasVis  = tarefas.filter(t => _inSetor(_tarefaSetor(t)) && (!_homeOnlyMine || !_uid || _isMine_tarefa(t)));
     const tarefasIds  = new Set(tarefasVis.map(t => t.id));
     const pubsVis     = publicacoes.filter(p => tarefasIds.has(p.tarefaId) && (!_homeOnlyMine || !_uid || _isMine_pub(p)));

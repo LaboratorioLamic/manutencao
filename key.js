@@ -509,8 +509,9 @@ function applyPermissions() {
   vis('fab-new-tarefa',  can('tarefas.criar'));
 
   // Botões de editar setor, categoria e tipo
-  vis('btn-editar-setor-toolbar',  can('ativos.editarSetor'));
-  vis('btn-editar-setor-form',     can('ativos.editarSetor'));
+  vis('btn-editar-setor-toolbar',        can('ativos.editarSetor'));
+  vis('btn-editar-setor-form',           can('ativos.editarSetor'));
+  vis('btn-sector-modal-edit-setor',     can('ativos.editarSetor'));
   vis('btn-editar-categoria-form',  can('ativos.editarCategoria'));
   vis('btn-nova-categoria-toolbar', can('ativos.editarCategoria'));
   vis('btn-editar-tipo-rotina',    can('rotinas.editarTipo'));

@@ -479,9 +479,9 @@
   #modal-sector-select {
     z-index: 20001;
   }
-  /* Garantir que o modal de selecionar setores genérico fique acima de todos os elementos */
+  /* Garantir que o modal de gerenciar setores fique acima do modal de selecionar setores */
   #modal-setor {
-    z-index: 620;
+    z-index: 20002;
   }
   .modal-overlay.open { opacity: 1; pointer-events: all; }
   .modal-overlay.open .modal { transform: scale(1) translateY(0); }

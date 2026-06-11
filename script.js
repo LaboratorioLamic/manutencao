@@ -2659,6 +2659,16 @@
     const ativo = t ? state.ativos[t.equipamentoIdx] : null;
 
     document.getElementById('pub-view-body').innerHTML = `
+      ${t?.titulo ? `
+      <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;margin-bottom:14px;background:linear-gradient(135deg,var(--cyan-light) 0%,rgba(0,168,204,0.06) 100%);border:1.5px solid rgba(0,168,204,0.25);border-radius:12px;">
+        <div style="width:38px;height:38px;border-radius:10px;background:var(--cyan);display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" style="width:18px;height:18px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+        </div>
+        <div style="min-width:0;">
+          <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--cyan);margin-bottom:3px;">Tarefa</div>
+          <div style="font-size:15px;font-weight:700;color:var(--text-primary);line-height:1.3;word-break:break-word;">${t.titulo}</div>
+        </div>
+      </div>` : ''}
       <div style="display:flex;gap:18px;align-items:flex-start;flex-wrap:wrap;">
         <div style="flex:1;min-width:220px;">
           <div class="form-section-title" style="margin-bottom:8px;">Ativo</div>
