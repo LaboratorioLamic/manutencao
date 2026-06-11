@@ -1597,7 +1597,7 @@
         </div>
 
         <div class="form-field">
-          <label class="field-label">Data da Tarefa <span class="required">*</span></label>
+          <label class="field-label" id="tarefa-data-label">Data da Tarefa <span class="required" id="tarefa-data-required">*</span></label>
           <input type="date" id="tarefa-data" class="field-input" oninput="autoCalcProximaData()">
         </div>
 
@@ -2051,6 +2051,10 @@
     </div>
     <div class="modal-body" id="pub-view-body"></div>
     <div class="modal-footer">
+      <button id="btn-excluir-pub-view" class="btn btn-outline" style="color:var(--red);border-color:rgba(230,57,70,0.35);margin-right:auto;" onclick="excluirPublicacaoFromView()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:14px;height:14px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        Excluir
+      </button>
       <button class="btn btn-outline" onclick="closePubView()">Fechar</button>
     </div>
   </div>

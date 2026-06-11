@@ -645,7 +645,7 @@
 }
 
 .home-mine-btn {
-  margin-left: auto;
+  margin-left: 0;
   display: flex;
   align-items: center;
   gap: 5px;

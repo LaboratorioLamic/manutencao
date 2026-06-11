@@ -498,10 +498,15 @@
               </div>` : ''}
           </div>
         </div>
-        <button class="home-mine-btn${_homeOnlyMine ? ' active' : ''}" onclick="homeToggleMine()" title="Mostrar apenas meus itens">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0;"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-          Meus itens
-        </button>
+        <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
+          <button class="home-mine-btn${_homeOnlyMine ? ' active' : ''}" onclick="homeToggleMine()" title="Mostrar apenas meus itens">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0;"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+            Meus itens
+          </button>
+          <button class="home-mine-btn" onclick="switchTab('rotina');switchRotinaTab('agenda');" title="Abrir Agenda">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;" stroke-linecap="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          </button>
+        </div>
       </div>`;
   }
 

@@ -143,6 +143,11 @@
   function calcProximaData(dateStr, rotina) {
     if (!dateStr || !rotina) return '';
     if (rotina.frequencia === 'Sempre') return '';
+    if (rotina.frequencia === 'DiaDaSemana') {
+      const dias = rotina.diasSemana || [];
+      if (dias.length === 0) return '';
+      return calcProximaDataDiaSemana(dateStr, dias);
+    }
     const d = new Date(dateStr + 'T12:00:00');
     const n = parseInt(rotina.fazerCada) || 1;
     switch (rotina.frequencia) {
@@ -604,7 +609,18 @@
     document.getElementById('tarefa-titulo').value = '';
     document.getElementById('tarefa-rotina-select').innerHTML = '<option value="">Selecione a rotina...</option>';
     document.getElementById('tarefa-rotina-info').style.display = 'none';
-    document.getElementById('tarefa-data').value = '';
+    const _dataInputReset = document.getElementById('tarefa-data');
+    _dataInputReset.value = '';
+    _dataInputReset.readOnly = false;
+    _dataInputReset.style.opacity = '';
+    _dataInputReset.style.cursor = '';
+    _dataInputReset.setAttribute('oninput', 'autoCalcProximaData()');
+    const _dataLabelReset = document.getElementById('tarefa-data-label');
+    if (_dataLabelReset) {
+      _dataLabelReset.childNodes[0].textContent = 'Data da Tarefa ';
+      const _reqSpan = document.getElementById('tarefa-data-required');
+      if (_reqSpan) _reqSpan.style.display = '';
+    }
     document.getElementById('tarefa-lembrete').value = '';
     document.getElementById('tarefa-obs').value = '';
     document.getElementById('tarefa-fazer-cada').value = '';
@@ -633,7 +649,26 @@
       onTarefaEquipChange();
       document.getElementById('tarefa-rotina-select').value = editing.rotinaId;
       onTarefaRotinaChange();
-      document.getElementById('tarefa-data').value = editing.dataTarefa || '';
+      const _tarefaDataInput = document.getElementById('tarefa-data');
+      const _tarefaDataLabel = document.getElementById('tarefa-data-label');
+      const _tarefaDataRequired = document.getElementById('tarefa-data-required');
+      const _temPublicacoes = state.publicacoes && state.publicacoes.some(p => p.tarefaId === editing.id);
+      _tarefaDataInput.value = editing.dataTarefa || '';
+      if (_temPublicacoes) {
+        _tarefaDataLabel.childNodes[0].textContent = 'Ultima publicação ';
+        if (_tarefaDataRequired) _tarefaDataRequired.style.display = 'none';
+        _tarefaDataInput.readOnly = true;
+        _tarefaDataInput.style.opacity = '0.7';
+        _tarefaDataInput.style.cursor = 'default';
+        _tarefaDataInput.removeAttribute('oninput');
+      } else {
+        _tarefaDataLabel.childNodes[0].textContent = 'Data da Tarefa ';
+        if (_tarefaDataRequired) _tarefaDataRequired.style.display = '';
+        _tarefaDataInput.readOnly = false;
+        _tarefaDataInput.style.opacity = '';
+        _tarefaDataInput.style.cursor = '';
+        _tarefaDataInput.setAttribute('oninput', 'autoCalcProximaData()');
+      }
       document.getElementById('tarefa-lembrete').value = editing.lembrete || '';
       document.getElementById('tarefa-obs').value = editing.observacoes || '';
       document.getElementById('tarefa-fazer-cada').value = editing.fazerCada || '';
@@ -1774,7 +1809,7 @@
           Programação
         </div>
         <div class="rotina-view-grid">
-          <div class="detail-card"><div class="detail-label">Data da Tarefa</div><div class="detail-value">${formatDate(t.dataTarefa)}</div></div>
+          <div class="detail-card"><div class="detail-label">${nPubs > 0 ? 'Ultima publicação' : 'Data da Tarefa'}</div><div class="detail-value">${formatDate(t.dataTarefa)}</div></div>
           <div class="detail-card"><div class="detail-label">Próxima Data</div><div class="detail-value" style="color:var(--cyan);">${t.proximaData ? formatDate(t.proximaData) : '—'}</div></div>
           ${t.frequencia !== 'Sempre' ? `<div class="detail-card"><div class="detail-label">Lembrete</div><div class="detail-value">${t.lembrete === 0 ? 'Mesmo dia' : t.lembrete ? t.lembrete + ' dias antes' : '—'}</div></div>` : ''}
           <div class="detail-card"><div class="detail-label">Status</div><div class="detail-value">${t.status}</div></div>
@@ -2188,6 +2223,7 @@
 
     closeModal('modal-publicar');
     saveState();
+    if (typeof renderHome === 'function') renderHome();
 
     const tarefaFinal = state.tarefas[tIdx];
     const vezesFinal  = tarefaFinal?.vezes ?? rotina?.vezes;
@@ -2498,6 +2534,13 @@
 
   let _pubExcluirId = null;
 
+  function excluirPublicacaoFromView() {
+    const pubId = _pubViewId;
+    if (!pubId) return;
+    closeModal('modal-pub-view');
+    excluirPublicacao(pubId);
+  }
+
   function excluirPublicacao(pubId) {
     if (!_can('atividades.excluir')) { showToast('Sem permissão para excluir publicações.', 'error'); return; }
     _pubExcluirId = pubId;
@@ -2525,6 +2568,7 @@
     }
 
     saveState();
+    if (typeof renderHome === 'function') renderHome();
     showToast('Publicação excluída.', 'success');
   }
 
@@ -2678,6 +2722,9 @@
 
     const btnEditPub = document.querySelector('#modal-pub-view .modal-header button[onclick="editarPubView()"]');
     if (btnEditPub) btnEditPub.style.display = _can('atividades.editar') ? '' : 'none';
+
+    const btnExcluirPubView = document.getElementById('btn-excluir-pub-view');
+    if (btnExcluirPubView) btnExcluirPubView.style.display = _can('atividades.excluir') ? '' : 'none';
 
     openModal('modal-pub-view');
   }
@@ -3826,7 +3873,7 @@
         return `
         <div class="list-item-row" style="cursor:pointer;" onclick="viewPublicacao('${p.id}')">
           <div style="display:flex;flex-direction:column;gap:3px;flex:1;">
-            <div style="font-weight:600;font-size:13px;">Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
+            <div style="font-weight:600;font-size:13px;">${t?.titulo ? `${t.titulo} · ` : ''}Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
             <div style="font-size:11px;color:var(--text-muted);">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
             <div style="font-size:11px;color:var(--text-muted);">Publicada em ${formatDate(p.dataPublicacao)}${p.publicadoPorNome ? ` · Por: ${p.publicadoPorNome}` : ''}</div>
           </div>
@@ -4382,7 +4429,7 @@
         const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
         return `<div class="list-item-row" style="cursor:pointer;" onclick="viewPublicacao('${p.id}')">
           <div style="flex:1;">
-            <div style="font-weight:600;font-size:13px;">Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
+            <div style="font-weight:600;font-size:13px;">${t?.titulo ? `${t.titulo} · ` : ''}Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Publicada: ${formatDate(p.dataPublicacao)}${p.publicadoPorNome ? ` · Por: ${p.publicadoPorNome}` : ''}</div>
           </div>
