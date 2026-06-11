@@ -43,13 +43,25 @@ function _hasContent(value) {
 
 // ── API pública ───────────────────────────────────────────────
 
+function _stripUndefined(obj) {
+  if (Array.isArray(obj)) return obj.map(_stripUndefined);
+  if (obj !== null && typeof obj === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== undefined) out[k] = _stripUndefined(v);
+    }
+    return out;
+  }
+  return obj;
+}
+
 async function dbSave(path, data, guardEmpty = true) {
   if (guardEmpty && !_hasContent(data)) {
     console.warn(`[bd.js] dbSave("${path}"): dado vazio ignorado — banco protegido.`);
     return;
   }
   try {
-    await _db.ref(path).set(data);
+    await _db.ref(path).set(_stripUndefined(data));
   } catch (err) {
     console.error(`[bd.js] dbSave("${path}") falhou:`, err);
   }

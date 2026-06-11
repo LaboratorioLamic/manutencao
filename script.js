@@ -2149,13 +2149,14 @@
     }
 
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
+    const _comentariosEntries = Object.entries(pubChecklistComentarios).filter(([, v]) => v !== undefined && v !== null);
     const pub = {
       id: uid(),
       tarefaId: tarefaDetalheId,
       dataRealizada,
       dataPublicacao: new Date().toISOString().split('T')[0],
       checklistMarcado: checkItems.map(it => it.id),
-      checklistComentarios: Object.keys(pubChecklistComentarios).length > 0 ? { ...pubChecklistComentarios } : undefined,
+      ...(_comentariosEntries.length > 0 ? { checklistComentarios: Object.fromEntries(_comentariosEntries) } : {}),
       notas: document.getElementById('pub-notas').value.trim(),
       empresaResponsavel: (document.getElementById('pub-terceiro-section')?.style.display !== 'none') ? (document.getElementById('pub-empresa-responsavel').value.trim() || null) : null,
       tecnicoResponsavel: (document.getElementById('pub-terceiro-section')?.style.display !== 'none') ? (document.getElementById('pub-tecnico-responsavel').value.trim() || null) : null,
@@ -2558,6 +2559,7 @@
     const p = state.publicacoes.find(p => p.id === pubId);
     if (!p) return;
     const t = state.tarefas.find(t => t.id === p.tarefaId);
+    const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
     const tarefaChecklist  = t?.checklistTarefa || [];
 
     function checkListHtml(items, label) {
