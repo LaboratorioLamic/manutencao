@@ -923,7 +923,7 @@
 /* ── Botões Mensal/Semanal no calendário OT ── */
 .ot-cal-view-toggle {
   display: flex; align-items: center; gap: 3px;
-  margin-left: 12px; background: rgba(255,255,255,0.07);
+  margin-left: 12px; background: var(--border);
   border-radius: 7px; padding: 3px;
 }
 .ot-cal-view-btn {
@@ -931,11 +931,12 @@
   padding: 4px 10px; border-radius: 5px;
   font-size: 12px; font-weight: 600;
   background: transparent; border: none;
-  color: rgba(255,255,255,0.55); cursor: pointer;
+  color: var(--text-muted); cursor: pointer;
   transition: all 0.15s; font-family: inherit; white-space: nowrap;
 }
-.ot-cal-view-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+.ot-cal-view-btn:hover { color: var(--text-primary); background: rgba(0,0,0,0.07); }
 .ot-cal-view-btn.active { background: var(--cyan); color: #fff; }
+body.dark-mode .ot-cal-view-btn:hover { background: rgba(255,255,255,0.1); }
 
 /* ── View semanal OT ── */
 .ot-sem-grid { display: flex; flex-direction: column; overflow: hidden; }
