@@ -920,6 +920,88 @@
 .ot-cal-dot-alteracao   { background: #7c3aed; }
 .ot-cal-more { font-size: 10px; color: var(--text-muted); font-weight: 600; padding: 1px 4px; }
 
+/* ── Botões Mensal/Semanal no calendário OT ── */
+.ot-cal-view-toggle {
+  display: flex; align-items: center; gap: 3px;
+  margin-left: 12px; background: rgba(255,255,255,0.07);
+  border-radius: 7px; padding: 3px;
+}
+.ot-cal-view-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 4px 10px; border-radius: 5px;
+  font-size: 12px; font-weight: 600;
+  background: transparent; border: none;
+  color: rgba(255,255,255,0.55); cursor: pointer;
+  transition: all 0.15s; font-family: inherit; white-space: nowrap;
+}
+.ot-cal-view-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+.ot-cal-view-btn.active { background: var(--cyan); color: #fff; }
+
+/* ── View semanal OT ── */
+.ot-sem-grid { display: flex; flex-direction: column; overflow: hidden; }
+.ot-sem-header {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  background: var(--bg); border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.ot-sem-col-header {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 4px; border-right: 1px solid var(--border);
+}
+.ot-sem-col-header:last-child { border-right: none; }
+.ot-sem-dow {
+  font-size: 10px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.ot-sem-num {
+  font-size: 14px; font-weight: 700; color: var(--text-secondary);
+  width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%;
+}
+.ot-sem-num-hoje { background: var(--cyan); color: #fff; }
+.ot-sem-hoje .ot-sem-dow { color: var(--cyan); }
+.ot-sem-body {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  min-height: 320px; overflow-y: auto;
+}
+.ot-sem-col {
+  border-right: 1px solid var(--border);
+  padding: 6px 5px; display: flex; flex-direction: column; gap: 5px;
+  min-height: 320px;
+}
+.ot-sem-col:last-child { border-right: none; }
+.ot-sem-col-hoje { background: rgba(0,168,204,0.04); border-top: 2px solid var(--cyan); }
+.ot-sem-vazio { flex: 1; }
+.ot-sem-pill {
+  border-radius: 7px; padding: 6px 7px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  cursor: pointer; transition: transform 0.12s, box-shadow 0.12s;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.ot-sem-pill:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.12); }
+.ot-sem-pill.ot-cal-pill-overdue { background: rgba(230,57,70,0.07); border-color: rgba(230,57,70,0.2); }
+.ot-sem-pill.ot-cal-pill-warning { background: rgba(244,162,97,0.08); border-color: rgba(244,162,97,0.22); }
+.ot-sem-pill-top {
+  display: flex; align-items: center; gap: 5px;
+}
+.ot-sem-pill-titulo {
+  font-size: 11px; font-weight: 700; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;
+}
+.ot-sem-pill-ativo {
+  font-size: 10px; color: var(--text-secondary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ot-sem-pill-status {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 4px; margin-top: 1px;
+}
+.ot-sem-pill-tipo {
+  font-size: 9px; font-weight: 600; color: var(--text-muted);
+  text-transform: capitalize;
+}
+.ot-sem-pill-sev { font-size: 9px; font-weight: 700; }
+
 /* ── Lista OT ── */
 .ot-list-wrapper { flex: 1; overflow: auto; padding: 16px 24px; }
 .ot-list-toolbar {

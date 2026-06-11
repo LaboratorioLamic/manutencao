@@ -139,6 +139,17 @@ let _otFilterDate     = { mode: null, mes: null, ano: null, de: null, ate: null 
 let _otViewMode       = 'kanban'; // kanban | calendario | lista
 let _otCalYear        = new Date().getFullYear();
 let _otCalMonth       = new Date().getMonth();
+let _otCalSubView     = 'mensal'; // 'mensal' | 'semanal'
+
+function _otInicioSemana(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0,0,0,0);
+  return d;
+}
+let _otSemanaInicio = _otInicioSemana(new Date());
 let _otListSort        = { col: 'prazo', dir: -1 };
 let _otListShowFinais  = false;
 
@@ -650,6 +661,7 @@ function _otCardHTML(o) {
 function _otRenderCalendario() {
   const content = document.getElementById('ot-main-content');
   if (!content) return;
+  if (_otCalSubView === 'semanal') { _otRenderCalendarioSemanal(content); return; }
   const filtered = _otGetFiltered();
   const year = _otCalYear, month = _otCalMonth;
   const firstDay = new Date(year, month, 1).getDay();
@@ -711,6 +723,16 @@ function _otRenderCalendario() {
       <button class="ot-cal-nav-btn" onclick="otCalNav(1)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
       </button>
+      <div class="ot-cal-view-toggle">
+        <button id="ot-cal-view-btn-mensal" class="ot-cal-view-btn${_otCalSubView === 'mensal' ? ' active' : ''}" onclick="otCalSetSubView('mensal')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+          Mensal
+        </button>
+        <button id="ot-cal-view-btn-semanal" class="ot-cal-view-btn${_otCalSubView === 'semanal' ? ' active' : ''}" onclick="otCalSetSubView('semanal')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="8" y1="14" x2="8" y2="18"/><line x1="16" y1="14" x2="16" y2="18"/></svg>
+          Semanal
+        </button>
+      </div>
     </div>
     <div id="ot-cal-picker" class="ot-cal-picker" style="display:none;"></div>
   </div>
@@ -722,7 +744,21 @@ function _otRenderCalendario() {
 </div>`;
 }
 
+function otCalSetSubView(view) {
+  _otCalSubView = view;
+  document.getElementById('ot-cal-view-btn-mensal')?.classList.toggle('active', view === 'mensal');
+  document.getElementById('ot-cal-view-btn-semanal')?.classList.toggle('active', view === 'semanal');
+  _otRenderCalendario();
+}
+
 function otCalNav(dir) {
+  if (_otCalSubView === 'semanal') {
+    const d = new Date(_otSemanaInicio);
+    d.setDate(d.getDate() + dir * 7);
+    _otSemanaInicio = d;
+    _otRenderCalendario();
+    return;
+  }
   _otCalMonth += dir;
   if (_otCalMonth < 0) { _otCalMonth = 11; _otCalYear--; }
   if (_otCalMonth > 11) { _otCalMonth = 0; _otCalYear++; }
@@ -758,6 +794,104 @@ function otCalRenderPicker() {
       ${meses.map((m, i) => `<button class="ot-cal-picker-month${_otCalPickerYear === _otCalYear && i === _otCalMonth ? ' active' : ''}" onclick="otCalPickerSelect(${i})">${m}</button>`).join('')}
     </div>`;
 }
+function _otRenderCalendarioSemanal(content) {
+  const filtered = _otGetFiltered();
+  const meses = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const DIAS  = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+  const today = new Date(); today.setHours(0,0,0,0);
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+
+  const dias = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(_otSemanaInicio);
+    d.setDate(d.getDate() + i);
+    return d;
+  });
+  const fimSemana = dias[6];
+  const fmtD = (d) => d.getDate();
+  const fmtM = (d) => meses[d.getMonth()].slice(0,3);
+  const mesIni = dias[0].getMonth(), mesFim = fimSemana.getMonth();
+  const label = mesIni === mesFim
+    ? `${fmtD(dias[0])} – ${fmtD(fimSemana)} ${fmtM(fimSemana)} ${fimSemana.getFullYear()}`
+    : `${fmtD(dias[0])} ${fmtM(dias[0])} – ${fmtD(fimSemana)} ${fmtM(fimSemana)} ${fimSemana.getFullYear()}`;
+
+  // Agrupa OTs por dia de prazo dentro da semana
+  const byDay = {};
+  dias.forEach(d => {
+    const ds = d.toISOString().split('T')[0];
+    byDay[ds] = [];
+  });
+  filtered.forEach(o => {
+    if (!o.prazo) return;
+    const ds = o.prazo.split('T')[0];
+    if (byDay[ds] !== undefined) byDay[ds].push(o);
+  });
+
+  const headerCols = dias.map((d, i) => {
+    const ds = d.toISOString().split('T')[0];
+    const isToday = ds === todayStr;
+    return `<div class="ot-sem-col-header${isToday ? ' ot-sem-hoje' : ''}">
+      <span class="ot-sem-dow">${DIAS[i]}</span>
+      <span class="ot-sem-num${isToday ? ' ot-sem-num-hoje' : ''}">${d.getDate()}</span>
+    </div>`;
+  }).join('');
+
+  const bodyCols = dias.map(d => {
+    const ds = d.toISOString().split('T')[0];
+    const ots = byDay[ds] || [];
+    const isToday = ds === todayStr;
+    const pills = ots.map(o => {
+      const { cls } = _otCardDeadlineInfo(o);
+      const ativoNome = (o.ativoIdx !== null && o.ativoIdx !== undefined)
+        ? (state.ativos[o.ativoIdx]?.nome || '') : '';
+      const deadlineCls = cls ? (cls.includes('overdue') ? 'ot-cal-pill-overdue' : 'ot-cal-pill-warning') : '';
+      return `<div class="ot-sem-pill ${deadlineCls}" onclick="otOpenView('${o.id}')" title="${_escHtml(o.titulo)}">
+        <div class="ot-sem-pill-top">
+          <span class="ot-cal-pill-dot ot-cal-dot-${o.tipo}"></span>
+          <span class="ot-sem-pill-titulo">${_escHtml(o.titulo.length > 28 ? o.titulo.slice(0,28)+'…' : o.titulo)}</span>
+        </div>
+        ${ativoNome ? `<div class="ot-sem-pill-ativo">${_escHtml(ativoNome.length > 26 ? ativoNome.slice(0,26)+'…' : ativoNome)}</div>` : ''}
+        <div class="ot-sem-pill-status">
+          <span class="ot-sem-pill-tipo">${o.tipo}</span>
+          <span class="ot-sem-pill-sev" style="color:${o.severidade==='Alta'?'var(--red)':o.severidade==='Média'?'#b45309':'var(--text-muted)'};">${o.severidade||''}</span>
+        </div>
+      </div>`;
+    }).join('');
+
+    return `<div class="ot-sem-col${isToday ? ' ot-sem-col-hoje' : ''}">
+      ${pills || '<div class="ot-sem-vazio"></div>'}
+    </div>`;
+  }).join('');
+
+  content.innerHTML = `
+<div class="ot-cal-wrapper">
+  <div class="ot-cal-header">
+    <div class="ot-cal-nav-group">
+      <button class="ot-cal-nav-btn" onclick="otCalNav(-1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <span class="ot-cal-title" style="cursor:default;">${label}</span>
+      <button class="ot-cal-nav-btn" onclick="otCalNav(1)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+      <div class="ot-cal-view-toggle">
+        <button id="ot-cal-view-btn-mensal" class="ot-cal-view-btn" onclick="otCalSetSubView('mensal')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/></svg>
+          Mensal
+        </button>
+        <button id="ot-cal-view-btn-semanal" class="ot-cal-view-btn active" onclick="otCalSetSubView('semanal')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="8" y1="14" x2="8" y2="18"/><line x1="16" y1="14" x2="16" y2="18"/></svg>
+          Semanal
+        </button>
+      </div>
+    </div>
+  </div>
+  <div class="ot-sem-grid">
+    <div class="ot-sem-header">${headerCols}</div>
+    <div class="ot-sem-body">${bodyCols}</div>
+  </div>
+</div>`;
+}
+
 function otCalPickerYearNav(dir) {
   _otCalPickerYear += dir;
   otCalRenderPicker();

@@ -8,6 +8,18 @@
   let _agendaMes  = new Date().getMonth();
   let _agendaAno  = new Date().getFullYear();
   let _pickerAno  = _agendaAno;
+  let _agendaView = 'mensal'; // 'mensal' | 'semanal'
+
+  // Semana: início na segunda-feira da semana atual
+  function _inicioSemana(date) {
+    const d = new Date(date);
+    const day = d.getDay(); // 0=Dom
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    d.setHours(0,0,0,0);
+    return d;
+  }
+  let _agendaSemanaInicio = _inicioSemana(new Date());
 
   const MESES = [
     'Janeiro','Fevereiro','Março','Abril','Maio','Junho',
@@ -327,7 +339,22 @@
   // ══════════════════════════════════════════
   // RENDERIZAR CALENDÁRIO
   // ══════════════════════════════════════════
+  window.agendaSetView = function (view) {
+    _agendaView = view;
+    document.getElementById('agenda-view-btn-mensal')?.classList.toggle('active', view === 'mensal');
+    document.getElementById('agenda-view-btn-semanal')?.classList.toggle('active', view === 'semanal');
+    if (view === 'mensal') _restaurarGridMensal();
+    renderAgendaCalendario();
+  };
+
   window.agendaNavMes = function (delta) {
+    if (_agendaView === 'semanal') {
+      const d = new Date(_agendaSemanaInicio);
+      d.setDate(d.getDate() + delta * 7);
+      _agendaSemanaInicio = d;
+      renderAgendaCalendario();
+      return;
+    }
     _agendaMes += delta;
     if (_agendaMes > 11) { _agendaMes = 0;  _agendaAno++; }
     if (_agendaMes < 0)  { _agendaMes = 11; _agendaAno--; }
@@ -338,6 +365,11 @@
     const labelEl = document.getElementById('agenda-mes-label');
     const gridEl  = document.getElementById('agenda-grid');
     if (!labelEl || !gridEl) return;
+
+    if (_agendaView === 'semanal') {
+      _renderAgendaSemanal(labelEl, gridEl);
+      return;
+    }
 
     labelEl.textContent = `${MESES[_agendaMes]} ${_agendaAno}`;
 
@@ -398,6 +430,111 @@
 
     gridEl.innerHTML = cells;
   };
+
+  // ══════════════════════════════════════════
+  // VISUALIZAÇÃO SEMANAL
+  // ══════════════════════════════════════════
+  function _renderAgendaSemanal(labelEl, gridEl) {
+    const DIAS_SEMANA = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom'];
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const hojeStr = hoje.toISOString().split('T')[0];
+
+    // 7 dias a partir do início da semana (seg–dom)
+    const dias = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(_agendaSemanaInicio);
+      d.setDate(d.getDate() + i);
+      return d;
+    });
+
+    const fimSemana = dias[6];
+
+    // Label: "12 – 18 Jan 2025" ou "29 Jan – 4 Fev 2025"
+    const fmtDia = (d) => d.getDate();
+    const fmtMes = (d) => MESES[d.getMonth()].slice(0, 3);
+    const mesIni = dias[0].getMonth(), mesFim = fimSemana.getMonth();
+    labelEl.textContent = mesIni === mesFim
+      ? `${fmtDia(dias[0])} – ${fmtDia(fimSemana)} ${fmtMes(fimSemana)} ${fimSemana.getFullYear()}`
+      : `${fmtDia(dias[0])} ${fmtMes(dias[0])} – ${fmtDia(fimSemana)} ${fmtMes(fimSemana)} ${fimSemana.getFullYear()}`;
+
+    // Busca eventos do intervalo usando a mesma lógica de _buildEventosDoMes mas por semana
+    // Pode cruzar dois meses — busca os dois se necessário
+    const eventosMap = {};
+    const mesesNecessarios = new Set();
+    dias.forEach(d => mesesNecessarios.add(`${d.getFullYear()}-${d.getMonth()}`));
+    mesesNecessarios.forEach(key => {
+      const [ano, mes] = key.split('-').map(Number);
+      const ev = _buildEventosDoMes(ano, mes);
+      Object.assign(eventosMap, ev);
+    });
+
+    // Cabeçalho com dias
+    const headerCols = dias.map((d, i) => {
+      const ds = d.toISOString().split('T')[0];
+      const isHoje = ds === hojeStr;
+      const isDom = d.getDay() === 0;
+      return `<div class="agenda-sem-col-header${isHoje ? ' agenda-sem-hoje' : ''}${isDom ? ' agenda-sem-dom' : ''}">
+        <span class="agenda-sem-dow">${DIAS_SEMANA[i]}</span>
+        <span class="agenda-sem-num${isHoje ? ' agenda-sem-num-hoje' : ''}">${d.getDate()}</span>
+      </div>`;
+    }).join('');
+
+    // Células de cada dia com cards
+    const bodyCols = dias.map((d) => {
+      const ds = d.toISOString().split('T')[0];
+      const evs = eventosMap[ds] || [];
+      const isHoje = ds === hojeStr;
+      const isDom  = d.getDay() === 0;
+
+      const cards = evs.map(ev => {
+        const t = ev.tarefa;
+        const ativo   = state.ativos[t.equipamentoIdx];
+        const rotina  = state.rotinas.find(r => r.id === t.rotinaId);
+        const isPub   = ev.tipo === 'publicada';
+        const flag    = getTaskFlag(t);
+        const cls     = isPub ? 'agenda-sem-card-ok' : 'agenda-sem-card-pend';
+        const action  = isPub
+          ? `onclick="viewPublicacao('${ev.pub.id}')"`
+          : `onclick="_agendaAbrirPublicar('${t.id}')"`;
+        const titulo  = t.titulo || rotina?.nome || '—';
+        const ativoNome = ativo?.nome || '—';
+        return `<div class="agenda-sem-card ${cls}" ${action} title="${titulo}">
+          <div class="agenda-sem-card-titulo">${titulo}</div>
+          <div class="agenda-sem-card-ativo">${ativoNome}</div>
+          ${rotina ? `<div class="agenda-sem-card-rotina">${rotina.nome}</div>` : ''}
+          <div class="agenda-sem-card-footer">
+            <span class="task-flag ${flag.cls}" style="font-size:9px;padding:1px 5px;">${flag.label}</span>
+            ${isPub ? `<span class="agenda-sem-card-pub">✓ Publicada</span>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+
+      return `<div class="agenda-sem-col${isHoje ? ' agenda-sem-col-hoje' : ''}${isDom ? ' agenda-sem-col-dom' : ''}">
+        ${cards || `<div class="agenda-sem-vazio"></div>`}
+      </div>`;
+    }).join('');
+
+    // Monta o grid substituindo o agenda-weekdays e agenda-grid
+    const wrap = gridEl.closest('.agenda-calendar-wrap');
+    // Esconde weekdays e substitui grid
+    const weekdaysEl = wrap?.querySelector('.agenda-weekdays');
+    if (weekdaysEl) weekdaysEl.style.display = 'none';
+
+    gridEl.className = 'agenda-sem-grid';
+    gridEl.innerHTML = `
+      <div class="agenda-sem-header">${headerCols}</div>
+      <div class="agenda-sem-body">${bodyCols}</div>
+    `;
+  }
+
+  // Restaura o grid mensal quando voltar para mensal
+  function _restaurarGridMensal() {
+    const gridEl = document.getElementById('agenda-grid');
+    if (!gridEl) return;
+    gridEl.className = 'agenda-grid';
+    const wrap = gridEl.closest('.agenda-calendar-wrap');
+    const weekdaysEl = wrap?.querySelector('.agenda-weekdays');
+    if (weekdaysEl) weekdaysEl.style.display = '';
+  }
 
   // ══════════════════════════════════════════
   // PICKER DE MÊS/ANO

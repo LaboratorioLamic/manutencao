@@ -2540,6 +2540,97 @@
   }
   .agenda-dia-secao-titulo svg { opacity: 0.7; flex-shrink: 0; }
 
+  /* ── Botões Mensal / Semanal ── */
+  .agenda-view-toggle {
+    display: flex; align-items: center; gap: 4px;
+    margin-left: 16px;
+    background: rgba(255,255,255,0.07);
+    border-radius: 8px; padding: 3px;
+  }
+  .agenda-view-btn {
+    display: flex; align-items: center; gap: 5px;
+    padding: 5px 11px; border-radius: 6px;
+    font-size: 12px; font-weight: 600;
+    background: transparent; border: none;
+    color: rgba(255,255,255,0.55); cursor: pointer;
+    transition: var(--transition); font-family: inherit;
+    white-space: nowrap;
+  }
+  .agenda-view-btn:hover { color: #fff; background: rgba(255,255,255,0.1); }
+  .agenda-view-btn.active { background: var(--cyan); color: #fff; }
+
+  /* ── View semanal ── */
+  .agenda-sem-grid {
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .agenda-sem-header {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    background: var(--bg); border-bottom: 1px solid var(--border);
+  }
+  .agenda-sem-col-header {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 2px; padding: 8px 4px;
+    border-right: 1px solid var(--border);
+  }
+  .agenda-sem-col-header:last-child { border-right: none; }
+  .agenda-sem-dow {
+    font-size: 10px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .agenda-sem-num {
+    font-size: 14px; font-weight: 700; color: var(--text-secondary);
+    width: 26px; height: 26px; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%;
+  }
+  .agenda-sem-num-hoje { background: var(--cyan); color: #fff; }
+  .agenda-sem-hoje .agenda-sem-dow { color: var(--cyan); }
+  .agenda-sem-dom .agenda-sem-dow { color: var(--red); opacity: 0.7; }
+  .agenda-sem-body {
+    display: grid; grid-template-columns: repeat(7, 1fr);
+    min-height: 320px; overflow-y: auto;
+  }
+  .agenda-sem-col {
+    border-right: 1px solid var(--border);
+    padding: 6px 5px; display: flex; flex-direction: column; gap: 5px;
+    min-height: 320px;
+  }
+  .agenda-sem-col:last-child { border-right: none; }
+  .agenda-sem-col-hoje { background: rgba(0,168,204,0.04); border-top: 2px solid var(--cyan); }
+  .agenda-sem-col-dom  { background: rgba(230,57,70,0.02); }
+  .agenda-sem-vazio    { flex: 1; }
+  .agenda-sem-card {
+    border-radius: 7px; padding: 6px 7px;
+    cursor: pointer; transition: transform 0.12s, box-shadow 0.12s;
+    display: flex; flex-direction: column; gap: 3px;
+    border: 1px solid transparent;
+  }
+  .agenda-sem-card:hover { transform: translateY(-1px); box-shadow: 0 3px 10px rgba(0,0,0,0.12); }
+  .agenda-sem-card-ok {
+    background: rgba(42,157,143,0.1); border-color: rgba(42,157,143,0.22);
+  }
+  .agenda-sem-card-pend {
+    background: rgba(0,168,204,0.08); border-color: rgba(0,168,204,0.2);
+  }
+  .agenda-sem-card-titulo {
+    font-size: 11px; font-weight: 700; color: var(--text-primary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .agenda-sem-card-ativo {
+    font-size: 10px; color: var(--text-secondary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .agenda-sem-card-rotina {
+    font-size: 9.5px; color: var(--text-muted);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .agenda-sem-card-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 4px; margin-top: 1px;
+  }
+  .agenda-sem-card-pub {
+    font-size: 9px; font-weight: 600; color: var(--green);
+  }
+
   @keyframes spin { to { transform: rotate(360deg); } }
 /* ── ATIVO STATUS TOGGLE ──────────────────────────────────── */
 .ativo-status-toggle-row {
