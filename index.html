@@ -992,6 +992,16 @@
             <button id="btn-nova-categoria-toolbar" class="btn btn-outline btn-icon" onclick="openCategoriaModal()" title="Nova Categoria">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
+            <div id="tipo-filter-wrap" class="sector-search-wrap" style="position:relative;display:none;" onclick="tipoSearchToggle()">
+              <input id="main-tipo-filter-input" type="text" class="field-input sector-search-input"
+                placeholder="Tipo (Todos)" autocomplete="off" readonly
+                onkeydown="tipoSearchKey(event)"
+                style="min-width:160px;height:36px;font-size:13px;padding-right:28px;cursor:pointer;">
+              <span class="sector-search-caret">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <div id="tipo-search-dropdown" class="sector-search-dropdown" style="display:none;"></div>
+            </div>
           </div>
           <div class="toolbar-group toolbar-group-right">
             <div class="ativos-filter-toolbar-zone" id="ativos-filter-toolbar-zone">
@@ -2185,6 +2195,17 @@
         </div>
         <div class="form-row">
           <div class="form-field">
+            <label class="field-label">Tipo <span class="required">*</span></label>
+            <select id="ativo-tipo" class="field-input" onchange="onAtivoTipoChange(this.value)">
+              <option value="Equipamento">Equipamento</option>
+              <option value="Infraestrutura">Infraestrutura</option>
+              <option value="Procedimento">Procedimento</option>
+              <option value="Diversos">Diversos</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-field">
             <label class="field-label">Setor <span class="required">*</span></label>
             <div class="input-with-btn">
               <div class="sector-search-wrap" id="form-setor-wrap" style="position:relative;flex:1;">
@@ -2225,7 +2246,7 @@
         </div>
       </div>
 
-      <div class="form-section">
+      <div class="form-section" id="ativo-especificacoes-section">
         <div class="form-section-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
           Especificações Técnicas

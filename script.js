@@ -372,10 +372,16 @@
     const ativo = state.ativos[equipamentoIdx];
     if (!ativo) return false;
     if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
+    // Respeita subtab: notificações só do subtab ativo
+    if (typeof _ativosSubtab !== 'undefined') {
+      if (_ativosSubtab === 'em_desuso' && ativo.statusUso !== 'em_desuso') return false;
+      if (_ativosSubtab !== 'em_desuso' && ativo.statusUso === 'em_desuso') return false;
+    }
     const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
     const fCat   = (typeof categorySearchGetValue === 'function') ? categorySearchGetValue() : 'todas';
     if (fSetor !== 'todos' && ativo.setor !== fSetor) return false;
     if (fCat !== 'todas' && ativo.categoria !== fCat) return false;
+    if (typeof _tipoSearchVal !== 'undefined' && _tipoSearchVal !== 'todos' && (ativo.tipo || 'Equipamento') !== _tipoSearchVal) return false;
     return true;
   }
 
@@ -383,6 +389,9 @@
     const rotina = state.rotinas.find(r => r.id === t.rotinaId);
     const ativo  = state.ativos[t.equipamentoIdx];
     if (!rotina || !ativo) return false;
+
+    // Respeita o filtro de setores da topbar (Selecionar Setores)
+    if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
 
     const fTipo   = document.getElementById('filter-tipo')?.value || '';
     const fSetor  = document.getElementById('filter-setor-rotina')?.value || '';
@@ -1010,7 +1019,7 @@
     const input = document.getElementById('tarefa-checklist-novo-item');
     const texto = input.value.trim();
     if (!texto) return;
-    checklistTarefaTemp.push({ id: uid(), texto, comentarioObrigatorio: false });
+    checklistTarefaTemp.push({ id: uid(), texto, comentarioObrigatorio: false, loteAtivo: false, lote: '', validade: '' });
     input.value = '';
     renderTarefaChecklistBuilder();
     atualizarAbaTarefaChecklist();
@@ -1040,6 +1049,21 @@
     renderTarefaChecklistBuilder();
   }
 
+  function toggleTarefaChecklistLote(id) {
+    const item = checklistTarefaTemp.find(i => i.id === id);
+    if (!item) return;
+    item.loteAtivo = !item.loteAtivo;
+    if (!item.loteAtivo) { item.lote = ''; item.validade = ''; }
+    renderTarefaChecklistBuilder();
+    if (item.loteAtivo) document.getElementById('checklist-lote-input-' + id)?.focus();
+  }
+
+  function updateTarefaChecklistLote(id, field, value) {
+    const item = checklistTarefaTemp.find(i => i.id === id);
+    if (!item) return;
+    item[field] = value;
+  }
+
   function renderTarefaChecklistBuilder() {
     const container = document.getElementById('tarefa-checklist-builder');
     if (!container) return;
@@ -1047,20 +1071,40 @@
       container.innerHTML = `<div class="checklist-empty-tip">Nenhum item adicionado.</div>`;
       return;
     }
-    container.innerHTML = checklistTarefaTemp.map((item, i) => `
-      <div class="checklist-item-row">
-        <div class="checklist-item-num">${i + 1}</div>
-        <div class="checklist-item-text">${item.texto}</div>
-        <button class="checklist-item-del checklist-coment-toggle${item.comentarioObrigatorio ? ' active' : ''}" onclick="toggleTarefaChecklistComentario('${item.id}')" title="${item.comentarioObrigatorio ? 'Comentário obrigatório (clique para remover)' : 'Marcar como comentário obrigatório'}">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
-        </button>
-        <button class="checklist-item-del" onclick="editTarefaChecklistItem('${item.id}')" title="Editar" style="color:var(--cyan);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-        </button>
-        <button class="checklist-item-del" onclick="removeTarefaChecklistItem('${item.id}')" title="Remover">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-        </button>
-      </div>`).join('');
+    container.innerHTML = checklistTarefaTemp.map((item, i) => {
+      const loteAtivo = !!item.loteAtivo;
+      return `
+      <div class="checklist-item-wrap">
+        <div class="checklist-item-row">
+          <div class="checklist-item-num">${i + 1}</div>
+          <div class="checklist-item-text">${item.texto}</div>
+          <button class="checklist-item-del checklist-lote-toggle${loteAtivo ? ' active' : ''}" onclick="toggleTarefaChecklistLote('${item.id}')" title="${loteAtivo ? 'Lote ativo (clique para desativar)' : 'Ativar controle de Lote e Validade'}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:14px;height:14px;"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-4 0v2"/><path d="M8 7V5a2 2 0 00-4 0v2"/></svg>
+          </button>
+          <button class="checklist-item-del checklist-coment-toggle${item.comentarioObrigatorio ? ' active' : ''}" onclick="toggleTarefaChecklistComentario('${item.id}')" title="${item.comentarioObrigatorio ? 'Comentário obrigatório (clique para remover)' : 'Marcar como comentário obrigatório'}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          </button>
+          <button class="checklist-item-del" onclick="editTarefaChecklistItem('${item.id}')" title="Editar" style="color:var(--cyan);">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+          </button>
+          <button class="checklist-item-del" onclick="removeTarefaChecklistItem('${item.id}')" title="Remover">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div id="checklist-lote-row-${item.id}" class="checklist-lote-row" style="display:${loteAtivo ? '' : 'none'};">
+          <div class="checklist-lote-fields">
+            <div class="checklist-lote-field-wrap">
+              <label class="checklist-lote-label">Lote</label>
+              <input type="text" id="checklist-lote-input-${item.id}" class="checklist-lote-input" placeholder="Nº do lote..." value="${item.lote || ''}" oninput="updateTarefaChecklistLote('${item.id}','lote',this.value)">
+            </div>
+            <div class="checklist-lote-field-wrap">
+              <label class="checklist-lote-label">Validade</label>
+              <input type="date" id="checklist-val-input-${item.id}" class="checklist-lote-input" value="${item.validade || ''}" oninput="updateTarefaChecklistLote('${item.id}','validade',this.value)">
+            </div>
+          </div>
+        </div>
+      </div>`;
+    }).join('');
   }
 
   function atualizarAbaTarefaChecklist() {
@@ -1760,9 +1804,12 @@
           Checklist da Tarefa
         </div>
         <div style="display:flex;flex-direction:column;gap:5px;">
-          ${checklistTarefa.map(it => `<div class="detail-checklist-item">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0;color:var(--text-muted);"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
-            <span style="font-size:13px;color:var(--text-secondary);">${it.texto}</span>
+          ${checklistTarefa.map(it => `<div class="detail-checklist-item" style="flex-direction:column;align-items:flex-start;gap:3px;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0;color:var(--text-muted);"><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+              <span style="font-size:13px;color:var(--text-secondary);">${it.texto}</span>
+              ${it.loteAtivo ? `<span class="checklist-lote-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:10px;height:10px;"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-4 0v2"/><path d="M8 7V5a2 2 0 00-4 0v2"/></svg>${it.lote ? ` ${it.lote}` : ' Lote'}${it.validade ? ` · ${it.validade}` : ''}</span>` : ''}
+            </div>
           </div>`).join('')}
         </div>
       </div>` : '';
@@ -1871,6 +1918,7 @@
   // ══════════════════════════════════════════
   let pubChecklistState = {};
   let pubChecklistComentarios = {};
+  let pubChecklistLotes = {};
   let pubAnexos = [];
 
   function _getUploadPrefixo(ctx) {
@@ -1977,6 +2025,7 @@
     if (terceiroCb) terceiroCb.checked = !!t.realizadoPorTerceiro;
     pubChecklistState = {};
     pubChecklistComentarios = {};
+    pubChecklistLotes = {};
     pubAnexos = [];
     renderPubAnexos();
     if (typeof resetUploadZone === 'function') resetUploadZone('pub');
@@ -1992,6 +2041,13 @@
     // Checklist da Tarefa
     const section = document.getElementById('pub-checklist-section');
     const tarefaChecklist = t.checklistTarefa || [];
+
+    // Pré-carregar lotes/validades existentes na tarefa (só para itens com loteAtivo)
+    tarefaChecklist.forEach(it => {
+      if (it.loteAtivo) {
+        pubChecklistLotes[it.id] = { lote: it.lote || '', validade: it.validade || '' };
+      }
+    });
 
     if (tarefaChecklist.length > 0) {
       section.style.display = '';
@@ -2064,6 +2120,7 @@
 
   function _renderPubCheckItem(it, total) {
     const obrig = !!it.comentarioObrigatorio;
+    const loteAtivo = !!it.loteAtivo;
     return `
       <div class="pub-check-item-wrap" id="pwrap-${it.id}">
         <div class="pub-check-item" id="pcheck-${it.id}" data-comt-obrig="${obrig ? '1' : ''}" onclick="togglePubCheck('${it.id}', ${total})">
@@ -2073,6 +2130,18 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
           </button>
         </div>
+        ${loteAtivo ? `<div class="pub-check-lote-field" id="plote-${it.id}">
+          <div class="checklist-lote-fields" style="padding-left:44px;">
+            <div class="checklist-lote-field-wrap">
+              <label class="checklist-lote-label">Lote <span style="color:var(--red);font-size:10px;">*obrigatório</span></label>
+              <input type="text" id="plote-lote-${it.id}" class="checklist-lote-input" placeholder="Nº do lote..." value="${it.lote || ''}" oninput="pubChecklistLotes['${it.id}']={...(pubChecklistLotes['${it.id}']||{}),lote:this.value}">
+            </div>
+            <div class="checklist-lote-field-wrap">
+              <label class="checklist-lote-label">Validade <span style="color:var(--red);font-size:10px;">*obrigatório</span></label>
+              <input type="date" id="plote-val-${it.id}" class="checklist-lote-input" value="${it.validade || ''}" oninput="pubChecklistLotes['${it.id}']={...(pubChecklistLotes['${it.id}']||{}),validade:this.value}">
+            </div>
+          </div>
+        </div>` : ''}
         <div class="pub-check-coment-field" id="pcoment-${it.id}" style="display:none;">
           <textarea id="pcoment-txt-${it.id}" class="pub-check-coment-input" placeholder="Comentário${obrig ? ' (obrigatório)' : ''}..." rows="2" oninput="pubChecklistComentarios['${it.id}']=this.value"></textarea>
         </div>
@@ -2181,10 +2250,31 @@
       if (!allChecked) { showToast('Marque todos os itens do checklist para publicar.', 'error'); return; }
       const semComent = checkItems.filter(it => it.comentarioObrigatorio && !(pubChecklistComentarios[it.id] || '').trim());
       if (semComent.length > 0) { showToast('Preencha o comentário obrigatório dos itens marcados.', 'error'); semComent.forEach(it => _openPubComentario(it.id)); return; }
+      // Valida lote/validade obrigatório quando loteAtivo
+      const semLote = checkItems.filter(it => it.loteAtivo && (!(pubChecklistLotes[it.id]?.lote || '').trim() || !(pubChecklistLotes[it.id]?.validade || '').trim()));
+      if (semLote.length > 0) {
+        showToast('Preencha o Lote e Validade obrigatórios dos itens do checklist.', 'error');
+        semLote.forEach(it => document.getElementById('plote-lote-' + it.id)?.focus());
+        return;
+      }
+    }
+
+    // Aplicar lote/validade editados na publicação de volta à tarefa
+    const tIdx2 = state.tarefas.findIndex(tt => tt.id === tarefaDetalheId);
+    if (tIdx2 >= 0) {
+      const checklistAtualizado = state.tarefas[tIdx2].checklistTarefa || [];
+      checklistAtualizado.forEach(it => {
+        const loteData = pubChecklistLotes[it.id];
+        if (loteData) {
+          if (loteData.lote !== undefined) it.lote = loteData.lote;
+          if (loteData.validade !== undefined) it.validade = loteData.validade;
+        }
+      });
     }
 
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
     const _comentariosEntries = Object.entries(pubChecklistComentarios).filter(([, v]) => v !== undefined && v !== null);
+    const _lotesEntries = Object.entries(pubChecklistLotes).filter(([, v]) => v && (v.lote || v.validade));
     const pub = {
       id: uid(),
       tarefaId: tarefaDetalheId,
@@ -2192,6 +2282,7 @@
       dataPublicacao: new Date().toISOString().split('T')[0],
       checklistMarcado: checkItems.map(it => it.id),
       ...(_comentariosEntries.length > 0 ? { checklistComentarios: Object.fromEntries(_comentariosEntries) } : {}),
+      ...(_lotesEntries.length > 0 ? { checklistLotes: Object.fromEntries(_lotesEntries) } : {}),
       notas: document.getElementById('pub-notas').value.trim(),
       empresaResponsavel: (document.getElementById('pub-terceiro-section')?.style.display !== 'none') ? (document.getElementById('pub-empresa-responsavel').value.trim() || null) : null,
       tecnicoResponsavel: (document.getElementById('pub-terceiro-section')?.style.display !== 'none') ? (document.getElementById('pub-tecnico-responsavel').value.trim() || null) : null,
@@ -2606,7 +2697,7 @@
     const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
     const tarefaChecklist  = t?.checklistTarefa || [];
 
-    function checkListHtml(items, label) {
+    function checkListHtml(items, label, pubLotes) {
       if (!items.length) return '';
       return `<div style="margin-top:14px;">
         <div class="form-section-title" style="margin-bottom:8px;">
@@ -2614,11 +2705,23 @@
           ${label}
         </div>
         <div style="display:flex;flex-direction:column;gap:6px;">
-          ${items.map(it => `
-            <div class="pub-check-item checked" style="cursor:default;">
-              <div class="pub-check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
-              <span class="pub-check-text">${it.texto}</span>
-            </div>`).join('')}
+          ${items.map(it => {
+            const loteInfo = (pubLotes && pubLotes[it.id]) || {};
+            const lote = loteInfo.lote || it.lote || '';
+            const validade = loteInfo.validade || it.validade || '';
+            const mostrarLote = !!it.loteAtivo && (lote || validade);
+            return `
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <div class="pub-check-item checked" style="cursor:default;">
+                <div class="pub-check-box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+                <span class="pub-check-text">${it.texto}</span>
+              </div>
+              ${mostrarLote ? `<div style="display:flex;gap:8px;margin-left:44px;flex-wrap:wrap;">
+                ${lote ? `<span class="checklist-lote-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:10px;height:10px;"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-4 0v2"/><path d="M8 7V5a2 2 0 00-4 0v2"/></svg> Lote: ${lote}</span>` : ''}
+                ${validade ? `<span class="checklist-lote-badge" style="background:rgba(244,162,97,0.1);color:#f4a261;border-color:rgba(244,162,97,0.3);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:10px;height:10px;"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> Val: ${validade}</span>` : ''}
+              </div>` : ''}
+            </div>`;
+          }).join('')}
         </div>
       </div>`;
     }
@@ -2722,7 +2825,7 @@
         </div>`;
       })() : ''}
 
-      ${checkListHtml(tarefaChecklist, 'Checklist da Tarefa Verificado')}
+      ${checkListHtml(tarefaChecklist, 'Checklist da Tarefa Verificado', p.checklistLotes)}
       ${anexosHtml}
       ${p.notas ? `
         <div class="detail-note" style="margin-top:14px;">
@@ -4072,11 +4175,13 @@
     document.querySelector('#modal-ativo .drawer-subtitle').textContent = index === null ? 'Preencha os dados do equipamento' : 'Altere os dados do equipamento';
 
     if (index === null) {
-      document.querySelectorAll('#modal-ativo input, #modal-ativo textarea').forEach(el => el.value = '');
+      document.querySelectorAll('#modal-ativo input[type=text], #modal-ativo textarea').forEach(el => el.value = '');
       document.getElementById('ativo-setor').value = '';
       document.getElementById('ativo-categoria').value = '';
+      document.getElementById('ativo-tipo').value = 'Equipamento';
       const si = document.getElementById('ativo-setor-input'); if (si) si.value = '';
       const ci = document.getElementById('ativo-categoria-input'); if (ci) ci.value = '';
+      onAtivoTipoChange('Equipamento');
       _ativoStatusUI('em_uso', []);
     } else {
       const ativo = state.ativos[index];
@@ -4084,6 +4189,8 @@
       document.getElementById('ativo-codigo').value = ativo.codigo;
       document.getElementById('ativo-setor').value = ativo.setor;
       document.getElementById('ativo-categoria').value = ativo.categoria;
+      const tipo = ativo.tipo || 'Equipamento';
+      document.getElementById('ativo-tipo').value = tipo;
       const si2 = document.getElementById('ativo-setor-input'); if (si2) si2.value = ativo.setor || '';
       const ci2 = document.getElementById('ativo-categoria-input'); if (ci2) ci2.value = ativo.categoria || '';
       document.getElementById('ativo-marca').value = ativo.marca !== '-' ? ativo.marca : '';
@@ -4091,10 +4198,16 @@
       document.getElementById('ativo-serie').value = ativo.serie !== '-' ? ativo.serie : '';
       document.getElementById('ativo-fornecedor').value = ativo.fornecedor !== '-' ? ativo.fornecedor : '';
       document.getElementById('ativo-nota').value = ativo.nota;
+      onAtivoTipoChange(tipo);
       _ativoStatusUI(ativo.statusUso || 'em_uso', ativo.pausaOTs || []);
     }
 
     document.getElementById('modal-ativo').classList.add('open');
+  }
+
+  function onAtivoTipoChange(tipo) {
+    const espSection = document.getElementById('ativo-especificacoes-section');
+    if (espSection) espSection.style.display = tipo === 'Equipamento' ? '' : 'none';
   }
 
   function visualizarAtivo(index, initialTab = 'info') {
@@ -4112,6 +4225,7 @@
           ${ativo.codigo}
         </div>
         <div class="view-badges">
+          ${ativo.tipo && ativo.tipo !== 'Equipamento' ? `<span class="view-badge" style="background:rgba(99,102,241,0.1);color:#6366f1;border-color:rgba(99,102,241,0.3);">${ativo.tipo}</span>` : ''}
           <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${ativo.setor}</span>
           <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>${ativo.categoria}</span>
           ${ativo.statusUso === 'em_pausa'
@@ -4131,10 +4245,12 @@
         </div>
       </div>
       <div class="detail-grid">
+        ${(ativo.tipo || 'Equipamento') === 'Equipamento' ? `
         <div class="detail-card"><div class="detail-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Marca</div><div class="detail-value">${ativo.marca}</div></div>
         <div class="detail-card"><div class="detail-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/></svg>Modelo</div><div class="detail-value">${ativo.modelo}</div></div>
         <div class="detail-card"><div class="detail-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Nº de Série</div><div class="detail-value">${ativo.serie}</div></div>
         <div class="detail-card"><div class="detail-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 16V7a2 2 0 00-2-2H6a2 2 0 00-2 2v9"/><path d="M16 21H8a2 2 0 01-2-2v-1h12v1a2 2 0 01-2 2z"/></svg>Fornecedor</div><div class="detail-value">${ativo.fornecedor}</div></div>
+        ` : ''}
         <div class="detail-note"><div class="detail-label" style="margin-bottom:6px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;color:var(--cyan);"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Observações</div>
           <div class="detail-value" style="font-weight:400;font-size:13px;color:var(--text-secondary);white-space:pre-line;">${ativo.nota || '<span style="color:var(--text-muted);font-style:italic;">Nenhuma observação cadastrada.</span>'}</div>
         </div>
@@ -4614,12 +4730,13 @@
     }
 
     const ativoExistente = ativoEdicaoIndex !== null ? state.ativos[ativoEdicaoIndex] : null;
+    const tipo = document.getElementById('ativo-tipo').value || 'Equipamento';
     const ativo = {
-      nome, codigo, setor, categoria,
-      marca: document.getElementById('ativo-marca').value.trim() || "-",
-      modelo: document.getElementById('ativo-modelo').value.trim() || "-",
-      serie: document.getElementById('ativo-serie').value.trim() || "-",
-      fornecedor: document.getElementById('ativo-fornecedor').value.trim() || "-",
+      nome, codigo, setor, categoria, tipo,
+      marca: tipo === 'Equipamento' ? (document.getElementById('ativo-marca').value.trim() || "-") : "-",
+      modelo: tipo === 'Equipamento' ? (document.getElementById('ativo-modelo').value.trim() || "-") : "-",
+      serie: tipo === 'Equipamento' ? (document.getElementById('ativo-serie').value.trim() || "-") : "-",
+      fornecedor: tipo === 'Equipamento' ? (document.getElementById('ativo-fornecedor').value.trim() || "-") : "-",
       nota: document.getElementById('ativo-nota').value.trim(),
       statusUso, pausaOTs,
       _historico: ativoExistente?._historico || []
@@ -4814,6 +4931,10 @@
   let _sectorSearchVal  = 'todos';
   let _sectorSearchOpts = [];
   let _categorySearchVal = 'todas';
+  let _tipoSearchVal = 'todos';
+  let _tipoSearchClickBound = false;
+
+  const ATIVO_TIPOS = ['Equipamento', 'Infraestrutura', 'Procedimento', 'Diversos'];
 
   function sectorSearchSetOptions(setores) {
     _sectorSearchOpts = setores;
@@ -5015,6 +5136,66 @@
     if (dd) dd.style.display = 'none';
   }
 
+  // ── TIPO SEARCH (filtro de tipo na aba Ativos) ──
+
+  function tipoSearchOpen() {
+    _tipoSearchRenderDropdown();
+    const dd = document.getElementById('tipo-search-dropdown');
+    if (dd) dd.style.display = '';
+    if (!_tipoSearchClickBound) {
+      document.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('#tipo-filter-wrap')) _tipoSearchClose();
+      });
+      _tipoSearchClickBound = true;
+    }
+  }
+
+  function tipoSearchToggle() {
+    const dd = document.getElementById('tipo-search-dropdown');
+    if (!dd) return;
+    if (dd.style.display === 'none' || !dd.style.display) {
+      document.getElementById('main-tipo-filter-input')?.focus();
+      tipoSearchOpen();
+    } else {
+      _tipoSearchClose();
+    }
+  }
+
+  function tipoSearchKey(e) {
+    if (e.key === 'Escape') { _tipoSearchClose(); e.target.blur(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#tipo-search-dropdown .sector-dd-item');
+      if (first) first.click();
+    }
+  }
+
+  function _tipoSearchRenderDropdown() {
+    const dd = document.getElementById('tipo-search-dropdown');
+    if (!dd) return;
+    const tiposUsados = [...new Set(state.ativos.filter(a => {
+      if (_ativosSubtab === 'em_desuso') return a.statusUso === 'em_desuso';
+      return a.statusUso !== 'em_desuso';
+    }).map(a => a.tipo || 'Equipamento'))].sort();
+    const opts = [{ val: 'todos', label: 'Todos os tipos' }, ...tiposUsados.map(t => ({ val: t, label: t }))];
+    dd.innerHTML = opts.map(o => `<div class="sector-dd-item${_tipoSearchVal === o.val ? ' active' : ''}"
+      onmousedown="tipoSearchSelect('${o.val}',event)">${o.label}</div>`).join('');
+  }
+
+  function tipoSearchSelect(val, event) {
+    if (event) event.preventDefault();
+    _tipoSearchVal = val;
+    const inp = document.getElementById('main-tipo-filter-input');
+    if (inp) inp.value = val === 'todos' ? '' : val;
+    _tipoSearchClose();
+    renderCards();
+    if (typeof updateNotifBadge === 'function') updateNotifBadge();
+  }
+
+  function _tipoSearchClose() {
+    const dd = document.getElementById('tipo-search-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+
   // ── FORM SETOR SEARCH (campo digitável de setor no modal Novo Ativo) ──
   let _formSetorOpts = [];
   let _formSetorClickBound = false;
@@ -5174,6 +5355,9 @@
 
   window.ativosSetSubtab = function (tab) {
     _ativosSubtab = tab;
+    _tipoSearchVal = 'todos';
+    const tipoInp = document.getElementById('main-tipo-filter-input');
+    if (tipoInp) tipoInp.value = '';
     document.getElementById('subtab-em-operacao')?.classList.toggle('active', tab === 'em_operacao');
     document.getElementById('subtab-em-desuso')?.classList.toggle('active', tab === 'em_desuso');
     renderCards();
@@ -5184,6 +5368,14 @@
     const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
     const fCat = (typeof categorySearchGetValue === 'function') ? categorySearchGetValue() : 'todas';
     const fBusca = _normalizeSearch(document.getElementById('ativos-search-input')?.value);
+
+    // Atualizar visibilidade do filtro de tipo (só mostra se existir mais de 1 tipo nos ativos visíveis)
+    const tiposUsados = [...new Set(state.ativos.filter(a => {
+      if (_ativosSubtab === 'em_desuso') return a.statusUso === 'em_desuso';
+      return a.statusUso !== 'em_desuso';
+    }).map(a => a.tipo || 'Equipamento'))];
+    const tipoWrap = document.getElementById('tipo-filter-wrap');
+    if (tipoWrap) tipoWrap.style.display = tiposUsados.length > 1 ? '' : 'none';
 
     const filtrados = state.ativos
       .map((item, index) => ({ item, index }))
@@ -5197,7 +5389,8 @@
         if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(item)) return false;
         const matchSetor = fSetor === 'todos' || item.setor === fSetor;
         const matchCat = fCat === 'todas' || item.categoria === fCat;
-        if (!matchSetor || !matchCat) return false;
+        const matchTipo = _tipoSearchVal === 'todos' || (item.tipo || 'Equipamento') === _tipoSearchVal;
+        if (!matchSetor || !matchCat || !matchTipo) return false;
         if (fBusca) {
           const haystack = _normalizeSearch(item.nome + item.codigo + item.marca + item.modelo + item.serie + item.fornecedor);
           if (!haystack.includes(fBusca)) return false;
@@ -5256,13 +5449,15 @@
             ${flagHtml}
           </div>
         </div>
+        ${(a.tipo || 'Equipamento') === 'Equipamento' ? `
         <div class="asset-body">
           <div class="asset-row"><span class="asset-label">Marca</span><span class="asset-val">${a.marca}</span></div>
           <div class="asset-row"><span class="asset-label">Modelo</span><span class="asset-val">${a.modelo}</span></div>
           <div class="asset-row"><span class="asset-label">Nº Série</span><span class="asset-val">${a.serie}</span></div>
           <div class="asset-row"><span class="asset-label">Fornecedor</span><span class="asset-val">${a.fornecedor}</span></div>
-        </div>
+        </div>` : a.nota ? `<div class="asset-body"><div class="asset-row" style="flex-direction:column;align-items:flex-start;gap:2px;"><span class="asset-label">Observações</span><span class="asset-val" style="font-weight:400;color:var(--text-secondary);font-size:12px;white-space:pre-line;max-height:52px;overflow:hidden;">${a.nota}</span></div></div>` : `<div class="asset-body" style="min-height:32px;"></div>`}
         <div class="asset-badges">
+          ${a.tipo && a.tipo !== 'Equipamento' ? `<span class="badge" style="background:rgba(99,102,241,0.1);color:#6366f1;border-color:rgba(99,102,241,0.3);">${a.tipo}</span>` : ''}
           <span class="badge">${a.setor}</span>
           <span class="badge">${a.categoria}</span>
         </div>

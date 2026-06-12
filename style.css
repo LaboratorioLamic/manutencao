@@ -1246,6 +1246,37 @@
   .checklist-coment-toggle.active { color: #f4a261 !important; background: rgba(244,162,97,0.12) !important; }
   .checklist-coment-toggle.active:hover { background: rgba(244,162,97,0.2) !important; }
 
+  /* Botão lote no builder */
+  .checklist-lote-toggle { color: var(--text-muted) !important; }
+  .checklist-lote-toggle:hover { background: rgba(0,168,204,0.1) !important; color: var(--cyan) !important; }
+  .checklist-lote-toggle.active { color: var(--cyan) !important; background: rgba(0,168,204,0.12) !important; }
+  .checklist-lote-toggle.active:hover { background: rgba(0,168,204,0.2) !important; }
+
+  .checklist-item-wrap { display: flex; flex-direction: column; gap: 0; }
+  .checklist-item-wrap .checklist-item-row { border-radius: 10px; }
+  .checklist-item-wrap:has(.checklist-lote-row:not([style*="display:none"]):not([style*="display: none"])) .checklist-item-row { border-radius: 10px 10px 0 0; }
+  .checklist-lote-row {
+    background: var(--bg-card); border: 1.5px solid rgba(0,168,204,0.2);
+    border-top: none; border-radius: 0 0 10px 10px;
+    padding: 10px 12px 10px 12px;
+  }
+  .checklist-lote-fields { display: flex; gap: 10px; flex-wrap: wrap; }
+  .checklist-lote-field-wrap { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 120px; }
+  .checklist-lote-label { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .checklist-lote-input {
+    padding: 6px 10px; border: 1.5px solid var(--border); border-radius: 7px;
+    background: var(--bg); color: var(--text-primary); font-size: 13px;
+    outline: none; transition: var(--transition);
+  }
+  .checklist-lote-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0,168,204,0.1); }
+
+  .checklist-lote-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; font-weight: 600; color: var(--cyan);
+    background: var(--cyan-light); border: 1px solid rgba(0,168,204,0.25);
+    border-radius: 5px; padding: 2px 7px;
+  }
+
   /* ── MODAL BUSCA DE ATIVO ── */
   .ativo-search-input-wrap { position: relative; margin-bottom: 16px; }
   .ativo-search-input-wrap svg {
@@ -1403,6 +1434,15 @@
 
   /* Balão de comentário por item do checklist */
   .pub-check-item-wrap { display: flex; flex-direction: column; }
+  .pub-check-lote-btn {
+    flex-shrink: 0; width: 26px; height: 26px; border: none; background: transparent;
+    color: var(--text-muted); cursor: pointer; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    transition: var(--transition);
+  }
+  .pub-check-lote-btn:hover { background: rgba(0,168,204,0.1); color: var(--cyan); }
+  .pub-check-lote-btn.active { color: var(--cyan); background: rgba(0,168,204,0.1); }
+  .pub-check-lote-field { padding: 6px 0 2px 0; }
   .pub-check-coment-btn {
     flex-shrink: 0; width: 26px; height: 26px; border: none; background: transparent;
     color: var(--text-muted); cursor: pointer; border-radius: 6px;

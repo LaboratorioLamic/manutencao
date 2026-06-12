@@ -446,7 +446,7 @@ function _updateTopbarSectorBtn() {
   const txt   = document.getElementById('sector-badge-text');
   if (!badge || !txt) return;
   badge.style.display = ''; // sempre visível após login
-  const available = _getAvailableSetores();
+  const available = _getSelectableSetores();
   const selected  = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter : available;
   if (available.length === 0 || selected.length >= available.length) {
     txt.textContent = 'Todos os setores';
@@ -459,10 +459,22 @@ function _updateTopbarSectorBtn() {
   }
 }
 
+// Retorna os setores que o usuário atual pode selecionar no filtro da topbar
+// (interseção entre setores do grupo e override individual configurado pelo admin)
+function _getSelectableSetores() {
+  const groupSetores = _getAvailableSetores();
+  const userPref = currentSession?.setores;
+  if (Array.isArray(userPref) && userPref.length > 0) {
+    const intersection = groupSetores.filter(s => userPref.includes(s));
+    return intersection.length > 0 ? intersection : groupSetores;
+  }
+  return groupSetores;
+}
+
 // Abre o modal de seleção de setores para o filtro da topbar
 function openTopbarSectorFilter() {
-  const available = _getAvailableSetores();
-  const current   = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter : available;
+  const available = _getSelectableSetores();
+  const current   = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter.filter(s => available.includes(s)) : available;
   _openSectorModal(current, function (sel) {
     _topbarSetorFilter = sel;
     _updateTopbarSectorBtn();
