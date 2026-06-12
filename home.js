@@ -582,6 +582,14 @@
     const [y, m, day] = d.split('-');
     return `${day}/${m}/${y}`;
   }
+  function _fmtDateTime(iso) {
+    if (!iso) return '';
+    if (!iso.includes('T')) return _fmtDate(iso);
+    const [datePart, timePart] = iso.split('T');
+    const [y, m, day] = datePart.split('-');
+    const [h, min] = timePart.split(':');
+    return `${day}/${m}/${y} ${h}:${min}`;
+  }
 
   // ── ÍCONES SVG ───────────────────────────────────────────────
   const _ico = {
@@ -772,7 +780,7 @@
             const r = t ? state?.rotinas?.find(x => x.id === t.rotinaId) : null;
             return {
               cells: [_esc(t?.titulo || r?.nome || '—'), _tarefaAtivo(t || {}),
-                      _fmtDate((p.dataPublicacao||'').split('T')[0]), _esc(p.publicadoPorNome || '—')],
+                      _fmtDateTime(p.dataPublicacao || ''), _esc(p.publicadoPorNome || '—')],
               fn: t ? _fn(`openTarefaDetalhe('${t.id}')`) : '',
             };
           }),
@@ -895,7 +903,7 @@
       const nome   = _esc(t?.titulo || r?.nome || '—');
       const ativo  = a ? _esc(a.nome) : '—';
       const setor  = _esc(a?.setor || r?.setor || '—');
-      const data   = _fmtDate((p.dataPublicacao || '').split('T')[0]);
+      const data   = _fmtDateTime(p.dataPublicacao || '');
       const por    = _esc(p.publicadoPorNome || '—');
       const fn     = `viewPublicacao('${p.id}')`;
       const iniciais = (p.publicadoPorNome || '?').split(' ')

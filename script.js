@@ -101,6 +101,15 @@
     const [y,m,d] = datePart.split('-');
     return `${d}/${m}/${y}`;
   }
+  function formatDateTime(str) {
+    if (!str) return '—';
+    const value = typeof str === 'string' ? str : String(str);
+    if (!value.includes('T')) return formatDate(value);
+    const [datePart, timePart] = value.split('T');
+    const [y,m,d] = datePart.split('-');
+    const [h,min] = timePart.split(':');
+    return `${d}/${m}/${y} ${h}:${min}`;
+  }
   function parseDataRealizada(str) {
     if (!str) return { date: '', time: '' };
     const value = typeof str === 'string' ? str : String(str);
@@ -2279,7 +2288,7 @@
       id: uid(),
       tarefaId: tarefaDetalheId,
       dataRealizada,
-      dataPublicacao: new Date().toISOString().split('T')[0],
+      dataPublicacao: new Date().toISOString(),
       checklistMarcado: checkItems.map(it => it.id),
       ...(_comentariosEntries.length > 0 ? { checklistComentarios: Object.fromEntries(_comentariosEntries) } : {}),
       ...(_lotesEntries.length > 0 ? { checklistLotes: Object.fromEntries(_lotesEntries) } : {}),
@@ -2757,7 +2766,7 @@
       </div>` : '';
 
     document.getElementById('pub-view-subtitle').textContent =
-      `Realizada em ${formatDataRealizadaText(p.dataRealizada)} · Publicada em ${formatDate(p.dataPublicacao)}`;
+      `Realizada em ${formatDataRealizadaText(p.dataRealizada)} · Publicada em ${formatDateTime(p.dataPublicacao)}`;
 
     const ativo = t ? state.ativos[t.equipamentoIdx] : null;
 
@@ -2800,7 +2809,7 @@
         <div style="font-size:12px;color:var(--text-muted);margin-top:4px;">Tarefa: ${getTarefaLabel(t)}</div>
         <div class="view-badges" style="margin-top:8px;">
           <span class="view-badge">Realizada: ${formatDataRealizadaText(p.dataRealizada)}</span>
-          <span class="view-badge">Publicada: ${formatDate(p.dataPublicacao)}</span>
+          <span class="view-badge">Publicada: ${formatDateTime(p.dataPublicacao)}</span>
           ${p.publicadoPorNome ? `<span class="view-badge">Por: ${p.publicadoPorNome}</span>` : ''}
         </div>
       </div>
