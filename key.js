@@ -428,13 +428,14 @@ let _topbarSetorFilter = null;
 
 // Inicializa o filtro da topbar considerando o override por usuário
 function _initTopbarSectorFilter() {
-  const available  = _getAvailableSetores(); // setores do grupo
-  const userPref   = currentSession?.setores; // override individual configurado pelo admin
+  const available = _getAvailableSetores(); // setores do grupo
+  const userPref  = currentSession?.setores; // override individual configurado pelo admin
   if (Array.isArray(userPref) && userPref.length > 0) {
-    // Interseção: só mostra setores que estão tanto no override quanto no grupo
+    // Aplica exatamente os setores do override (interseção com grupo por segurança)
     const intersection = available.filter(s => userPref.includes(s));
-    _topbarSetorFilter = intersection.length > 0 ? intersection : [...available];
+    _topbarSetorFilter = intersection.length > 0 ? intersection : [];
   } else {
+    // Sem override: todos os setores do grupo ficam selecionados
     _topbarSetorFilter = [...available];
   }
   _updateTopbarSectorBtn();
@@ -493,15 +494,24 @@ function openTopbarSectorFilter() {
 // Verifica se o usuário pode ver um ativo com base no filtro de setores ativo
 function _userCanSeeAtivo(ativo) {
   if (!ativo) return false;
-  const filter = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter : _getAvailableSetores();
-  return filter.length === 0 || filter.includes(ativo.setor);
+  if (Array.isArray(_topbarSetorFilter)) {
+    // Filtro inicializado: vazio = nenhum setor selecionado = não vê nada
+    return _topbarSetorFilter.length > 0 && _topbarSetorFilter.includes(ativo.setor);
+  }
+  // Filtro ainda não inicializado: usa setores disponíveis do grupo
+  const available = _getAvailableSetores();
+  return available.length === 0 || available.includes(ativo.setor);
 }
 
 // Retorna os setores do state filtrados pelo filtro ativo da topbar
 function _getFilteredSetores() {
-  const all    = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
-  const filter = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter : _getAvailableSetores();
-  return filter.length > 0 ? all.filter(s => filter.includes(s)) : all;
+  const all = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
+  if (Array.isArray(_topbarSetorFilter)) {
+    // Filtro inicializado: respeita exatamente a seleção (vazio = nenhum)
+    return _topbarSetorFilter.length > 0 ? all.filter(s => _topbarSetorFilter.includes(s)) : [];
+  }
+  const available = _getAvailableSetores();
+  return available.length > 0 ? all.filter(s => available.includes(s)) : all;
 }
 
 // Aplica visibilidade/estado de botões com base nas permissões do usuário logado
