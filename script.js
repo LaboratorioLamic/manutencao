@@ -4222,6 +4222,11 @@
     const drop = document.getElementById('filter-setor-rotina-drop');
     if (!input || !drop) return;
     const q = input.value.trim().toLowerCase();
+    // Campo vazio → seleciona "Todos" automaticamente
+    if (!q) {
+      const hidden = document.getElementById('filter-setor-rotina-val');
+      if (hidden && hidden.value !== '') { hidden.value = ''; renderRotinasTable(); updateNotifBadge(); }
+    }
     const matches = q ? _rotinaSetorOpts.filter(s => s.toLowerCase().includes(q)) : _rotinaSetorOpts;
     drop.innerHTML = [
       `<div class="autocomplete-opt" onmousedown="rotinaSetorSelect('')"><em style="color:var(--text-muted)">Todos os setores</em></div>`,
@@ -4254,6 +4259,11 @@
     const drop = document.getElementById('filter-cat-rotina-drop');
     if (!input || !drop) return;
     const q = input.value.trim().toLowerCase();
+    // Campo vazio → seleciona "Todas" automaticamente
+    if (!q) {
+      const hidden = document.getElementById('filter-cat-rotina-val');
+      if (hidden && hidden.value !== '') { hidden.value = ''; renderRotinasTable(); updateNotifBadge(); }
+    }
     const matches = q ? _rotinaCatOpts.filter(c => c.toLowerCase().includes(q)) : _rotinaCatOpts;
     drop.innerHTML = [
       `<div class="autocomplete-opt" onmousedown="rotinaCatSelect('')"><em style="color:var(--text-muted)">Todas as categorias</em></div>`,
@@ -5188,6 +5198,7 @@
   }
 
   function sectorSearchFilter(q) {
+    if (!q.trim() && _sectorSearchVal !== 'todos') sectorSearchSelect('todos', null);
     _sectorSearchRenderDropdown(q.toLowerCase());
     const dd = document.getElementById('sector-search-dropdown');
     if (dd) dd.style.display = '';
@@ -5293,6 +5304,7 @@
   }
 
   function categorySearchFilter(q) {
+    if (!q.trim() && _categorySearchVal !== 'todas') categorySearchSelect('todas', null);
     _categorySearchRenderDropdown(q.toLowerCase());
     const dd = document.getElementById('category-search-dropdown');
     if (dd) dd.style.display = '';

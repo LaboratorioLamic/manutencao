@@ -44,11 +44,12 @@
     if (abrindo) _popularSelectsAgenda();
   };
 
+  // Armazena as opções disponíveis para autocomplete
+  const _agendaAutocompleteOptions = { setor: [], cat: [] };
+
   function _popularSelectsAgenda() {
     const selTipo  = document.getElementById('agenda-filter-tipo');
-    const selSetor = document.getElementById('agenda-filter-setor');
-    const selCat   = document.getElementById('agenda-filter-cat');
-    if (!selTipo || !selSetor || !selCat) return;
+    if (!selTipo) return;
 
     const ativosVisiveis = (typeof _userCanSeeAtivo === 'function')
       ? state.ativos.filter(a => _userCanSeeAtivo(a))
@@ -57,15 +58,100 @@
     const setores  = [...new Set(ativosVisiveis.map(a => a.setor).filter(Boolean))].sort();
     const cats     = [...new Set(ativosVisiveis.map(a => a.categoria).filter(Boolean))].sort();
 
+    // Tipo continua como select
     const _rebuild = (sel, items, placeholder) => {
       const cur = sel.value;
       sel.innerHTML = `<option value="">${placeholder}</option>` +
         items.map(v => `<option value="${v}"${v === cur ? ' selected' : ''}>${v}</option>`).join('');
     };
-    _rebuild(selTipo,  tipos,   'Todos');
-    _rebuild(selSetor, setores, 'Todos');
-    _rebuild(selCat,   cats,    'Todas');
+    _rebuild(selTipo, tipos, 'Todos');
+
+    // Setor e categoria usam autocomplete
+    _agendaAutocompleteOptions.setor = setores;
+    _agendaAutocompleteOptions.cat   = cats;
   }
+
+  // Valor selecionado atual dos campos autocomplete (não o texto digitado)
+  const _agendaFilterVal = { setor: '', cat: '' };
+
+  const _agendaTodosLabel = { setor: 'Todos', cat: 'Todas' };
+
+  window.agendaAutocomplete = function(field) {
+    const input = document.getElementById('agenda-filter-' + field);
+    const list  = document.getElementById('agenda-autocomplete-' + field);
+    if (!input || !list) return;
+    const q = input.value.trim().toLowerCase();
+
+    // Campo vazio → limpa filtro imediatamente
+    if (!q && _agendaFilterVal[field]) {
+      _agendaFilterVal[field] = '';
+      renderAgendaCalendario();
+    }
+
+    const opts = _agendaAutocompleteOptions[field] || [];
+    const filtered = q ? opts.filter(o => o.toLowerCase().includes(q)) : opts;
+    const todosLabel = _agendaTodosLabel[field];
+    const isTodos = _agendaFilterVal[field] === '';
+
+    const todosItem = `<div class="agenda-autocomplete-item${isTodos ? ' selected' : ''}" data-value="" onmousedown="agendaAutocompleteSelect('${field}','')">
+      ${todosLabel}
+    </div>`;
+
+    const optItems = filtered.map(v =>
+      `<div class="agenda-autocomplete-item${v === _agendaFilterVal[field] ? ' selected' : ''}" data-value="${v}" onmousedown="agendaAutocompleteSelect('${field}','${v.replace(/'/g,"\\'")}')">
+        ${v}
+      </div>`
+    ).join('');
+
+    list.innerHTML = todosItem + optItems;
+    list.classList.add('open');
+  };
+
+  window.agendaAutocompleteSelect = function(field, value) {
+    const input = document.getElementById('agenda-filter-' + field);
+    const list  = document.getElementById('agenda-autocomplete-' + field);
+    if (!input || !list) return;
+    _agendaFilterVal[field] = value;
+    input.value = value;
+    list.classList.remove('open');
+    renderAgendaCalendario();
+  };
+
+  window.agendaAutocompleteBlur = function(field) {
+    const list  = document.getElementById('agenda-autocomplete-' + field);
+    const input = document.getElementById('agenda-filter-' + field);
+    if (list) list.classList.remove('open');
+    // Se o texto não bate com o valor selecionado, reverte
+    if (input && input.value !== _agendaFilterVal[field]) {
+      input.value = _agendaFilterVal[field];
+    }
+  };
+
+  window.agendaAutocompleteKey = function(event, field) {
+    const list = document.getElementById('agenda-autocomplete-' + field);
+    if (!list || !list.classList.contains('open')) return;
+    const items = list.querySelectorAll('.agenda-autocomplete-item');
+    let focused = list.querySelector('.agenda-autocomplete-item.focused');
+    let idx = focused ? Array.from(items).indexOf(focused) : -1;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (focused) focused.classList.remove('focused');
+      idx = (idx + 1) % items.length;
+      items[idx].classList.add('focused');
+      items[idx].scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (focused) focused.classList.remove('focused');
+      idx = (idx - 1 + items.length) % items.length;
+      items[idx].classList.add('focused');
+      items[idx].scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (focused) agendaAutocompleteSelect(field, focused.dataset.value);
+    } else if (event.key === 'Escape') {
+      list.classList.remove('open');
+    }
+  };
 
   // ══════════════════════════════════════════
   // FILTRO — Minhas Tarefas
@@ -281,8 +367,8 @@
     const sessao = minhasTarefas && (typeof authGetCurrentUser === 'function') ? authGetCurrentUser() : null;
 
     const fTipo  = document.getElementById('agenda-filter-tipo')?.value  || '';
-    const fSetor = document.getElementById('agenda-filter-setor')?.value || '';
-    const fCat   = document.getElementById('agenda-filter-cat')?.value   || '';
+    const fSetor = _agendaFilterVal.setor || '';
+    const fCat   = _agendaFilterVal.cat   || '';
 
     const tarefasFiltradas = state.tarefas.filter(t => {
       if (!_tarefaVisivel(t)) return false;

@@ -350,6 +350,27 @@
   .agenda-filter-field { display: flex; align-items: center; gap: 7px; }
   #btn-agenda-filtro.active { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-light); }
 
+  /* Autocomplete setor/categoria na agenda */
+  .agenda-autocomplete-wrap { position: relative; width: 150px; }
+  .agenda-autocomplete-input {
+    width: 100%; padding: 6px 10px; font-size: 12px; border: 1px solid var(--border);
+    border-radius: var(--radius); background: var(--bg-card); color: var(--text-primary);
+    outline: none; transition: border-color 0.15s;
+  }
+  .agenda-autocomplete-input:focus { border-color: var(--cyan); box-shadow: 0 0 0 2px rgba(0,168,204,0.12); }
+  .agenda-autocomplete-list {
+    position: absolute; top: calc(100% + 3px); left: 0; width: 100%;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: var(--shadow-md); z-index: 9999; max-height: 200px; overflow-y: auto; display: none;
+  }
+  .agenda-autocomplete-list.open { display: block; }
+  .agenda-autocomplete-item {
+    padding: 7px 12px; font-size: 12px; cursor: pointer; color: var(--text-primary);
+    transition: background 0.1s;
+  }
+  .agenda-autocomplete-item:hover, .agenda-autocomplete-item.focused { background: var(--cyan-light); color: var(--cyan); }
+  .agenda-autocomplete-item.selected { font-weight: 600; color: var(--cyan); }
+
   .assets-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px;
   }

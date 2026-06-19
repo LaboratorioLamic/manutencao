@@ -585,15 +585,17 @@
                   </div>
                   <div class="agenda-filter-field">
                     <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">Setor</label>
-                    <select id="agenda-filter-setor" class="field-select" style="width:150px;padding:6px 30px 6px 10px;font-size:12px;" onchange="renderAgendaCalendario()">
-                      <option value="">Todos</option>
-                    </select>
+                    <div class="agenda-autocomplete-wrap" id="wrap-agenda-filter-setor">
+                      <input type="text" id="agenda-filter-setor" class="agenda-autocomplete-input" placeholder="Todos" autocomplete="off" oninput="agendaAutocomplete('setor')" onfocus="agendaAutocomplete('setor')" onblur="agendaAutocompleteBlur('setor')" onkeydown="agendaAutocompleteKey(event,'setor')">
+                      <div class="agenda-autocomplete-list" id="agenda-autocomplete-setor"></div>
+                    </div>
                   </div>
                   <div class="agenda-filter-field">
                     <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">Categoria</label>
-                    <select id="agenda-filter-cat" class="field-select" style="width:150px;padding:6px 30px 6px 10px;font-size:12px;" onchange="renderAgendaCalendario()">
-                      <option value="">Todas</option>
-                    </select>
+                    <div class="agenda-autocomplete-wrap" id="wrap-agenda-filter-cat">
+                      <input type="text" id="agenda-filter-cat" class="agenda-autocomplete-input" placeholder="Todas" autocomplete="off" oninput="agendaAutocomplete('cat')" onfocus="agendaAutocomplete('cat')" onblur="agendaAutocompleteBlur('cat')" onkeydown="agendaAutocompleteKey(event,'cat')">
+                      <div class="agenda-autocomplete-list" id="agenda-autocomplete-cat"></div>
+                    </div>
                   </div>
                 </div>
                 <!-- Botão filtro -->
