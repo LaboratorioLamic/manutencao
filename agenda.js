@@ -557,6 +557,8 @@
     const weekdaysEl = wrap?.querySelector('.agenda-weekdays');
     if (weekdaysEl) weekdaysEl.style.display = 'none';
 
+    wrap?.classList.add('agenda-calendar-wrap-semanal');
+    document.getElementById('rpanel-agenda')?.classList.add('rpanel-agenda-semanal');
     gridEl.className = 'agenda-sem-grid';
     gridEl.innerHTML = `
       <div class="agenda-sem-header">${headerCols}</div>
@@ -570,6 +572,8 @@
     if (!gridEl) return;
     gridEl.className = 'agenda-grid';
     const wrap = gridEl.closest('.agenda-calendar-wrap');
+    wrap?.classList.remove('agenda-calendar-wrap-semanal');
+    document.getElementById('rpanel-agenda')?.classList.remove('rpanel-agenda-semanal');
     const weekdaysEl = wrap?.querySelector('.agenda-weekdays');
     if (weekdaysEl) weekdaysEl.style.display = '';
   }
