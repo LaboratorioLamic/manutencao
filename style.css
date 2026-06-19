@@ -2990,3 +2990,131 @@ body.dark-mode .hkm-ac-status-badge.sb-muted {
   color: var(--text-muted);
   border-color: rgba(255,255,255,0.1);
 }
+
+/* ── ISENTO PREVENTIVA ── */
+.isento-toggle-card {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  background: linear-gradient(135deg, rgba(230,57,70,0.06) 0%, rgba(230,57,70,0.03) 100%);
+  border: 1.5px solid rgba(230,57,70,0.25);
+  border-radius: 12px; padding: 14px 16px;
+  transition: var(--transition);
+}
+.isento-toggle-card:has(input:checked) {
+  background: linear-gradient(135deg, rgba(230,57,70,0.12) 0%, rgba(230,57,70,0.06) 100%);
+  border-color: rgba(230,57,70,0.45);
+}
+.isento-toggle-info { flex: 1; min-width: 0; }
+.isento-toggle-label {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; font-weight: 600; color: var(--text-primary);
+}
+.isento-toggle-desc { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
+
+/* Cor vermelha no toggle quando isento ativo */
+.isento-toggle-card input:checked + .toggle-slider { background: var(--red, #e63946); }
+
+/* ── DROP ZONE ANEXO ── */
+.anexo-drop-zone {
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  border: 2px dashed var(--border); border-radius: 12px; padding: 24px 16px;
+  cursor: pointer; transition: var(--transition); text-align: center;
+}
+.anexo-drop-zone:hover, .anexo-drop-zone.drag-over {
+  border-color: var(--cyan); background: rgba(0,190,255,0.04);
+}
+.anexo-drop-text { font-size: 13px; font-weight: 500; color: var(--text-secondary); }
+.anexo-drop-hint { font-size: 11px; color: var(--text-muted); }
+
+/* ── GRID DE PREVIEW DE ANEXOS ── */
+.anexos-preview-grid {
+  display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px;
+}
+.anexo-preview-item {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  width: 72px; cursor: pointer; position: relative;
+}
+.anexo-preview-icon {
+  width: 56px; height: 56px; border-radius: 12px;
+  background: var(--bg-card); border: 1.5px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  transition: var(--transition); position: relative; overflow: hidden;
+}
+.anexo-preview-icon:hover { border-color: var(--cyan); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+.anexo-preview-icon svg { color: var(--text-muted); }
+.anexo-preview-icon img { width: 100%; height: 100%; object-fit: cover; }
+.anexo-preview-name {
+  font-size: 10px; font-weight: 600; color: var(--red, #e63946);
+  text-align: center; word-break: break-all; line-height: 1.3;
+  max-width: 72px; overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.anexo-preview-remove {
+  position: absolute; top: -4px; right: -4px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--red, #e63946); color: #fff;
+  border: none; cursor: pointer; font-size: 11px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25); transition: var(--transition);
+}
+.anexo-preview-remove:hover { transform: scale(1.15); }
+
+/* ── VISUALIZAÇÃO ISENTO NA VIEW ── */
+.isento-view-card {
+  display: flex; flex-direction: column; gap: 12px;
+  background: linear-gradient(135deg, rgba(230,57,70,0.08) 0%, rgba(230,57,70,0.03) 100%);
+  border: 1.5px solid rgba(230,57,70,0.3); border-radius: 14px;
+  padding: 16px 18px; margin-top: 16px;
+}
+.isento-view-header {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700; color: var(--red, #e63946);
+}
+.isento-view-desc {
+  font-size: 13px; color: var(--text-secondary); line-height: 1.55;
+  background: var(--bg); border-radius: 8px; padding: 10px 12px;
+  border: 1px solid var(--border);
+}
+.isento-view-anexos-title {
+  font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;
+}
+.isento-view-anexos-grid {
+  display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px;
+}
+
+#bloco-isento-fields { margin-top: 12px; }
+
+/* ── ANEXO LISTA (drawer) ── */
+.anexos-preview-grid { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+
+.anexo-row-item {
+  display: flex; align-items: center; gap: 10px;
+  background: var(--bg-card); border: 1.5px solid var(--border);
+  border-radius: 10px; padding: 8px 10px;
+  transition: var(--transition);
+}
+.anexo-row-item:hover { border-color: rgba(0,168,204,0.35); }
+
+.anexo-row-icon {
+  width: 40px; height: 40px; flex-shrink: 0;
+  border-radius: 8px; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: var(--transition);
+}
+.anexo-row-icon:hover { border-color: var(--cyan); transform: scale(1.05); }
+
+.anexo-row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+
+.anexo-titulo-input {
+  width: 100%; background: transparent; border: none; border-bottom: 1.5px solid var(--border);
+  border-radius: 0; padding: 2px 0; font-size: 12px; font-weight: 600;
+  color: var(--text-primary); outline: none; transition: border-color 0.2s;
+  font-family: inherit;
+}
+.anexo-titulo-input::placeholder { color: var(--text-muted); font-weight: 400; }
+.anexo-titulo-input:focus { border-bottom-color: var(--cyan); }
+
+.anexo-row-filename {
+  font-size: 10px; color: var(--text-muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}

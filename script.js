@@ -3498,11 +3498,17 @@
   function renderAtivoSelectorList() {
     const q = document.getElementById('ativo-selector-search').value.toLowerCase();
     const container = document.getElementById('ativo-selector-list');
-    const visSetores = (typeof authGetVisibleSetores === 'function') ? authGetVisibleSetores() : null;
+    // Setor selecionado no dropdown do módulo de rotinas
+    const fSetorRotina = (_ativoSelectorCtx === 'rotinas')
+      ? (document.getElementById('filter-setor-rotina')?.value || '')
+      : '';
     const found = state.ativos
       .map((a, i) => ({ a, i }))
       .filter(({ a }) => {
-        if (visSetores && !visSetores.includes(a.setor)) return false;
+        // Respeita filtro da topbar (permissões + seleção de setor da topbar)
+        if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(a)) return false;
+        // Respeita setor selecionado no dropdown do módulo
+        if (fSetorRotina && a.setor !== fSetorRotina) return false;
         return !q || a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q) || a.setor.toLowerCase().includes(q);
       })
       .sort((x, y) => {
@@ -3575,14 +3581,175 @@
     populateTipoSelect();
     switchDrawerTab('operacao');
 
+    // Campos isento preventiva
+    _rotinaAnexoFiles = [];
+    const isentoCheck = document.getElementById('rotina-isento-check');
+    const isentoDesc  = document.getElementById('rotina-isento-descricao');
+    if (editing && editing.tipo === 'Preventivo') {
+      isentoCheck.checked = !!editing.isentoPreventiva;
+      isentoDesc.value = editing.isentoDescricao || '';
+      _rotinaAnexoFiles = (editing.isentoAnexos || []).map(a => ({ ...a, _fromSaved: true }));
+    } else {
+      isentoCheck.checked = false;
+      isentoDesc.value = '';
+    }
+    toggleIsentoPreventiva();
+    renderRotinaAnexosPreview();
+
     document.getElementById('right-drawer').classList.add('open');
     document.getElementById('drawer-backdrop').classList.add('open');
+  }
+
+  // ── ISENTO PREVENTIVA ──
+  let _rotinaAnexoFiles = [];
+
+  function toggleIsentoPreventiva() {
+    const tipo = document.getElementById('rotina-tipo').value;
+    const bloco = document.getElementById('bloco-isento-preventiva');
+    if (bloco) bloco.style.display = tipo === 'Preventivo' ? '' : 'none';
+    if (tipo !== 'Preventivo') {
+      const chk = document.getElementById('rotina-isento-check');
+      if (chk) chk.checked = false;
+      toggleIsentoFields();
+    }
+  }
+
+  function toggleIsentoFields() {
+    const checked = document.getElementById('rotina-isento-check')?.checked;
+    const fields = document.getElementById('bloco-isento-fields');
+    if (fields) fields.style.display = checked ? '' : 'none';
+  }
+
+  function handleRotinaAnexoChange(e) {
+    const files = Array.from(e.target.files);
+    files.forEach(f => _rotinaAnexoFiles.push({ file: f, name: f.name, type: f.type, titulo: '' }));
+    renderRotinaAnexosPreview();
+    e.target.value = '';
+  }
+
+  function handleRotinaDrop(e) {
+    e.preventDefault();
+    document.getElementById('rotina-anexo-zone').classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer.files);
+    files.forEach(f => _rotinaAnexoFiles.push({ file: f, name: f.name, type: f.type, titulo: '' }));
+    renderRotinaAnexosPreview();
+  }
+
+  function removeRotinaAnexo(idx) {
+    _rotinaAnexoFiles.splice(idx, 1);
+    _renderRotinaAnexosFull();
+  }
+
+  function updateRotinaAnexoTitulo(idx, val) {
+    if (_rotinaAnexoFiles[idx]) _rotinaAnexoFiles[idx].titulo = val;
+  }
+
+  function _renderRotinaAnexosFull() {
+    const container = document.getElementById('rotina-anexos-preview');
+    if (!container) return;
+    container.innerHTML = '';
+    _rotinaAnexoFiles.forEach((f, i) => container.appendChild(_buildAnexoRow(f, i)));
+    // Disparar leitura de imagens sem dataUrl
+    _rotinaAnexoFiles.forEach((f, i) => {
+      if (f.file && f.type && f.type.startsWith('image/') && !f._dataUrl) {
+        const fr = new FileReader();
+        fr.onload = ev => {
+          _rotinaAnexoFiles[i]._dataUrl = ev.target.result;
+          const row = container.querySelector(`.anexo-row-item[data-idx="${i}"]`);
+          if (row) {
+            const icon = row.querySelector('.anexo-row-icon');
+            if (icon && !icon.querySelector('img')) {
+              icon.innerHTML = `<img src="${ev.target.result}" alt="${f.name}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
+            }
+          }
+        };
+        fr.readAsDataURL(f.file);
+      }
+    });
+  }
+
+  function _buildAnexoRow(f, i) {
+    const isImg = f.type && f.type.startsWith('image/');
+    const iconHtml = isImg && f._dataUrl
+      ? `<img src="${f._dataUrl}" alt="${f.name}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`
+      : _anexoIcon(f.name, f.type);
+    const row = document.createElement('div');
+    row.className = 'anexo-row-item';
+    row.dataset.idx = i;
+    row.innerHTML = `
+      <div class="anexo-row-icon" title="Abrir arquivo">
+        ${iconHtml}
+      </div>
+      <div class="anexo-row-body">
+        <input
+          class="anexo-titulo-input"
+          type="text"
+          placeholder="Título do documento (opcional)"
+        >
+        <div class="anexo-row-filename">${f.name}</div>
+      </div>
+      <button class="anexo-preview-remove" style="position:static;width:24px;height:24px;flex-shrink:0;" title="Remover">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" style="width:10px;height:10px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>`;
+    // Título — valor inicial e listener que só salva no array, nunca re-renderiza
+    const input = row.querySelector('.anexo-titulo-input');
+    input.value = f.titulo || '';
+    input.addEventListener('input', () => updateRotinaAnexoTitulo(i, input.value));
+    // Ícone: abrir preview
+    row.querySelector('.anexo-row-icon').addEventListener('click', () => previewRotinaAnexo(i));
+    // Remover
+    row.querySelector('.anexo-preview-remove').addEventListener('click', () => removeRotinaAnexo(i));
+    return row;
+  }
+
+  function renderRotinaAnexosPreview() {
+    _renderRotinaAnexosFull();
+  }
+
+  function previewRotinaAnexo(idx) {
+    const f = _rotinaAnexoFiles[idx];
+    if (!f) return;
+    if (f._url) { window.open(f._url, '_blank'); return; }
+    if (f.file) {
+      const url = URL.createObjectURL(f.file);
+      window.open(url, '_blank');
+    }
+  }
+
+  function _anexoIcon(name, type) {
+    const ext = (name || '').split('.').pop().toLowerCase();
+    const isPdf = type === 'application/pdf' || ext === 'pdf';
+    const isImg = type && type.startsWith('image/');
+    if (isPdf) return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:28px;height:28px;color:#e63946;"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="12" y2="17"/></svg>`;
+    if (isImg) return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:28px;height:28px;color:var(--cyan);"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`;
+    return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:28px;height:28px;color:var(--text-muted);"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
+  }
+
+  function _openIsentoAnexo(anexoIdx, rotinaId) {
+    const r = state.rotinas.find(r => r.id === rotinaId);
+    if (!r || !r.isentoAnexos) return;
+    const a = r.isentoAnexos[anexoIdx];
+    if (!a) return;
+    if (a._dataUrl) {
+      const win = window.open('', '_blank');
+      if (a.type && a.type.startsWith('image/')) {
+        win.document.write(`<img src="${a._dataUrl}" style="max-width:100%;height:auto;">`);
+      } else {
+        const link = win.document.createElement('a');
+        link.href = a._dataUrl;
+        link.download = a.name;
+        win.document.body.appendChild(link);
+        link.click();
+        win.close();
+      }
+    }
   }
 
   function closeRotinaDrawer() {
     document.getElementById('right-drawer').classList.remove('open');
     document.getElementById('drawer-backdrop').classList.remove('open');
     _selectedEquipIdx = null;
+    _rotinaAnexoFiles = [];
   }
 
   function switchDrawerTab(tab) {
@@ -3674,24 +3841,54 @@
     if (!tipo) { showToast('Selecione o tipo da rotina.', 'error'); return; }
 
     const rotinaExistente = rotinaEdicaoId ? state.rotinas.find(r => r.id === rotinaEdicaoId) : null;
-    const rotina = {
-      id: rotinaEdicaoId || uid(),
-      nome, tipo, equipamentoIdx: _selectedEquipIdx,
-      status: rotinaExistente?.status || 'Ativo',
-      _historico: rotinaExistente?._historico || []
+
+    // Campos isento preventiva
+    const isentoCheck = document.getElementById('rotina-isento-check');
+    const isentoDesc  = document.getElementById('rotina-isento-descricao');
+    const isentoAtivo = tipo === 'Preventivo' && isentoCheck?.checked;
+    const isentoDescricao = isentoAtivo ? (isentoDesc?.value.trim() || '') : '';
+
+    const _buildRotina = (anexosSalvos) => {
+      const rotina = {
+        id: rotinaEdicaoId || uid(),
+        nome, tipo, equipamentoIdx: _selectedEquipIdx,
+        status: rotinaExistente?.status || 'Ativo',
+        _historico: rotinaExistente?._historico || [],
+        isentoPreventiva: isentoAtivo,
+        isentoDescricao: isentoDescricao,
+        isentoAnexos: isentoAtivo ? anexosSalvos : []
+      };
+      _registrarEdicao(rotina, rotinaExistente);
+      if (rotinaEdicaoId) {
+        const idx = state.rotinas.findIndex(r => r.id === rotinaEdicaoId);
+        if (idx >= 0) state.rotinas[idx] = rotina;
+        showToast('Rotina atualizada!', 'success');
+      } else {
+        state.rotinas.push(rotina);
+        showToast('Rotina cadastrada!', 'success');
+      }
+      saveState();
+      closeRotinaDrawer();
     };
 
-    _registrarEdicao(rotina, rotinaExistente);
-    if (rotinaEdicaoId) {
-      const idx = state.rotinas.findIndex(r => r.id === rotinaEdicaoId);
-      if (idx >= 0) state.rotinas[idx] = rotina;
-      showToast('Rotina atualizada!', 'success');
+    // Converter novos arquivos para base64, manter os já salvos
+    const toProcess = _rotinaAnexoFiles.filter(f => f.file && !f._fromSaved);
+    const alreadySaved = _rotinaAnexoFiles.filter(f => f._fromSaved).map(f => ({ name: f.name, type: f.type, titulo: f.titulo || '', _dataUrl: f._dataUrl, _url: f._url }));
+    if (toProcess.length === 0) {
+      _buildRotina(alreadySaved);
     } else {
-      state.rotinas.push(rotina);
-      showToast('Rotina cadastrada!', 'success');
+      let done = 0;
+      const converted = [];
+      toProcess.forEach((f, i) => {
+        const fr = new FileReader();
+        fr.onload = ev => {
+          converted[i] = { name: f.name, type: f.type, titulo: f.titulo || '', _dataUrl: ev.target.result };
+          done++;
+          if (done === toProcess.length) _buildRotina([...alreadySaved, ...converted]);
+        };
+        fr.readAsDataURL(f.file);
+      });
     }
-    saveState();
-    closeRotinaDrawer();
   }
 
 
@@ -3871,6 +4068,34 @@
               <div class="checklist-item-text">${it.texto}</div>
             </div>`).join('')}
           </div>
+        </div>` : ''}
+      ${r.tipo === 'Preventivo' && r.isentoPreventiva ? `
+        <div class="isento-view-card">
+          <div class="isento-view-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:18px;height:18px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+            Isento de Manutenção Preventiva
+          </div>
+          ${r.isentoDescricao ? `<div class="isento-view-desc">${r.isentoDescricao}</div>` : ''}
+          ${(r.isentoAnexos && r.isentoAnexos.length > 0) ? `
+            <div>
+              <div class="isento-view-anexos-title">Documentos anexados</div>
+              <div class="isento-view-anexos-grid">
+                ${r.isentoAnexos.map((a, i) => {
+                  const isImg = a.type && a.type.startsWith('image/');
+                  const iconHtml = isImg && a._dataUrl
+                    ? `<img src="${a._dataUrl}" alt="${a.name}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`
+                    : _anexoIcon(a.name, a.type);
+                  const openFn = a._dataUrl ? `_openIsentoAnexo(${i}, '${r.id}')` : '';
+                  const label = a.titulo && a.titulo.trim() ? a.titulo.trim() : a.name;
+                  return `<div class="anexo-preview-item">
+                    <div class="anexo-preview-icon" onclick="${openFn}" title="${a.titulo || a.name}" style="${openFn ? 'cursor:pointer;' : ''}">
+                      ${iconHtml}
+                    </div>
+                    <div class="anexo-preview-name">${label}</div>
+                  </div>`;
+                }).join('')}
+              </div>
+            </div>` : ''}
         </div>` : ''}
     `;
   }
