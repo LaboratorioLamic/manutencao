@@ -397,24 +397,39 @@
 
       // Agrupa por ativo para exibição compacta
       const porAtivo = {};
+      const hoje0 = new Date(); hoje0.setHours(0,0,0,0);
       evs.forEach(ev => {
         const key = ev.tarefa.equipamentoIdx;
-        if (!porAtivo[key]) porAtivo[key] = { ativoIdx: key, total: 0, temPublicada: false, temPendente: false };
+        if (!porAtivo[key]) porAtivo[key] = { ativoIdx: key, total: 0, temPublicada: false, temPendente: false, temAtraso: false, temAlerta: false };
         porAtivo[key].total++;
-        if (ev.tipo === 'publicada') porAtivo[key].temPublicada = true;
-        else porAtivo[key].temPendente = true;
+        if (ev.tipo === 'publicada') {
+          porAtivo[key].temPublicada = true;
+        } else {
+          porAtivo[key].temPendente = true;
+          const due  = new Date(dateStr + 'T00:00:00');
+          const diff = Math.ceil((due - hoje0) / 86400000);
+          if (diff < 0) {
+            porAtivo[key].temAtraso = true;
+          } else {
+            const lembrete = ev.tarefa.lembrete;
+            if (lembrete != null && diff <= lembrete) porAtivo[key].temAlerta = true;
+          }
+        }
       });
 
-      const ativos = Object.values(porAtivo);
-      const MAX_CHIPS = 2;
+      const _prioAtivo = a => a.temAtraso ? 0 : a.temAlerta ? 1 : a.temPendente ? 2 : 3;
+      const ativos = Object.values(porAtivo).sort((a, b) => _prioAtivo(a) - _prioAtivo(b));
+      const MAX_CHIPS = 8;
       const chipsHtml = ativos.slice(0, MAX_CHIPS).map(a => {
         const ativo = state.ativos[a.ativoIdx];
         const nome  = ativo?.nome || '—';
         let cls = 'agenda-chip';
-        if (a.temPendente && a.temPublicada) cls += ' agenda-chip-misto';
-        else if (a.temPublicada) cls += ' agenda-chip-ok';
-        else cls += ' agenda-chip-pend';
-        return `<div class="${cls}" title="${nome}">${nome} <span class="agenda-chip-count">${a.total}</span></div>`;
+        if (a.temAtraso)                          cls += ' agenda-chip-atraso';
+        else if (a.temAlerta)                     cls += ' agenda-chip-alerta';
+        else if (a.temPendente && a.temPublicada) cls += ' agenda-chip-misto';
+        else if (a.temPublicada)                  cls += ' agenda-chip-ok';
+        else                                      cls += ' agenda-chip-pend';
+        return `<div class="${cls}" title="${nome}"><span class="agenda-chip-nome">${nome}</span><span class="agenda-chip-count">${a.total}</span></div>`;
       }).join('');
 
       const extra = ativos.length > MAX_CHIPS
@@ -490,19 +505,42 @@
         const ativo   = state.ativos[t.equipamentoIdx];
         const rotina  = state.rotinas.find(r => r.id === t.rotinaId);
         const isPub   = ev.tipo === 'publicada';
-        const flag    = getTaskFlag(t);
-        const cls     = isPub ? 'agenda-sem-card-ok' : 'agenda-sem-card-pend';
+        const isProxima = !isPub && ds === t.proximaData;
         const action  = isPub
           ? `onclick="viewPublicacao('${ev.pub.id}')"`
-          : `onclick="_agendaAbrirPublicar('${t.id}')"`;
+          : isProxima
+            ? `onclick="_agendaAbrirPublicar('${t.id}')"`
+            : `onclick="_agendaAvisoFutura('${t.id}','${ds}')"`;
         const titulo  = t.titulo || rotina?.nome || '—';
         const ativoNome = ativo?.nome || '—';
+        // Calcula prazo relativo à data projetada do card
+        let flagHtml = '';
+        let cls = isPub ? 'agenda-sem-card-ok' : 'agenda-sem-card-pend';
+        if (!isPub) {
+          const today = new Date(); today.setHours(0,0,0,0);
+          const due   = new Date(ds + 'T00:00:00');
+          const diff  = Math.ceil((due - today) / 86400000);
+          let flagCls, flagLabel;
+          if (diff < 0) {
+            flagCls = 'flag-danger'; flagLabel = `Vencida ${Math.abs(diff)}d`;
+            cls = 'agenda-sem-card-atraso';
+          } else {
+            const lembrete = t.lembrete;
+            if (lembrete != null && diff <= lembrete) {
+              flagCls = 'flag-warning'; cls = 'agenda-sem-card-alerta';
+            } else {
+              flagCls = 'flag-ok';
+            }
+            flagLabel = `${diff}d`;
+          }
+          flagHtml = `<span class="task-flag ${flagCls}" style="font-size:9px;padding:1px 5px;">${flagLabel}</span>`;
+        }
         return `<div class="agenda-sem-card ${cls}" ${action} title="${titulo}">
           <div class="agenda-sem-card-titulo">${titulo}</div>
           <div class="agenda-sem-card-ativo">${ativoNome}</div>
           ${rotina ? `<div class="agenda-sem-card-rotina">${rotina.nome}</div>` : ''}
           <div class="agenda-sem-card-footer">
-            <span class="task-flag ${flag.cls}" style="font-size:9px;padding:1px 5px;">${flag.label}</span>
+            ${flagHtml}
             ${isPub ? `<span class="agenda-sem-card-pub">✓ Publicada</span>` : ''}
           </div>
         </div>`;
@@ -577,14 +615,31 @@
   // ══════════════════════════════════════════
   // MODAL DETALHE DO DIA
   // ══════════════════════════════════════════
-  function _flagHtml(tarefa) {
-    const f = getTaskFlag(tarefa);
+  function _flagHtml(tarefa, dateStr) {
     const icons = {
       'flag-danger':   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`,
       'flag-warning':  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
       'flag-ok':       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;"><polyline points="20 6 9 17 4 12"/></svg>`,
       'flag-inactive': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>`
     };
+    let f;
+    if (dateStr) {
+      if (tarefa.status === 'Inativo') {
+        f = { cls: 'flag-inactive', label: 'Inativo' };
+      } else {
+        const today = new Date(); today.setHours(0,0,0,0);
+        const due   = new Date(dateStr + 'T00:00:00');
+        const diff  = Math.ceil((due - today) / 86400000);
+        if (diff < 0) {
+          f = { cls: 'flag-danger', label: `Vencida ${Math.abs(diff)}d` };
+        } else {
+          const lembrete = tarefa.lembrete;
+          f = { cls: (lembrete != null && diff <= lembrete) ? 'flag-warning' : 'flag-ok', label: `${diff}d` };
+        }
+      }
+    } else {
+      f = getTaskFlag(tarefa);
+    }
     return `<span class="task-flag ${f.cls}">${icons[f.cls] || ''}${f.label}</span>`;
   }
 
@@ -623,7 +678,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
           Atividades Concluídas (${publicadas.length})
         </div>`;
-        html += _renderTabelaDia(publicadas, 'publicada');
+        html += _renderTabelaDia(publicadas, 'publicada', dateStr);
       }
 
       if (pendentes.length) {
@@ -631,7 +686,7 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
           Tarefas Pendentes / Projetadas (${pendentes.length})
         </div>`;
-        html += _renderTabelaDia(pendentes, 'pendente');
+        html += _renderTabelaDia(pendentes, 'pendente', dateStr);
       }
 
       content.innerHTML = html;
@@ -640,7 +695,7 @@
     openModal('modal-agenda-dia');
   };
 
-  function _renderTabelaDia(evs, tipo) {
+  function _renderTabelaDia(evs, tipo, dateStr) {
     const canPublicar = typeof _can === 'function' ? _can('tarefas.publicar') : true;
 
     const rows = evs.map(ev => {
@@ -652,9 +707,9 @@
       const codigoAtivo = ativo?.codigo || '';
       const nomeRotina  = rotina?.nome  || '—';
       const tipoRotina  = rotina?.tipo  || '';
-      const prazo       = tarefa.proximaData ? formatDate(tarefa.proximaData) : (tarefa.dataTarefa ? formatDate(tarefa.dataTarefa) : '—');
+      const prazo       = dateStr ? formatDate(dateStr) : (tarefa.proximaData ? formatDate(tarefa.proximaData) : (tarefa.dataTarefa ? formatDate(tarefa.dataTarefa) : '—'));
       const lembrete    = tarefa.lembrete ? `${tarefa.lembrete}d` : '—';
-      const flagHtml    = _flagHtml(tarefa);
+      const flagHtml    = tipo === 'publicada' ? '' : _flagHtml(tarefa, dateStr);
 
       let acaoHtml = '';
       if (tipo === 'publicada' && pub) {
@@ -678,12 +733,18 @@
         </tr>`;
       } else {
         // Pendente/projetada
+        const isProxima = !dateStr || dateStr === tarefa.proximaData;
         if (canPublicar && tarefa.status === 'Ativo') {
-          acaoHtml = `<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;"
-            onclick="_agendaAbrirPublicar('${tarefa.id}')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-            Publicar
-          </button>`;
+          acaoHtml = isProxima
+            ? `<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;"
+                onclick="_agendaAbrirPublicar('${tarefa.id}')">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                Publicar
+              </button>`
+            : `<button class="btn btn-outline" disabled style="font-size:11px;padding:4px 10px;opacity:0.45;cursor:not-allowed;" title="Realize a próxima antes desta">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                Publicar
+              </button>`;
         } else {
           acaoHtml = `<button class="btn btn-outline" style="font-size:11px;padding:4px 10px;"
             onclick="closeAgendaDiaModal();openTarefaDetalhe('${tarefa.id}')">
@@ -733,6 +794,45 @@
   window._agendaAbrirPublicar = function (tarefaId) {
     closeAgendaDiaModal();
     openPublicarModalDireto(tarefaId);
+  };
+
+  window._agendaAvisoFutura = function (tarefaId, dateStr) {
+    const tarefa  = state.tarefas?.find(t => t.id === tarefaId);
+    const rotina  = tarefa ? state.rotinas.find(r => r.id === tarefa.rotinaId) : null;
+    const proxima = tarefa?.proximaData || '—';
+    const titulo  = tarefa?.titulo || rotina?.nome || 'Tarefa';
+    const fmtDate = s => {
+      if (!s || s === '—') return '—';
+      const [y, m, d] = s.split('-');
+      return `${d}/${m}/${y}`;
+    };
+
+    const existing = document.getElementById('agenda-aviso-futura');
+    if (existing) existing.remove();
+
+    const el = document.createElement('div');
+    el.id = 'agenda-aviso-futura';
+    el.innerHTML = `
+      <div class="agenda-aviso-futura-backdrop" onclick="document.getElementById('agenda-aviso-futura').remove()"></div>
+      <div class="agenda-aviso-futura-box">
+        <div class="agenda-aviso-futura-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:28px;height:28px;">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
+        <div class="agenda-aviso-futura-titulo">Atividade ainda não programada</div>
+        <div class="agenda-aviso-futura-msg">
+          A atividade <strong>${titulo}</strong> está programada para <strong>${fmtDate(dateStr)}</strong>,
+          mas ainda há uma ocorrência anterior pendente.
+        </div>
+        <div class="agenda-aviso-futura-detalhe">
+          Realize primeiro a ocorrência de <strong>${fmtDate(proxima)}</strong> antes de registrar esta data.
+        </div>
+        <button class="btn btn-primary agenda-aviso-futura-btn"
+          onclick="document.getElementById('agenda-aviso-futura').remove()">Entendido</button>
+      </div>`;
+    document.body.appendChild(el);
   };
 
   // Atualiza o calendário sempre que refreshTaskFlagsUI for chamado com a agenda ativa

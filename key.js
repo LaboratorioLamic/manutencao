@@ -364,6 +364,7 @@ function _onFirebaseConnected() {
       _applyAuthData(liveData);
       if (typeof renderUsersTable  === 'function') renderUsersTable();
       if (typeof renderGroupsTable === 'function') renderGroupsTable();
+      if (currentSession) _initTopbarSectorFilter();
     });
 
     if (_restoreSession()) {
@@ -433,7 +434,8 @@ function _initTopbarSectorFilter() {
   if (Array.isArray(userPref) && userPref.length > 0) {
     // Aplica exatamente os setores do override (interseção com grupo por segurança)
     const intersection = available.filter(s => userPref.includes(s));
-    _topbarSetorFilter = intersection.length > 0 ? intersection : [];
+    // Se a interseção for vazia (setores do override não existem no grupo), usa todos do grupo
+    _topbarSetorFilter = intersection.length > 0 ? intersection : [...available];
   } else {
     // Sem override: todos os setores do grupo ficam selecionados
     _topbarSetorFilter = [...available];
@@ -466,8 +468,7 @@ function _getSelectableSetores() {
   const groupSetores = _getAvailableSetores();
   const userPref = currentSession?.setores;
   if (Array.isArray(userPref) && userPref.length > 0) {
-    const intersection = groupSetores.filter(s => userPref.includes(s));
-    return intersection.length > 0 ? intersection : groupSetores;
+    return groupSetores.filter(s => userPref.includes(s));
   }
   return groupSetores;
 }

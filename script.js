@@ -89,6 +89,9 @@
         };
       }
       refreshTaskFlagsUI();
+      if (typeof _initTopbarSectorFilter === 'function' && typeof currentSession !== 'undefined' && currentSession) {
+        _initTopbarSectorFilter();
+      }
     });
   });
 
