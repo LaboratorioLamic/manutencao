@@ -1557,7 +1557,7 @@
   height: 28px;
   border-radius: 6px;
   border: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--bg-card);
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -1601,7 +1601,7 @@
   height: 32px;
   border-radius: 8px;
   border: 1.5px solid var(--border);
-  background: var(--surface);
+  background: var(--bg-card);
   color: var(--text-secondary);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;

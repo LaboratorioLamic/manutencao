@@ -684,7 +684,7 @@
   .avot-list { display: flex; flex-direction: column; gap: 10px; }
 
   .avot-card {
-    background: var(--surface);
+    background: var(--bg-card);
     border: 1.5px solid var(--border);
     border-radius: 10px;
     padding: 12px 14px;
@@ -3117,4 +3117,14 @@ body.dark-mode .hkm-ac-status-badge.sb-muted {
 .anexo-row-filename {
   font-size: 10px; color: var(--text-muted); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── ISENTO UPLOAD BOX ── */
+.isento-upload-box {
+  display: flex; flex-direction: column; gap: 0;
+  border: 1.5px solid var(--border); border-radius: 10px;
+  padding: 12px; background: var(--bg); margin-top: 8px;
+}
+.isento-upload-box .upload-drop-zone {
+  border-radius: 8px; margin-bottom: 0;
 }

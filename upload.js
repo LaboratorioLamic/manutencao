@@ -9,17 +9,19 @@ const UPLOAD_ALLOWED_EXT   = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.webp', 
 
 // ── Estado temporário de upload ──────────────────────────────
 const _uploadQueues = {
-  pub:        { file: null, dataUrl: null },
-  'edit-pub': { file: null, dataUrl: null }
+  pub:              { file: null, dataUrl: null },
+  'edit-pub':       { file: null, dataUrl: null },
+  'isento-rotina':  { file: null, dataUrl: null }
 };
 
 // Botões de salvar/confirmar bloqueados durante upload
 const _SAVE_BTN_IDS = {
-  'pub':        'btn-confirmar-publicacao',
-  'edit-pub':   'btn-salvar-edicao-pub'
+  'pub':            'btn-confirmar-publicacao',
+  'edit-pub':       'btn-salvar-edicao-pub',
+  'isento-rotina':  null
 };
 
-let _uploadsInProgress = { 'pub': false, 'edit-pub': false };
+let _uploadsInProgress = { 'pub': false, 'edit-pub': false, 'isento-rotina': false };
 
 function _setSaveBtnBlocked(ctx, blocked) {
   _uploadsInProgress[ctx] = blocked;

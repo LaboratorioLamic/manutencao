@@ -3588,13 +3588,15 @@
     if (editing && editing.tipo === 'Preventivo') {
       isentoCheck.checked = !!editing.isentoPreventiva;
       isentoDesc.value = editing.isentoDescricao || '';
-      _rotinaAnexoFiles = (editing.isentoAnexos || []).map(a => ({ ...a, _fromSaved: true }));
+      _rotinaAnexoFiles = (editing.isentoAnexos || []).map(a => ({ titulo: a.titulo, url: a.url, fileId: a.fileId || null, name: a.titulo }));
     } else {
       isentoCheck.checked = false;
       isentoDesc.value = '';
     }
     toggleIsentoPreventiva();
-    renderRotinaAnexosPreview();
+    if (typeof initUploadZone === 'function') initUploadZone('isento-rotina');
+    if (typeof resetUploadZone === 'function') resetUploadZone('isento-rotina');
+    _renderIsentoAnexosLista();
 
     document.getElementById('right-drawer').classList.add('open');
     document.getElementById('drawer-backdrop').classList.add('open');
@@ -3610,8 +3612,8 @@
     if (tipo !== 'Preventivo') {
       const chk = document.getElementById('rotina-isento-check');
       if (chk) chk.checked = false;
-      toggleIsentoFields();
     }
+    toggleIsentoFields();
   }
 
   function toggleIsentoFields() {
@@ -3620,100 +3622,44 @@
     if (fields) fields.style.display = checked ? '' : 'none';
   }
 
-  function handleRotinaAnexoChange(e) {
-    const files = Array.from(e.target.files);
-    files.forEach(f => _rotinaAnexoFiles.push({ file: f, name: f.name, type: f.type, titulo: '' }));
-    renderRotinaAnexosPreview();
-    e.target.value = '';
+  // ── UPLOAD ISENTO PREVENTIVA (via Google Drive) ──
+
+  async function doUploadIsentoAnexo() {
+    await doUploadAnexo('isento-rotina', ({ titulo, url, fileId }) => {
+      _rotinaAnexoFiles.push({ titulo, url, fileId, name: titulo });
+      _renderIsentoAnexosLista();
+    }, () => 'Isento');
   }
 
-  function handleRotinaDrop(e) {
-    e.preventDefault();
-    document.getElementById('rotina-anexo-zone').classList.remove('drag-over');
-    const files = Array.from(e.dataTransfer.files);
-    files.forEach(f => _rotinaAnexoFiles.push({ file: f, name: f.name, type: f.type, titulo: '' }));
-    renderRotinaAnexosPreview();
-  }
-
-  function removeRotinaAnexo(idx) {
-    _rotinaAnexoFiles.splice(idx, 1);
-    _renderRotinaAnexosFull();
-  }
-
-  function updateRotinaAnexoTitulo(idx, val) {
-    if (_rotinaAnexoFiles[idx]) _rotinaAnexoFiles[idx].titulo = val;
-  }
-
-  function _renderRotinaAnexosFull() {
-    const container = document.getElementById('rotina-anexos-preview');
-    if (!container) return;
-    container.innerHTML = '';
-    _rotinaAnexoFiles.forEach((f, i) => container.appendChild(_buildAnexoRow(f, i)));
-    // Disparar leitura de imagens sem dataUrl
-    _rotinaAnexoFiles.forEach((f, i) => {
-      if (f.file && f.type && f.type.startsWith('image/') && !f._dataUrl) {
-        const fr = new FileReader();
-        fr.onload = ev => {
-          _rotinaAnexoFiles[i]._dataUrl = ev.target.result;
-          const row = container.querySelector(`.anexo-row-item[data-idx="${i}"]`);
-          if (row) {
-            const icon = row.querySelector('.anexo-row-icon');
-            if (icon && !icon.querySelector('img')) {
-              icon.innerHTML = `<img src="${ev.target.result}" alt="${f.name}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`;
-            }
-          }
-        };
-        fr.readAsDataURL(f.file);
-      }
-    });
-  }
-
-  function _buildAnexoRow(f, i) {
-    const isImg = f.type && f.type.startsWith('image/');
-    const iconHtml = isImg && f._dataUrl
-      ? `<img src="${f._dataUrl}" alt="${f.name}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`
-      : _anexoIcon(f.name, f.type);
-    const row = document.createElement('div');
-    row.className = 'anexo-row-item';
-    row.dataset.idx = i;
-    row.innerHTML = `
-      <div class="anexo-row-icon" title="Abrir arquivo">
-        ${iconHtml}
-      </div>
-      <div class="anexo-row-body">
-        <input
-          class="anexo-titulo-input"
-          type="text"
-          placeholder="Título do documento (opcional)"
-        >
-        <div class="anexo-row-filename">${f.name}</div>
-      </div>
-      <button class="anexo-preview-remove" style="position:static;width:24px;height:24px;flex-shrink:0;" title="Remover">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" style="width:10px;height:10px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>`;
-    // Título — valor inicial e listener que só salva no array, nunca re-renderiza
-    const input = row.querySelector('.anexo-titulo-input');
-    input.value = f.titulo || '';
-    input.addEventListener('input', () => updateRotinaAnexoTitulo(i, input.value));
-    // Ícone: abrir preview
-    row.querySelector('.anexo-row-icon').addEventListener('click', () => previewRotinaAnexo(i));
-    // Remover
-    row.querySelector('.anexo-preview-remove').addEventListener('click', () => removeRotinaAnexo(i));
-    return row;
-  }
-
-  function renderRotinaAnexosPreview() {
-    _renderRotinaAnexosFull();
-  }
-
-  function previewRotinaAnexo(idx) {
-    const f = _rotinaAnexoFiles[idx];
-    if (!f) return;
-    if (f._url) { window.open(f._url, '_blank'); return; }
-    if (f.file) {
-      const url = URL.createObjectURL(f.file);
-      window.open(url, '_blank');
+  async function removeRotinaAnexo(idx) {
+    const a = _rotinaAnexoFiles[idx];
+    if (!a) return;
+    if (a.fileId) {
+      try { await driveDelete(a.fileId); } catch (_) {}
     }
+    _rotinaAnexoFiles.splice(idx, 1);
+    _renderIsentoAnexosLista();
+  }
+
+  function _renderIsentoAnexosLista() {
+    const container = document.getElementById('rotina-anexos-lista');
+    if (!container) return;
+    if (_rotinaAnexoFiles.length === 0) { container.innerHTML = ''; return; }
+    container.innerHTML = _rotinaAnexoFiles.map((a, i) => `
+      <div class="anexo-row-item" style="margin-bottom:6px;">
+        <div class="anexo-row-icon" onclick="window.open('${a.url}','_blank')" title="Abrir no Drive" style="cursor:pointer;">
+          ${_anexoIcon(a.titulo || a.name, '')}
+        </div>
+        <div class="anexo-row-body">
+          <div class="anexo-titulo-input" style="font-weight:600;font-size:12px;color:var(--text-primary);padding:2px 0;">${a.titulo || a.name}</div>
+          <div class="anexo-row-filename">
+            <a href="${a.url}" target="_blank" style="color:var(--cyan);text-decoration:none;font-size:10px;">Abrir no Drive ↗</a>
+          </div>
+        </div>
+        <button class="anexo-preview-remove" style="position:static;width:24px;height:24px;flex-shrink:0;" onclick="removeRotinaAnexo(${i})" title="Remover">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" style="width:10px;height:10px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>`).join('');
   }
 
   function _anexoIcon(name, type) {
@@ -3725,31 +3671,13 @@
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="width:28px;height:28px;color:var(--text-muted);"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`;
   }
 
-  function _openIsentoAnexo(anexoIdx, rotinaId) {
-    const r = state.rotinas.find(r => r.id === rotinaId);
-    if (!r || !r.isentoAnexos) return;
-    const a = r.isentoAnexos[anexoIdx];
-    if (!a) return;
-    if (a._dataUrl) {
-      const win = window.open('', '_blank');
-      if (a.type && a.type.startsWith('image/')) {
-        win.document.write(`<img src="${a._dataUrl}" style="max-width:100%;height:auto;">`);
-      } else {
-        const link = win.document.createElement('a');
-        link.href = a._dataUrl;
-        link.download = a.name;
-        win.document.body.appendChild(link);
-        link.click();
-        win.close();
-      }
-    }
-  }
 
   function closeRotinaDrawer() {
     document.getElementById('right-drawer').classList.remove('open');
     document.getElementById('drawer-backdrop').classList.remove('open');
     _selectedEquipIdx = null;
     _rotinaAnexoFiles = [];
+    if (typeof resetUploadZone === 'function') resetUploadZone('isento-rotina');
   }
 
   function switchDrawerTab(tab) {
@@ -3871,24 +3799,9 @@
       closeRotinaDrawer();
     };
 
-    // Converter novos arquivos para base64, manter os já salvos
-    const toProcess = _rotinaAnexoFiles.filter(f => f.file && !f._fromSaved);
-    const alreadySaved = _rotinaAnexoFiles.filter(f => f._fromSaved).map(f => ({ name: f.name, type: f.type, titulo: f.titulo || '', _dataUrl: f._dataUrl, _url: f._url }));
-    if (toProcess.length === 0) {
-      _buildRotina(alreadySaved);
-    } else {
-      let done = 0;
-      const converted = [];
-      toProcess.forEach((f, i) => {
-        const fr = new FileReader();
-        fr.onload = ev => {
-          converted[i] = { name: f.name, type: f.type, titulo: f.titulo || '', _dataUrl: ev.target.result };
-          done++;
-          if (done === toProcess.length) _buildRotina([...alreadySaved, ...converted]);
-        };
-        fr.readAsDataURL(f.file);
-      });
-    }
+    // Anexos já foram enviados ao Drive individualmente — salvar apenas metadados
+    const anexosSalvos = _rotinaAnexoFiles.map(a => ({ titulo: a.titulo || a.name, url: a.url, fileId: a.fileId || null }));
+    _buildRotina(anexosSalvos);
   }
 
 
@@ -4080,16 +3993,11 @@
             <div>
               <div class="isento-view-anexos-title">Documentos anexados</div>
               <div class="isento-view-anexos-grid">
-                ${r.isentoAnexos.map((a, i) => {
-                  const isImg = a.type && a.type.startsWith('image/');
-                  const iconHtml = isImg && a._dataUrl
-                    ? `<img src="${a._dataUrl}" alt="${a.name}" style="width:100%;height:100%;object-fit:cover;border-radius:8px;">`
-                    : _anexoIcon(a.name, a.type);
-                  const openFn = a._dataUrl ? `_openIsentoAnexo(${i}, '${r.id}')` : '';
-                  const label = a.titulo && a.titulo.trim() ? a.titulo.trim() : a.name;
-                  return `<div class="anexo-preview-item">
-                    <div class="anexo-preview-icon" onclick="${openFn}" title="${a.titulo || a.name}" style="${openFn ? 'cursor:pointer;' : ''}">
-                      ${iconHtml}
+                ${r.isentoAnexos.map(a => {
+                  const label = (a.titulo || a.name || 'Documento').trim();
+                  return `<div class="anexo-preview-item" onclick="window.open('${a.url}','_blank')" style="cursor:pointer;" title="Abrir no Drive">
+                    <div class="anexo-preview-icon">
+                      ${_anexoIcon(label, '')}
                     </div>
                     <div class="anexo-preview-name">${label}</div>
                   </div>`;
@@ -4251,7 +4159,7 @@
     overlay.id = 'modal-pausar-rotina';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:9999;backdrop-filter:blur(4px);';
     overlay.innerHTML = `
-      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:36px 32px;max-width:400px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
+      <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:16px;padding:36px 32px;max-width:400px;width:90%;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,0.4);">
         <div style="width:64px;height:64px;border-radius:50%;background:rgba(230,160,0,0.15);border:2px solid rgba(230,160,0,0.4);display:flex;align-items:center;justify-content:center;margin:0 auto 20px;">
           <svg viewBox="0 0 24 24" fill="none" stroke="rgb(230,160,0)" stroke-width="2" stroke-linecap="round" style="width:32px;height:32px;">
             <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
