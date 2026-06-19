@@ -612,16 +612,22 @@
 
   // ── KPI CARD ─────────────────────────────────────────────────
   function _kpi(titulo, valor, svg, cls, sub, tipo) {
-    return `<div class="home-kpi-card ${cls}"
-      onclick="homeOpenKPI('${tipo}')" style="cursor:pointer">
-      <div class="home-kpi-icon">${svg}</div>
+    return `<div class="home-kpi-card ${cls}" onclick="homeOpenKPI('${tipo}')">
+      <div class="home-kpi-head">
+        <div class="home-kpi-badge">
+          <svg viewBox="0 0 6 6" fill="currentColor" width="6" height="6"><circle cx="3" cy="3" r="3"/></svg>
+          ${sub || titulo}
+        </div>
+        <div class="home-kpi-icon">${svg}</div>
+      </div>
+      <div class="home-kpi-divider"></div>
       <div class="home-kpi-body">
         <div class="home-kpi-value">${valor}</div>
         <div class="home-kpi-title">${titulo}</div>
-        ${sub ? `<div class="home-kpi-subtitle">${sub}</div>` : ''}
       </div>
-      <div class="home-kpi-arrow">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <div class="home-kpi-footer">
+        Ver detalhes
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <polyline points="9 18 15 12 9 6"/>
         </svg>
       </div>
@@ -632,12 +638,12 @@
   function _renderKPIRow1(k) {
     return `<div class="home-kpi-row">
       ${_kpi('OTs Corretivas Abertas', k.otCorretivas,  _ico.wrench,
-          k.otCorretivas > 0 ? 'kpi-amber' : 'kpi-cyan', 'Em aberto', 'otCorretivas')}
+          'kpi-yellow', 'Em aberto', 'otCorretivas')}
       ${_kpi('OTs de Serviço Abertas', k.otsServico,    _ico.eye,
           'kpi-cyan', 'Não corretivas em aberto', 'otsServico')}
       ${_kpi('OTs com Falha',          k.otsFalhaTotal, _ico.alert,   'kpi-red',   'Ativos com falha registrada', 'otsFalha')}
       ${_kpi('OTs com Atraso',         k.otsAtraso,     _ico.clock,
-          'kpi-amber', 'Prazo vencido', 'otsAtraso')}
+          'kpi-orange', 'Prazo vencido', 'otsAtraso')}
     </div>`;
   }
 
@@ -645,7 +651,7 @@
   function _renderKPIRow2(k) {
     return `<div class="home-kpi-row">
       ${_kpi('Tarefas com Atraso', k.tarefasAtrasadas,  _ico.alert,
-          'kpi-amber',
+          'kpi-orange',
           'Vencidas sem conclusão', 'tarefasAtrasadas')}
       ${_kpi('Rotinas Ativas',     k.rotinasAtivas,     _ico.refresh, 'kpi-cyan',
           'Planos ativos', 'rotinasAtivas')}
@@ -658,6 +664,19 @@
   }
 
   // ── MODAL DE LISTAGEM KPI ─────────────────────────────────────
+  const _kpiTheme = {
+    otsAtraso:        { theme: 'orange',  ico: _ico => _ico.clock   },
+    otsServico:       { theme: 'cyan',    ico: _ico => _ico.eye     },
+    otsFalha:         { theme: 'red',     ico: _ico => _ico.alert   },
+    otCorretivas:     { theme: 'yellow',  ico: _ico => _ico.wrench  },
+    tarefasAtrasadas: { theme: 'orange',  ico: _ico => _ico.alert   },
+    rotinasAtivas:    { theme: 'cyan',    ico: _ico => _ico.refresh },
+    ativosParados:    { theme: 'red',     ico: _ico => _ico.pause   },
+    ativosEmUso:      { theme: 'green',   ico: _ico => _ico.monitor },
+    otConcluidas:     { theme: 'default', ico: _ico => _ico.checkC  },
+    tarefasConcluidas:{ theme: 'default', ico: _ico => _ico.task    },
+  };
+
   function _ensureKPIModal() {
     if (document.getElementById('home-kpi-modal')) return;
     const el = document.createElement('div');
@@ -666,6 +685,7 @@
     el.innerHTML = `
       <div class="hkm-box" onclick="event.stopPropagation()">
         <div class="hkm-header">
+          <div class="hkm-header-icon" id="hkm-icon"></div>
           <div class="hkm-title-area">
             <div class="hkm-title" id="hkm-title"></div>
             <div class="hkm-count" id="hkm-count"></div>
@@ -676,6 +696,7 @@
             </svg>
           </button>
         </div>
+        <div class="hkm-header-divider" id="hkm-divider"></div>
         <div class="hkm-body" id="hkm-body"></div>
       </div>`;
     el.addEventListener('click', () => homeCloseKPI());
@@ -1611,6 +1632,12 @@
     _kpiCardPage = 0;
     const k = calcKPIs();
     const data = _buildKPIData(tipo, k);
+
+    // Aplicar tema de cor ao box
+    const box = document.querySelector('#home-kpi-modal .hkm-box');
+    const t = _kpiTheme[tipo] || { theme: 'default', ico: ic => ic.chart };
+    box.className = `hkm-box hkm-theme-${t.theme}`;
+    document.getElementById('hkm-icon').innerHTML = t.ico(_ico);
 
     document.getElementById('hkm-title').textContent = data.titulo;
     const body = document.getElementById('hkm-body');
