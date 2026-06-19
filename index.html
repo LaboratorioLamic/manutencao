@@ -425,13 +425,25 @@
                 </button>
               </div>
 
-              <select id="filter-setor-rotina" class="field-select" style="width:auto;min-width:150px;" onchange="renderRotinasTable();updateNotifBadge()">
-                <option value="">Setor (Todos)</option>
-              </select>
+              <div id="filter-setor-rotina" class="autocomplete-wrapper" style="min-width:150px;">
+                <input id="filter-setor-rotina-input" class="field-select" type="text" placeholder="Setor (Todos)" autocomplete="off"
+                  oninput="rotinaSetorFilter()"
+                  onfocus="rotinaSetorFilter()"
+                  onblur="setTimeout(rotinaSetorClose,180)"
+                  style="width:100%;cursor:text;">
+                <input type="hidden" id="filter-setor-rotina-val" value="">
+                <div class="autocomplete-dropdown" id="filter-setor-rotina-drop"></div>
+              </div>
 
-              <select id="filter-cat-rotina" class="field-select" style="width:auto;min-width:150px;" onchange="renderRotinasTable();updateNotifBadge()">
-                <option value="">Categoria (Todas)</option>
-              </select>
+              <div id="filter-cat-rotina" class="autocomplete-wrapper" style="min-width:150px;">
+                <input id="filter-cat-rotina-input" class="field-select" type="text" placeholder="Categoria (Todas)" autocomplete="off"
+                  oninput="rotinaCatFilter()"
+                  onfocus="rotinaCatFilter()"
+                  onblur="setTimeout(rotinaCatClose,180)"
+                  style="width:100%;cursor:text;">
+                <input type="hidden" id="filter-cat-rotina-val" value="">
+                <div class="autocomplete-dropdown" id="filter-cat-rotina-drop"></div>
+              </div>
 
               <div class="topbar-spacer"></div>
 

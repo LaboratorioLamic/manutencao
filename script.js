@@ -406,8 +406,8 @@
     if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
 
     const fTipo   = document.getElementById('filter-tipo')?.value || '';
-    const fSetor  = document.getElementById('filter-setor-rotina')?.value || '';
-    const fCat    = document.getElementById('filter-cat-rotina')?.value || '';
+    const fSetor  = document.getElementById('filter-setor-rotina-val')?.value || '';
+    const fCat    = document.getElementById('filter-cat-rotina-val')?.value || '';
     const fAtivoIdx = state._ativoFiltroIdx ?? null;
 
     if (fAtivoIdx !== null && fAtivoIdx !== undefined && t.equipamentoIdx !== fAtivoIdx) return false;
@@ -1668,7 +1668,7 @@
 
     const fAtivoIdx  = state._ativoFiltroTarefasIdx ?? null;
     const fRotinaId  = state._rotinaFiltroTarefasId ?? null;
-    const fSetor     = document.getElementById('filter-setor-rotina')?.value || '';
+    const fSetor     = document.getElementById('filter-setor-rotina-val')?.value || '';
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
     const { col: tSCol, dir: tSDir } = _tarefasSort;
     const allList = state.tarefas.filter(t => {
@@ -2887,7 +2887,7 @@
 
     const fAtivoIdx  = state._ativoFiltroAtividadesIdx ?? null;
     const fRotinaId  = state._rotinaFiltroAtividadesId ?? null;
-    const fSetor     = document.getElementById('filter-setor-rotina')?.value || '';
+    const fSetor     = document.getElementById('filter-setor-rotina-val')?.value || '';
     const canEdit   = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
     const canDelete = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
@@ -3145,8 +3145,8 @@
     const tbody = document.getElementById('rotinas-tbody');
     if (!tbody) return;
     const fTipo   = document.getElementById('filter-tipo')?.value || '';
-    const fSetor  = document.getElementById('filter-setor-rotina')?.value || '';
-    const fCat    = document.getElementById('filter-cat-rotina')?.value || '';
+    const fSetor  = document.getElementById('filter-setor-rotina-val')?.value || '';
+    const fCat    = document.getElementById('filter-cat-rotina-val')?.value || '';
     const fAtivoIdx = state._ativoFiltroIdx ?? null;
 
     const { col: rSCol, dir: rSDir } = _rotinasSort;
@@ -3503,7 +3503,7 @@
     const container = document.getElementById('ativo-selector-list');
     // Setor selecionado no dropdown do módulo de rotinas
     const fSetorRotina = (_ativoSelectorCtx === 'rotinas')
-      ? (document.getElementById('filter-setor-rotina')?.value || '')
+      ? (document.getElementById('filter-setor-rotina-val')?.value || '')
       : '';
     const found = state.ativos
       .map((a, i) => ({ a, i }))
@@ -4208,15 +4208,76 @@
   }
 
   // ── FILTROS DA ABA ROTINA ──
+  let _rotinaSetorOpts = [];
+  let _rotinaCatOpts = [];
+
   function atualizarFiltrosRotina() {
     const raw = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
-    const setores = [...raw].sort((a, b) => a.localeCompare(b, 'pt'));
-    const setorOpts = setores.map(s => `<option value="${s}">${s}</option>`).join('');
-    const catOpts = [...state.categorias].sort((a, b) => a.localeCompare(b, 'pt')).map(c => `<option value="${c}">${c}</option>`).join('');
-    const fs = document.getElementById('filter-setor-rotina');
-    const fc = document.getElementById('filter-cat-rotina');
-    if (fs) fs.innerHTML = `<option value="">Setor (Todos)</option>` + setorOpts;
-    if (fc) fc.innerHTML = `<option value="">Categoria (Todas)</option>` + catOpts;
+    _rotinaSetorOpts = [...raw].sort((a, b) => a.localeCompare(b, 'pt'));
+    _rotinaCatOpts = [...state.categorias].sort((a, b) => a.localeCompare(b, 'pt'));
+  }
+
+  function rotinaSetorFilter() {
+    const input = document.getElementById('filter-setor-rotina-input');
+    const drop = document.getElementById('filter-setor-rotina-drop');
+    if (!input || !drop) return;
+    const q = input.value.trim().toLowerCase();
+    const matches = q ? _rotinaSetorOpts.filter(s => s.toLowerCase().includes(q)) : _rotinaSetorOpts;
+    drop.innerHTML = [
+      `<div class="autocomplete-opt" onmousedown="rotinaSetorSelect('')"><em style="color:var(--text-muted)">Todos os setores</em></div>`,
+      ...matches.map(s => `<div class="autocomplete-opt" onmousedown="rotinaSetorSelect('${s.replace(/'/g,"\\'")}')"><div class="autocomplete-opt-name">${s}</div></div>`)
+    ].join('');
+    drop.classList.add('open');
+  }
+
+  function rotinaSetorSelect(val) {
+    const input = document.getElementById('filter-setor-rotina-input');
+    const hidden = document.getElementById('filter-setor-rotina-val');
+    const drop = document.getElementById('filter-setor-rotina-drop');
+    if (input) input.value = val;
+    if (hidden) hidden.value = val;
+    if (drop) drop.classList.remove('open');
+    renderRotinasTable(); updateNotifBadge();
+  }
+
+  function rotinaSetorClose() {
+    const drop = document.getElementById('filter-setor-rotina-drop');
+    if (drop) drop.classList.remove('open');
+    // restaura texto ao valor selecionado se digitou algo inválido
+    const input = document.getElementById('filter-setor-rotina-input');
+    const hidden = document.getElementById('filter-setor-rotina-val');
+    if (input && hidden) input.value = hidden.value;
+  }
+
+  function rotinaCatFilter() {
+    const input = document.getElementById('filter-cat-rotina-input');
+    const drop = document.getElementById('filter-cat-rotina-drop');
+    if (!input || !drop) return;
+    const q = input.value.trim().toLowerCase();
+    const matches = q ? _rotinaCatOpts.filter(c => c.toLowerCase().includes(q)) : _rotinaCatOpts;
+    drop.innerHTML = [
+      `<div class="autocomplete-opt" onmousedown="rotinaCatSelect('')"><em style="color:var(--text-muted)">Todas as categorias</em></div>`,
+      ...matches.map(c => `<div class="autocomplete-opt" onmousedown="rotinaCatSelect('${c.replace(/'/g,"\\'")}')"><div class="autocomplete-opt-name">${c}</div></div>`)
+    ].join('');
+    drop.classList.add('open');
+  }
+
+  function rotinaCatSelect(val) {
+    const input = document.getElementById('filter-cat-rotina-input');
+    const hidden = document.getElementById('filter-cat-rotina-val');
+    const drop = document.getElementById('filter-cat-rotina-drop');
+    if (input) input.value = val;
+    if (hidden) hidden.value = val;
+    if (drop) drop.classList.remove('open');
+    renderRotinasTable(); updateNotifBadge();
+  }
+
+  function rotinaCatClose() {
+    const drop = document.getElementById('filter-cat-rotina-drop');
+    if (drop) drop.classList.remove('open');
+    const input = document.getElementById('filter-cat-rotina-input');
+    const hidden = document.getElementById('filter-cat-rotina-val');
+    if (input && hidden) input.value = hidden.value;
   }
 
   function isAtivosFilterOpen() {
