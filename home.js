@@ -396,9 +396,9 @@
         ${_renderFiltros()}
         <div class="home-grid">
           <div class="home-main">
-            ${_renderKPIRow1(kpis)}
-            ${_renderMidCharts(kpis)}
             ${_renderKPIRow2(kpis)}
+            ${_renderMidCharts(kpis)}
+            ${_renderKPIRow1(kpis)}
             ${_renderBottomCharts(kpis)}
           </div>
           <div class="home-sidebar">
@@ -638,9 +638,9 @@
   function _renderKPIRow1(k) {
     return `<div class="home-kpi-row">
       ${_kpi('OTs Corretivas Abertas', k.otCorretivas,  _ico.wrench,
-          'kpi-yellow', 'Em aberto', 'otCorretivas')}
+          'kpi-yellow', 'Corretiva em aberto', 'otCorretivas')}
       ${_kpi('OTs de Serviço Abertas', k.otsServico,    _ico.eye,
-          'kpi-cyan', 'Não corretivas em aberto', 'otsServico')}
+          'kpi-cyan', 'Serviço em aberto', 'otsServico')}
       ${_kpi('OTs com Falha',          k.otsFalhaTotal, _ico.alert,   'kpi-red',   'Ativos com falha registrada', 'otsFalha')}
       ${_kpi('OTs com Atraso',         k.otsAtraso,     _ico.clock,
           'kpi-orange', 'Prazo vencido', 'otsAtraso')}
@@ -1571,10 +1571,6 @@
         <div class="hkm-ac-detail-item">
           <div class="hkm-ac-dl">Nº de Série</div>
           ${dv(a.serie)}
-        </div>
-        <div class="hkm-ac-detail-item">
-          <div class="hkm-ac-dl">Fornecedor</div>
-          ${dv(a.fornecedor)}
         </div>
       </div>
       ${alertBlock}

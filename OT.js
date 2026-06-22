@@ -529,7 +529,8 @@ function _otGetFiltered() {
     }
     if (_otFilterAtivoIdx !== null && o.ativoIdx !== _otFilterAtivoIdx) return false;
     if (_otFilterMyOTs && sess) {
-      if (o.responsavelId !== sess.userId) return false;
+      const ids = o.responsavelIds || (o.responsavelId ? [o.responsavelId] : []);
+      if (!ids.includes(sess.userId)) return false;
     }
     if (!_otPassesDateFilter(o)) return false;
     if (_otFilterTipo && o.tipo !== _otFilterTipo) return false;
@@ -1018,7 +1019,7 @@ function _otTryTransition(otId, targetStatus) {
   const from = o.status;
 
   // Validações de transição
-  if (targetStatus === 'em_processo' && !o.responsavelNome) {
+  if (targetStatus === 'em_processo' && !(o.responsavelIds?.length || o.responsavelNome)) {
     showToast('Defina um responsável antes de iniciar a OT.', 'error');
     otOpenView(otId); return;
   }
@@ -1305,14 +1306,12 @@ function otOpenForm(id) {
   _otFormSetField('ot-f-prazo',      o?.prazo       || '');
   // Alerta padrão em branco para novas OTs; preserva valor existente ao editar
   _otFormSetField('ot-f-prazo-alerta', (o?.prazoAlertaDias !== undefined && o?.prazoAlertaDias !== null) ? o.prazoAlertaDias : '');
-  _otFormSetField('ot-f-resp',       o?.responsavelId || '');
-
   // Ativo vinculado
   _otAtivoIdx = o?.ativoIdx ?? null;
   _otRenderAtivoChip();
 
   // Responsável
-  _otBuildRespSelect(o?.responsavelId || '');
+  _otBuildRespSelect(o?.responsavelIds || o?.responsavelId || '');
 
   // Toggles
   const ativoFalhou = !!(o?.ativoFalhou);
@@ -1355,33 +1354,41 @@ function _otFormSetField(id, val) {
 }
 
 function _otBuildRespSelect(selectedId) {
-  _otRespId = selectedId || null;
+  if (Array.isArray(selectedId)) {
+    _otRespIds = selectedId.slice();
+  } else {
+    _otRespIds = selectedId ? [selectedId] : [];
+  }
   _otRenderRespChip();
 }
 
-let _otRespId = null;
+let _otRespIds = [];
 
 function _otRenderRespChip() {
   const wrap = document.getElementById('ot-resp-chip-wrap');
   if (!wrap) return;
   const users = typeof authState !== 'undefined' ? authState.users : [];
-  const user = _otRespId ? users.find(u => u.id === _otRespId) : null;
-  if (user) {
-    wrap.innerHTML = `<div style="display:flex;align-items:center;gap:6px;">
-      <span class="ativo-selecionado-chip">
-        ${_escHtml(user.nomeCompleto)}${user.cargo ? ' · ' + _escHtml(user.cargo) : ''}
-        <span class="chip-x" onclick="otClearResp()">×</span>
-      </span>
-    </div>`;
-  } else {
-    wrap.innerHTML = `<button type="button" class="btn btn-outline" onclick="otOpenRespSearch()">
+  const chips = _otRespIds.map(id => {
+    const u = users.find(x => x.id === id);
+    if (!u) return '';
+    return `<span class="ativo-selecionado-chip">
+      ${_escHtml(u.nomeCompleto)}${u.cargo ? ' · ' + _escHtml(u.cargo) : ''}
+      <span class="chip-x" onclick="otRemoveResp('${id}')">×</span>
+    </span>`;
+  }).join('');
+  wrap.innerHTML = `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;">
+    ${chips}
+    <button type="button" class="btn btn-outline" onclick="otOpenRespSearch()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-      Selecionar Responsável
-    </button>`;
-  }
+      ${_otRespIds.length === 0 ? 'Selecionar Responsável' : 'Adicionar'}
+    </button>
+  </div>`;
 }
 
-function otClearResp() { _otRespId = null; _otRenderRespChip(); }
+function otRemoveResp(id) {
+  _otRespIds = _otRespIds.filter(x => x !== id);
+  _otRenderRespChip();
+}
 
 function otOpenRespSearch() {
   const input = document.getElementById('ot-resp-search-input');
@@ -1403,22 +1410,29 @@ function _otRenderRespSearchList(q) {
     list.innerHTML = '<div class="autocomplete-empty">Nenhum usuário encontrado</div>';
     return;
   }
-  list.innerHTML = users.map(u => `
-    <div class="ativo-search-card" onclick="otSelectResp('${u.id}')">
+  list.innerHTML = users.map(u => {
+    const sel = _otRespIds.includes(u.id);
+    return `<div class="ativo-search-card${sel ? ' ativo-search-card--selected' : ''}" onclick="otSelectResp('${u.id}')">
       <div class="ativo-search-card-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
       </div>
-      <div>
+      <div style="flex:1;">
         <div class="ativo-search-card-name">${_escHtml(u.nomeCompleto)}</div>
         <div class="ativo-search-card-meta">${u.cargo ? _escHtml(u.cargo) : 'Sem cargo'}</div>
       </div>
-    </div>`).join('');
+      ${sel ? `<svg viewBox="0 0 24 24" fill="none" stroke="var(--green)" stroke-width="2.5" style="width:16px;height:16px;flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>` : ''}
+    </div>`;
+  }).join('');
 }
 
 function otSelectResp(id) {
-  _otRespId = id;
-  otCloseModal('modal-ot-resp-search');
+  if (_otRespIds.includes(id)) {
+    _otRespIds = _otRespIds.filter(x => x !== id);
+  } else {
+    _otRespIds.push(id);
+  }
   _otRenderRespChip();
+  _otRenderRespSearchList(document.getElementById('ot-resp-search-input')?.value?.toLowerCase() || '');
 }
 
 function _otSetToggle(id, active) {
@@ -1670,11 +1684,11 @@ function otSaveForm() {
   if (_otAtivoIdx === null) { showToast('Vincule um ativo à OT.', 'error'); otSwitchFormTab('dados'); return; }
   const prazo = document.getElementById('ot-f-prazo')?.value;
   if (!prazo) { showToast('Informe o prazo da OT.', 'error'); otSwitchFormTab('dados'); return; }
-  if (!_otRespId) { showToast('Selecione o responsável técnico.', 'error'); otSwitchFormTab('dados'); return; }
+  if (_otRespIds.length === 0) { showToast('Selecione o responsável técnico.', 'error'); otSwitchFormTab('dados'); return; }
 
-  const respId  = _otRespId || '';
-  const respUser = respId && typeof authState !== 'undefined'
-    ? authState.users.find(u => u.id === respId) : null;
+  const respIds = _otRespIds.slice();
+  const respUsers = typeof authState !== 'undefined'
+    ? respIds.map(id => authState.users.find(u => u.id === id)).filter(Boolean) : [];
 
   const sess = typeof currentSession !== 'undefined' ? currentSession : null;
   const ativoFalhou  = !!(document.getElementById('ot-toggle-falhou')?.classList.contains('active')) && tipo === 'corretiva';
@@ -1704,8 +1718,9 @@ function otSaveForm() {
       severidade: document.getElementById('ot-f-severidade')?.value || 'media',
       prazo:      document.getElementById('ot-f-prazo')?.value      || '',
       ativoIdx:   _otAtivoIdx,
-      responsavelId:   respId,
-      responsavelNome: respUser?.nomeCompleto || '',
+      responsavelIds:  respIds,
+      responsavelId:   respIds[0] || '',
+      responsavelNome: respUsers.map(u => u.nomeCompleto).join(', '),
       prazoAlertaDias: (() => {
         const raw = document.getElementById('ot-f-prazo-alerta')?.value;
         if (raw === '' || raw === null || raw === undefined) return null;
@@ -1741,8 +1756,9 @@ function otSaveForm() {
                     ? (state.ativos[_otAtivoIdx]?.setor || '') : '',
       solicitanteId:   sess?.userId       || null,
       solicitanteNome: sess?.nomeCompleto || sess?.username || '',
-      responsavelId:   respId,
-      responsavelNome: respUser?.nomeCompleto || '',
+      responsavelIds:  respIds,
+      responsavelId:   respIds[0] || '',
+      responsavelNome: respUsers.map(u => u.nomeCompleto).join(', '),
       prazoAlertaDias: (() => {
         const raw = document.getElementById('ot-f-prazo-alerta')?.value;
         if (raw === '' || raw === null || raw === undefined) return null;

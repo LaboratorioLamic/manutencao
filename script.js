@@ -1232,7 +1232,7 @@
   const _FIELD_LABELS = {
     nome:'Nome', titulo:'Título', tipo:'Tipo', equipamentoIdx:'Equipamento',
     setor:'Setor', categoria:'Categoria', marca:'Marca', modelo:'Modelo',
-    serie:'Nº de Série', fornecedor:'Fornecedor', nota:'Observações',
+    serie:'Nº de Série', nota:'Observações',
     codigo:'Código', frequencia:'Frequência', fazerCada:'Fazer a cada',
     repetir:'Repetir', vezes:'Vezes', lembrete:'Lembrete', dataTarefa:'Data da Tarefa',
     observacoes:'Observações', anexoObrigatorio:'Exigir Anexo',
@@ -4412,7 +4412,6 @@
       document.getElementById('ativo-marca').value = ativo.marca !== '-' ? ativo.marca : '';
       document.getElementById('ativo-modelo').value = ativo.modelo !== '-' ? ativo.modelo : '';
       document.getElementById('ativo-serie').value = ativo.serie !== '-' ? ativo.serie : '';
-      document.getElementById('ativo-fornecedor').value = ativo.fornecedor !== '-' ? ativo.fornecedor : '';
       document.getElementById('ativo-nota').value = ativo.nota;
       onAtivoTipoChange(tipo);
       _ativoStatusUI(ativo.statusUso || 'em_uso', ativo.pausaOTs || []);
@@ -4465,8 +4464,7 @@
         <div class="detail-card"><div class="detail-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>Marca</div><div class="detail-value">${ativo.marca}</div></div>
         <div class="detail-card"><div class="detail-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="14" rx="2"/></svg>Modelo</div><div class="detail-value">${ativo.modelo}</div></div>
         <div class="detail-card"><div class="detail-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Nº de Série</div><div class="detail-value">${ativo.serie}</div></div>
-        <div class="detail-card"><div class="detail-label"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20 16V7a2 2 0 00-2-2H6a2 2 0 00-2 2v9"/><path d="M16 21H8a2 2 0 01-2-2v-1h12v1a2 2 0 01-2 2z"/></svg>Fornecedor</div><div class="detail-value">${ativo.fornecedor}</div></div>
-        ` : ''}
+` : ''}
         <div class="detail-note"><div class="detail-label" style="margin-bottom:6px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;color:var(--cyan);"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Observações</div>
           <div class="detail-value" style="font-weight:400;font-size:13px;color:var(--text-secondary);white-space:pre-line;">${ativo.nota || '<span style="color:var(--text-muted);font-style:italic;">Nenhuma observação cadastrada.</span>'}</div>
         </div>
@@ -4952,7 +4950,6 @@
       marca: tipo === 'Equipamento' ? (document.getElementById('ativo-marca').value.trim() || "-") : "-",
       modelo: tipo === 'Equipamento' ? (document.getElementById('ativo-modelo').value.trim() || "-") : "-",
       serie: tipo === 'Equipamento' ? (document.getElementById('ativo-serie').value.trim() || "-") : "-",
-      fornecedor: tipo === 'Equipamento' ? (document.getElementById('ativo-fornecedor').value.trim() || "-") : "-",
       nota: document.getElementById('ativo-nota').value.trim(),
       statusUso, pausaOTs,
       _historico: ativoExistente?._historico || []
@@ -5610,7 +5607,7 @@
         const matchTipo = _tipoSearchVal === 'todos' || (item.tipo || 'Equipamento') === _tipoSearchVal;
         if (!matchSetor || !matchCat || !matchTipo) return false;
         if (fBusca) {
-          const haystack = _normalizeSearch(item.nome + item.codigo + item.marca + item.modelo + item.serie + item.fornecedor);
+          const haystack = _normalizeSearch(item.nome + item.codigo + item.marca + item.modelo + item.serie);
           if (!haystack.includes(fBusca)) return false;
         }
         return true;
@@ -5672,7 +5669,6 @@
           <div class="asset-row"><span class="asset-label">Marca</span><span class="asset-val">${a.marca}</span></div>
           <div class="asset-row"><span class="asset-label">Modelo</span><span class="asset-val">${a.modelo}</span></div>
           <div class="asset-row"><span class="asset-label">Nº Série</span><span class="asset-val">${a.serie}</span></div>
-          <div class="asset-row"><span class="asset-label">Fornecedor</span><span class="asset-val">${a.fornecedor}</span></div>
         </div>` : a.nota ? `<div class="asset-body"><div class="asset-row" style="flex-direction:column;align-items:flex-start;gap:2px;"><span class="asset-label">Observações</span><span class="asset-val" style="font-weight:400;color:var(--text-secondary);font-size:12px;white-space:pre-line;max-height:52px;overflow:hidden;">${a.nota}</span></div></div>` : `<div class="asset-body" style="min-height:32px;"></div>`}
         <div class="asset-badges">
           ${a.tipo && a.tipo !== 'Equipamento' ? `<span class="badge" style="background:rgba(99,102,241,0.1);color:#6366f1;border-color:rgba(99,102,241,0.3);">${a.tipo}</span>` : ''}
