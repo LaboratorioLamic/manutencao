@@ -677,6 +677,8 @@
     tarefasConcluidas:{ theme: 'default', ico: _ico => _ico.task    },
   };
 
+  let _kpiRotinasTipo = ''; // filtro de tipo ativo no modal de rotinas ativas
+
   function _ensureKPIModal() {
     if (document.getElementById('home-kpi-modal')) return;
     const el = document.createElement('div');
@@ -690,6 +692,13 @@
             <div class="hkm-title" id="hkm-title"></div>
             <div class="hkm-count" id="hkm-count"></div>
           </div>
+          <div class="hkm-tipo-wrap" id="hkm-tipo-wrap" style="display:none;position:relative;">
+            <button class="hkm-tipo-btn" id="hkm-tipo-btn" onclick="hkmToggleTipoPop(event)" title="Filtrar por tipo">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+              <span id="hkm-tipo-label">Tipo</span>
+            </button>
+            <div class="hkm-tipo-pop" id="hkm-tipo-pop"></div>
+          </div>
           <button class="hkm-close" onclick="homeCloseKPI()" title="Fechar">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
@@ -701,6 +710,126 @@
       </div>`;
     el.addEventListener('click', () => homeCloseKPI());
     document.body.appendChild(el);
+    // Fecha popover de tipo ao clicar fora dele
+    document.addEventListener('click', (e) => {
+      const pop = document.getElementById('hkm-tipo-pop');
+      const btn = document.getElementById('hkm-tipo-btn');
+      if (pop && !pop.contains(e.target) && e.target !== btn && !btn?.contains(e.target)) {
+        pop.classList.remove('open');
+      }
+    });
+  }
+
+  window.hkmToggleTipoPop = function (e) {
+    e.stopPropagation();
+    const pop = document.getElementById('hkm-tipo-pop');
+    const btn = document.getElementById('hkm-tipo-btn');
+    if (!pop || !btn) return;
+    const isOpen = pop.classList.contains('open');
+    if (!isOpen) {
+      const rect = btn.getBoundingClientRect();
+      pop.style.top  = (rect.bottom + 6) + 'px';
+      pop.style.left = (rect.right - 160) + 'px'; // alinha pela direita
+    }
+    pop.classList.toggle('open', !isOpen);
+  };
+
+  window.hkmSelecionarTipo = function (tipo) {
+    _kpiRotinasTipo = tipo;
+    const btn  = document.getElementById('hkm-tipo-btn');
+    const lbl  = document.getElementById('hkm-tipo-label');
+    const pop  = document.getElementById('hkm-tipo-pop');
+    if (lbl) lbl.textContent = tipo || 'Tipo';
+    if (btn) btn.classList.toggle('active', !!tipo);
+    if (pop) pop.classList.remove('open');
+    _hkmRenderRotinasAtivas();
+  };
+
+  function _hkmPopularTipoPop() {
+    const pop = document.getElementById('hkm-tipo-pop');
+    if (!pop) return;
+    const tipos = [...new Set((state?.rotinas || []).map(r => r.tipo).filter(Boolean))].sort();
+    pop.innerHTML = `
+      <div class="hkm-tipo-item${_kpiRotinasTipo === '' ? ' active' : ''}" onclick="hkmSelecionarTipo('')">Todos</div>
+      ${tipos.map(t => `<div class="hkm-tipo-item${_kpiRotinasTipo === t ? ' active' : ''}" onclick="hkmSelecionarTipo('${t.replace(/'/g,"\\'")}')">
+        ${t}
+      </div>`).join('')}`;
+  }
+
+  function _hkmRenderRotinasAtivas() {
+    const k = calcKPIs();
+    const body  = document.getElementById('hkm-body');
+    const count = document.getElementById('hkm-count');
+    if (!body) return;
+
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const tarefasVis = k.tarefasVisList || [];
+
+    let lista = k.rotinasAtivasList || [];
+    if (_kpiRotinasTipo) lista = lista.filter(r => r.tipo === _kpiRotinasTipo);
+
+    if (count) count.textContent = `${lista.length} item${lista.length !== 1 ? 's' : ''}`;
+
+    const _fn = (expr) => `homeCloseKPI();${expr}`;
+
+    if (lista.length === 0) {
+      body.innerHTML = `<div class="hkm-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <span>Nenhuma rotina encontrada</span>
+      </div>`;
+      return;
+    }
+
+    // Para cada rotina, calcula a pior flag entre suas tarefas ativas
+    const linhas = lista.map(r => {
+      const a = r.equipamentoIdx != null ? state?.ativos[r.equipamentoIdx] : null;
+      const aInfo = a ? `${_esc(a.nome)}<small>${_esc(a.setor)}</small>` : _esc(r.setor || '—');
+      const tarefasR = tarefasVis.filter(t => t.rotinaId === r.id && t.status === 'Ativo');
+      const numTarefas = tarefasVis.filter(t => t.rotinaId === r.id).length;
+
+      let piorflag = 0; // 0=ok, 1=warning, 2=danger
+      tarefasR.forEach(t => {
+        if (!t.proximaData) return;
+        const due  = new Date(t.proximaData + 'T00:00:00');
+        const diff = Math.ceil((due - hoje) / 86400000);
+        if (diff < 0) { piorflag = Math.max(piorflag, 2); }
+        else if (t.lembrete != null && diff <= t.lembrete) { piorflag = Math.max(piorflag, 1); }
+      });
+
+      let iconHtml = '';
+      let rowClass = '';
+      if (piorflag === 2) {
+        iconHtml = `<svg class="hkm-alert-icon hkm-alert-danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" title="Tarefa atrasada"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`;
+        rowClass = 'hkm-row-danger';
+      } else if (piorflag === 1) {
+        iconHtml = `<svg class="hkm-alert-icon hkm-alert-warning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" title="Tarefa com alerta"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+        rowClass = 'hkm-row-warning';
+      }
+
+      const nomeCell = `<span class="hkm-nome-wrap">${iconHtml}${_esc(r.nome)}</span>`;
+      const numCell  = `<span style="font-weight:600;color:var(--cyan)">${numTarefas || 0}</span>`;
+
+      return { rowClass, cells: [nomeCell, aInfo, _esc(r.tipo), numCell], fn: _fn(`viewRotina('${r.id}')`) };
+    });
+
+    // Ordena: danger > warning > ok
+    linhas.sort((a, b) => {
+      const order = { 'hkm-row-danger': 0, 'hkm-row-warning': 1, '': 2 };
+      return (order[a.rowClass] ?? 2) - (order[b.rowClass] ?? 2);
+    });
+
+    body.innerHTML = `<table class="hkm-table">
+      <thead><tr>${['Nome','Ativo / Setor','Tipo','Tarefas'].map(c => `<th>${c}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${linhas.map(l =>
+          `<tr onclick="${l.fn}" class="hkm-clickable${l.rowClass ? ' ' + l.rowClass : ''}">
+            ${l.cells.map(c => `<td>${c}</td>`).join('')}
+          </tr>`
+        ).join('')}
+      </tbody>
+    </table>`;
   }
 
   function _otTipoLabel(t) {
@@ -1636,8 +1765,28 @@
     document.getElementById('hkm-icon').innerHTML = t.ico(_ico);
 
     document.getElementById('hkm-title').textContent = data.titulo;
-    const body = document.getElementById('hkm-body');
 
+    // Botão "Tipo": só aparece para rotinasAtivas
+    const tipoWrap = document.getElementById('hkm-tipo-wrap');
+    if (tipoWrap) {
+      tipoWrap.style.display = tipo === 'rotinasAtivas' ? '' : 'none';
+      if (tipo === 'rotinasAtivas') {
+        _kpiRotinasTipo = '';
+        const lbl = document.getElementById('hkm-tipo-label');
+        const btn = document.getElementById('hkm-tipo-btn');
+        if (lbl) lbl.textContent = 'Tipo';
+        if (btn) btn.classList.remove('active');
+        _hkmPopularTipoPop();
+      }
+    }
+
+    if (tipo === 'rotinasAtivas') {
+      _hkmRenderRotinasAtivas();
+      document.getElementById('home-kpi-modal').classList.add('open');
+      return;
+    }
+
+    const body = document.getElementById('hkm-body');
     if (data.cards) {
       _renderKpiCards(data.cards);
     } else {
