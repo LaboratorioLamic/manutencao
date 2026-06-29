@@ -1669,6 +1669,9 @@
     const fAtivoIdx  = state._ativoFiltroTarefasIdx ?? null;
     const fRotinaId  = state._rotinaFiltroTarefasId ?? null;
     const fSetor     = document.getElementById('filter-setor-rotina-val')?.value || '';
+    const fTabSetor  = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('tarefas','setor') : '';
+    const fTabCat    = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('tarefas','cat')   : '';
+    const fTabTipo   = typeof _getTabFiltroTipo === 'function' ? _getTabFiltroTipo('tarefas')       : '';
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
     const { col: tSCol, dir: tSDir } = _tarefasSort;
     const allList = state.tarefas.filter(t => {
@@ -1676,6 +1679,12 @@
       if (!ativo) return false;
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
       if (fSetor && ativo.setor !== fSetor) return false;
+      if (fTabSetor && ativo.setor !== fTabSetor) return false;
+      if (fTabCat   && ativo.categoria !== fTabCat) return false;
+      if (fTabTipo) {
+        const rotina = state.rotinas.find(r => r.id === t.rotinaId);
+        if (!rotina || rotina.tipo !== fTabTipo) return false;
+      }
       if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
       if (fRotinaId !== null && t.rotinaId !== fRotinaId) return false;
       if (_minhasTarefasAtivo && _sess) {
@@ -1887,6 +1896,18 @@
           Responsáveis
         </div>
         <div style="display:flex;flex-wrap:wrap;gap:6px;">${respChipsHtml}</div>
+      </div>` : ''}
+
+      ${t.realizadoPorTerceiro ? `
+      <div class="task-detail-section">
+        <div class="task-detail-section-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 00-4 0v2"/><path d="M8 7V5a2 2 0 00-4 0v2"/></svg>
+          Empresa Terceirizada
+        </div>
+        <div class="rotina-view-grid">
+          ${t.empresaPadrao ? `<div class="detail-card"><div class="detail-label">Empresa</div><div class="detail-value">${t.empresaPadrao}</div></div>` : ''}
+          ${t.respPadrao    ? `<div class="detail-card"><div class="detail-label">Responsável</div><div class="detail-value">${t.respPadrao}</div></div>` : ''}
+        </div>
       </div>` : ''}
 
       ${checklistTarefaHtml}`;
@@ -2887,6 +2908,9 @@
     const fAtivoIdx  = state._ativoFiltroAtividadesIdx ?? null;
     const fRotinaId  = state._rotinaFiltroAtividadesId ?? null;
     const fSetor     = document.getElementById('filter-setor-rotina-val')?.value || '';
+    const fTabSetor  = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('atividades','setor') : '';
+    const fTabCat    = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('atividades','cat')   : '';
+    const fTabTipo   = typeof _getTabFiltroTipo === 'function' ? _getTabFiltroTipo('atividades')       : '';
     const canEdit   = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
     const canDelete = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
@@ -2901,6 +2925,12 @@
         if (!ativo) return false;
         if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
         if (fSetor && ativo.setor !== fSetor) return false;
+        if (fTabSetor && ativo.setor !== fTabSetor) return false;
+        if (fTabCat   && ativo.categoria !== fTabCat) return false;
+        if (fTabTipo) {
+          const rotina = state.rotinas.find(r => r.id === t.rotinaId);
+          if (!rotina || rotina.tipo !== fTabTipo) return false;
+        }
         if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
         if (fRotinaId !== null && t.rotinaId !== fRotinaId) return false;
         return true;
@@ -4728,11 +4758,11 @@
         return `<div class="list-item-row" style="cursor:pointer;" onclick="openTarefaDetalhe('${t.id}')">
           <div style="flex:1;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <strong style="font-size:13px;">Rotina: ${rotina?.nome || '—'}</strong>
+              <strong style="font-size:13px;">${t.titulo || '—'}</strong>
               <span class="task-flag ${flag.cls}" style="font-size:11px;">${flag.label}</span>
               ${nPubs > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${nPubs} pub.</span>` : ''}
             </div>
-            ${t.titulo ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:1px;">Tarefa: ${t.titulo}</div>` : ''}
+            <div style="font-size:12px;color:var(--text-secondary);margin-top:1px;">Rotina: ${rotina?.nome || '—'}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Data: ${formatDate(t.dataTarefa)} · Próxima: ${t.proximaData ? formatDate(t.proximaData) : '—'}</div>
           </div>
           <span class="chip ${t.status==='Ativo'?'chip-green':'chip-gray'}">${t.status}</span>

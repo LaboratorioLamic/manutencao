@@ -154,6 +154,133 @@
   };
 
   // ══════════════════════════════════════════
+  // FILTRO INLINE — Tarefas e Atividades (Tipo / Setor / Categoria)
+  // ══════════════════════════════════════════
+
+  const _tabFiltroVal = {
+    tarefas:    { setor: '', cat: '' },
+    atividades: { setor: '', cat: '' }
+  };
+  const _tabFiltroOpts = {
+    tarefas:    { setor: [], cat: [] },
+    atividades: { setor: [], cat: [] }
+  };
+
+  function _popularSelectsTab(tab) {
+    const selTipo = document.getElementById(tab + '-filter-tipo');
+    if (!selTipo) return;
+
+    const ativosVisiveis = (typeof _userCanSeeAtivo === 'function')
+      ? state.ativos.filter(a => _userCanSeeAtivo(a))
+      : state.ativos;
+    const tipos   = [...new Set(state.rotinas.map(r => r.tipo).filter(Boolean))].sort();
+    const setores = [...new Set(ativosVisiveis.map(a => a.setor).filter(Boolean))].sort();
+    const cats    = [...new Set(ativosVisiveis.map(a => a.categoria).filter(Boolean))].sort();
+
+    const cur = selTipo.value;
+    selTipo.innerHTML = `<option value="">Todos</option>` +
+      tipos.map(v => `<option value="${v}"${v === cur ? ' selected' : ''}>${v}</option>`).join('');
+
+    _tabFiltroOpts[tab].setor = setores;
+    _tabFiltroOpts[tab].cat   = cats;
+  }
+
+  window.toggleTabFiltroInline = function (tab) {
+    const panel = document.getElementById(tab + '-filter-inline');
+    const btn   = document.getElementById('btn-' + tab + '-filtro');
+    if (!panel) return;
+    const abrindo = !panel.classList.contains('open');
+    panel.classList.toggle('open', abrindo);
+    if (btn) btn.classList.toggle('active', abrindo);
+    if (abrindo) _popularSelectsTab(tab);
+  };
+
+  window.tabFiltroAutocomplete = function (tab, field) {
+    const input = document.getElementById(tab + '-filter-' + field);
+    const list  = document.getElementById(tab + '-autocomplete-' + field);
+    if (!input || !list) return;
+    const q = input.value.trim().toLowerCase();
+
+    if (!q && _tabFiltroVal[tab][field]) {
+      _tabFiltroVal[tab][field] = '';
+      if (tab === 'tarefas') renderTarefasTable();
+      else renderAtividadesTable();
+    }
+
+    const opts     = _tabFiltroOpts[tab][field] || [];
+    const filtered = q ? opts.filter(o => o.toLowerCase().includes(q)) : opts;
+    const todosLabel = field === 'cat' ? 'Todas' : 'Todos';
+    const isTodos  = _tabFiltroVal[tab][field] === '';
+
+    const todosItem = `<div class="agenda-autocomplete-item${isTodos ? ' selected' : ''}" data-value="" onmousedown="tabFiltroAutocompleteSelect('${tab}','${field}','')">
+      ${todosLabel}
+    </div>`;
+    const optItems = filtered.map(v =>
+      `<div class="agenda-autocomplete-item${v === _tabFiltroVal[tab][field] ? ' selected' : ''}" data-value="${v}" onmousedown="tabFiltroAutocompleteSelect('${tab}','${field}','${v.replace(/'/g,"\\'")}')">
+        ${v}
+      </div>`
+    ).join('');
+
+    list.innerHTML = todosItem + optItems;
+    list.classList.add('open');
+  };
+
+  window.tabFiltroAutocompleteSelect = function (tab, field, value) {
+    const input = document.getElementById(tab + '-filter-' + field);
+    const list  = document.getElementById(tab + '-autocomplete-' + field);
+    if (!input || !list) return;
+    _tabFiltroVal[tab][field] = value;
+    input.value = value;
+    list.classList.remove('open');
+    if (tab === 'tarefas') renderTarefasTable();
+    else renderAtividadesTable();
+  };
+
+  window.tabFiltroAutocompleteBlur = function (tab, field) {
+    const list  = document.getElementById(tab + '-autocomplete-' + field);
+    const input = document.getElementById(tab + '-filter-' + field);
+    if (list) list.classList.remove('open');
+    if (input && input.value !== _tabFiltroVal[tab][field]) {
+      input.value = _tabFiltroVal[tab][field];
+    }
+  };
+
+  window.tabFiltroAutocompleteKey = function (event, tab, field) {
+    const list = document.getElementById(tab + '-autocomplete-' + field);
+    if (!list || !list.classList.contains('open')) return;
+    const items  = list.querySelectorAll('.agenda-autocomplete-item');
+    let focused  = list.querySelector('.agenda-autocomplete-item.focused');
+    let idx      = focused ? Array.from(items).indexOf(focused) : -1;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (focused) focused.classList.remove('focused');
+      idx = (idx + 1) % items.length;
+      items[idx].classList.add('focused');
+      items[idx].scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (focused) focused.classList.remove('focused');
+      idx = (idx - 1 + items.length) % items.length;
+      items[idx].classList.add('focused');
+      items[idx].scrollIntoView({ block: 'nearest' });
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (focused) tabFiltroAutocompleteSelect(tab, field, focused.dataset.value);
+    } else if (event.key === 'Escape') {
+      list.classList.remove('open');
+    }
+  };
+
+  window._getTabFiltroVal = function (tab, field) {
+    return (_tabFiltroVal[tab] || {})[field] || '';
+  };
+
+  window._getTabFiltroTipo = function (tab) {
+    const el = document.getElementById(tab + '-filter-tipo');
+    return el ? el.value : '';
+  };
+
+  // ══════════════════════════════════════════
   // FILTRO — Minhas Tarefas
   // ══════════════════════════════════════════
   window.toggleMinhasTarefasAgenda = function () {
@@ -586,7 +713,28 @@
       const isHoje = ds === hojeStr;
       const isDom  = d.getDay() === 0;
 
-      const cards = evs.map(ev => {
+      const today = new Date(); today.setHours(0,0,0,0);
+
+      const evsComPrioridade = evs.map(ev => {
+        const t = ev.tarefa;
+        const isPub = ev.tipo === 'publicada';
+        let prioridade = 3; // publicada / ok
+        if (!isPub) {
+          const due  = new Date(ds + 'T00:00:00');
+          const diff = Math.ceil((due - today) / 86400000);
+          if (diff < 0) {
+            prioridade = 0; // atraso (vermelho)
+          } else if (t.lembrete != null && diff <= t.lembrete) {
+            prioridade = 1; // alerta (amarelo)
+          } else {
+            prioridade = 2; // pendente normal
+          }
+        }
+        return { ev, prioridade };
+      });
+      evsComPrioridade.sort((a, b) => a.prioridade - b.prioridade);
+
+      const cards = evsComPrioridade.map(({ ev }) => {
         const t = ev.tarefa;
         const ativo   = state.ativos[t.equipamentoIdx];
         const rotina  = state.rotinas.find(r => r.id === t.rotinaId);
@@ -599,11 +747,9 @@
             : `onclick="_agendaAvisoFutura('${t.id}','${ds}')"`;
         const titulo  = t.titulo || rotina?.nome || '—';
         const ativoNome = ativo?.nome || '—';
-        // Calcula prazo relativo à data projetada do card
         let flagHtml = '';
         let cls = isPub ? 'agenda-sem-card-ok' : 'agenda-sem-card-pend';
         if (!isPub) {
-          const today = new Date(); today.setHours(0,0,0,0);
           const due   = new Date(ds + 'T00:00:00');
           const diff  = Math.ceil((due - today) / 86400000);
           let flagCls, flagLabel;

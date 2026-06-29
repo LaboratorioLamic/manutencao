@@ -522,7 +522,33 @@
                   Filtrar por Rotina
                 </button>
               </div>
-              <div style="margin-left:auto;">
+              <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+                <!-- Filtros inline tarefas -->
+                <div id="tarefas-filter-inline" class="agenda-filter-inline">
+                  <div class="agenda-filter-field">
+                    <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">TIPO</label>
+                    <select id="tarefas-filter-tipo" class="field-select" style="width:150px;padding:6px 30px 6px 10px;font-size:12px;" onchange="renderTarefasTable()">
+                      <option value="">Todos</option>
+                    </select>
+                  </div>
+                  <div class="agenda-filter-field">
+                    <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">SETOR</label>
+                    <div class="agenda-autocomplete-wrap" id="wrap-tarefas-filter-setor">
+                      <input type="text" id="tarefas-filter-setor" class="agenda-autocomplete-input" placeholder="Todos" autocomplete="off" oninput="tabFiltroAutocomplete('tarefas','setor')" onfocus="tabFiltroAutocomplete('tarefas','setor')" onblur="tabFiltroAutocompleteBlur('tarefas','setor')" onkeydown="tabFiltroAutocompleteKey(event,'tarefas','setor')">
+                      <div class="agenda-autocomplete-list" id="tarefas-autocomplete-setor"></div>
+                    </div>
+                  </div>
+                  <div class="agenda-filter-field">
+                    <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">CATEGORIA</label>
+                    <div class="agenda-autocomplete-wrap" id="wrap-tarefas-filter-cat">
+                      <input type="text" id="tarefas-filter-cat" class="agenda-autocomplete-input" placeholder="Todas" autocomplete="off" oninput="tabFiltroAutocomplete('tarefas','cat')" onfocus="tabFiltroAutocomplete('tarefas','cat')" onblur="tabFiltroAutocompleteBlur('tarefas','cat')" onkeydown="tabFiltroAutocompleteKey(event,'tarefas','cat')">
+                      <div class="agenda-autocomplete-list" id="tarefas-autocomplete-cat"></div>
+                    </div>
+                  </div>
+                </div>
+                <button id="btn-tarefas-filtro" class="btn btn-outline" onclick="toggleTabFiltroInline('tarefas')" title="Filtros" style="padding:8px 10px;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+                </button>
                 <button id="btn-minhas-tarefas" class="btn btn-outline" onclick="toggleMinhasTarefas()" title="Filtrar por minhas responsabilidades" style="gap:7px;font-size:12.5px;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
                   Minhas Tarefas
@@ -676,7 +702,33 @@
                   Filtrar por Rotina
                 </button>
               </div>
-              <div style="margin-left:auto;">
+              <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+                <!-- Filtros inline atividades -->
+                <div id="atividades-filter-inline" class="agenda-filter-inline">
+                  <div class="agenda-filter-field">
+                    <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">TIPO</label>
+                    <select id="atividades-filter-tipo" class="field-select" style="width:150px;padding:6px 30px 6px 10px;font-size:12px;" onchange="renderAtividadesTable()">
+                      <option value="">Todos</option>
+                    </select>
+                  </div>
+                  <div class="agenda-filter-field">
+                    <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">SETOR</label>
+                    <div class="agenda-autocomplete-wrap" id="wrap-atividades-filter-setor">
+                      <input type="text" id="atividades-filter-setor" class="agenda-autocomplete-input" placeholder="Todos" autocomplete="off" oninput="tabFiltroAutocomplete('atividades','setor')" onfocus="tabFiltroAutocomplete('atividades','setor')" onblur="tabFiltroAutocompleteBlur('atividades','setor')" onkeydown="tabFiltroAutocompleteKey(event,'atividades','setor')">
+                      <div class="agenda-autocomplete-list" id="atividades-autocomplete-setor"></div>
+                    </div>
+                  </div>
+                  <div class="agenda-filter-field">
+                    <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">CATEGORIA</label>
+                    <div class="agenda-autocomplete-wrap" id="wrap-atividades-filter-cat">
+                      <input type="text" id="atividades-filter-cat" class="agenda-autocomplete-input" placeholder="Todas" autocomplete="off" oninput="tabFiltroAutocomplete('atividades','cat')" onfocus="tabFiltroAutocomplete('atividades','cat')" onblur="tabFiltroAutocompleteBlur('atividades','cat')" onkeydown="tabFiltroAutocompleteKey(event,'atividades','cat')">
+                      <div class="agenda-autocomplete-list" id="atividades-autocomplete-cat"></div>
+                    </div>
+                  </div>
+                </div>
+                <button id="btn-atividades-filtro" class="btn btn-outline" onclick="toggleTabFiltroInline('atividades')" title="Filtros" style="padding:8px 10px;">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+                </button>
                 <button id="btn-minhas-atividades" class="btn btn-outline" onclick="toggleMinhasAtividades()" title="Filtrar atividades publicadas por mim" style="gap:7px;font-size:12.5px;">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:15px;height:15px;"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
                   Minhas Atividades

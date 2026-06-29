@@ -348,7 +348,9 @@
     overflow: visible;
   }
   .agenda-filter-field { display: flex; align-items: center; gap: 7px; }
-  #btn-agenda-filtro.active { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-light); }
+  #btn-agenda-filtro.active,
+  #btn-tarefas-filtro.active,
+  #btn-atividades-filtro.active { border-color: var(--cyan); color: var(--cyan); background: var(--cyan-light); }
 
   /* Autocomplete setor/categoria na agenda */
   .agenda-autocomplete-wrap { position: relative; width: 150px; }
