@@ -2102,7 +2102,7 @@ function _ocTimelineAtivo(ativo, idx) {
     }));
   const tarefas = state.tarefas.filter(t => t.equipamentoId ? t.equipamentoId === ativo.id : t.equipamentoIdx === idx);
   const tarefaPorId = Object.fromEntries(tarefas.map(t => [t.id, t]));
-  state.publicacoes.filter(p => tarefaPorId[p.tarefaId]).forEach(p => {
+  todasPublicacoes().filter(p => tarefaPorId[p.tarefaId]).forEach(p => {
     const t = tarefaPorId[p.tarefaId];
     const r = state.rotinas.find(x => x.id === t.rotinaId);
     ev.push({
@@ -2116,7 +2116,8 @@ function _ocTimelineAtivo(ativo, idx) {
     sub: `${h.userName || ''}${h.diffs?.length ? ' · ' + h.diffs.map(d => d.campo).join(', ') : ''}`,
   }));
   ev.sort((a, b) => (b.data || '').localeCompare(a.data || ''));
-  if (!ev.length) return `<div class="avot-empty"><strong>Sem eventos registrados</strong></div>`;
+  const rodapeArq = typeof arqRodapeHtml === 'function' ? arqRodapeHtml(tarefas.map(t => t.id)) : '';
+  if (!ev.length) return `<div class="avot-empty"><strong>Sem eventos registrados</strong></div>` + rodapeArq;
   return `<div class="oc-timeline">${ev.map(e => `
     <div class="oc-tl-item oc-tl-${e.cls}${e.onclick ? ' clickable' : ''}" ${e.onclick ? `onclick="${e.onclick}"` : ''}>
       <div class="oc-tl-dot"></div>
@@ -2125,7 +2126,7 @@ function _ocTimelineAtivo(ativo, idx) {
         <div class="oc-tl-titulo">${_ocEsc(e.titulo)}</div>
         ${e.sub ? `<div class="oc-tl-sub">${_ocEsc(e.sub)}</div>` : ''}
       </div>
-    </div>`).join('')}</div>`;
+    </div>`).join('')}</div>` + rodapeArq;
 }
 
 // ── FICHA PDF ────────────────────────────────────────────────

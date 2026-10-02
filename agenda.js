@@ -450,7 +450,7 @@
 
       // Verificar limite de repetições
       if (tarefa.repetir === 'Por') {
-        const nPubs = state.publicacoes.filter(p => p.tarefaId === tarefa.id).length;
+        const nPubs = arqContarPubs(tarefa.id);
         const nProj = datas.length;
         if (nPubs + nProj >= (tarefa.vezes || 1)) break;
       }
@@ -487,6 +487,9 @@
     const primeiroDia = `${ano}-${String(mes + 1).padStart(2, '0')}-01`;
     const ultimoDia   = new Date(ano, mes + 1, 0);
     const ultimoDiaStr = `${ano}-${String(mes + 1).padStart(2, '0')}-${String(ultimoDia.getDate()).padStart(2, '0')}`;
+    // Mês com publicações arquivadas: carrega o ano em segundo plano (re-renderiza ao terminar)
+    if (typeof arqPendentes === 'function' && arqPendentes(null).anos.includes(String(ano))) arqCarregarAnos([String(ano)]);
+    const pubsMes = todasPublicacoes();
 
     const eventos = {};
 
@@ -524,7 +527,7 @@
 
     tarefasFiltradas.forEach(tarefa => {
       // 1. Atividades publicadas neste mês
-      state.publicacoes
+      pubsMes
         .filter(p => p.tarefaId === tarefa.id)
         .forEach(pub => {
           const d = (pub.dataRealizada || pub.dataPublicacao || '').split('T')[0];

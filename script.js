@@ -86,7 +86,9 @@
           tiposRotina:Array.isArray(data.tiposRotina)? data.tiposRotina: state.tiposRotina,
           rotinas:    Array.isArray(data.rotinas)    ? data.rotinas    : state.rotinas,
           tarefas:    Array.isArray(data.tarefas)    ? data.tarefas    : state.tarefas,
-          publicacoes:Array.isArray(data.publicacoes)? data.publicacoes: state.publicacoes
+          // O Firebase descarta arrays vazios: sem o campo = nenhuma publicação no nó principal
+          // (ex.: todas foram para o arquivo). Manter o estado local aqui as regravaria.
+          publicacoes:Array.isArray(data.publicacoes)? data.publicacoes: []
         };
       }
       if (_sincronizarRefsAtivos()) saveState();
@@ -393,7 +395,7 @@
     configTab.querySelectorAll('.rotina-nav-item').forEach(n => n.classList.remove('active'));
     document.getElementById('cpanel-' + tab)?.classList.add('active');
     document.getElementById('cnav-' + tab)?.classList.add('active');
-    if (tab === 'backup')   renderSysInfo();
+    if (tab === 'backup')   { renderSysInfo(); if (typeof arqRenderPainel === 'function') arqRenderPainel(); }
     if (tab === 'usuario')  { if (typeof renderUsersTable  === 'function') renderUsersTable(); }
     if (tab === 'grupos')   { if (typeof renderGroupsTable === 'function') renderGroupsTable(); }
     if (tab === 'empresas') { if (typeof empRenderTable    === 'function') empRenderTable(); }
@@ -727,7 +729,7 @@
       const _tarefaDataInput = document.getElementById('tarefa-data');
       const _tarefaDataLabel = document.getElementById('tarefa-data-label');
       const _tarefaDataRequired = document.getElementById('tarefa-data-required');
-      const _temPublicacoes = state.publicacoes && state.publicacoes.some(p => p.tarefaId === editing.id);
+      const _temPublicacoes = arqTemPubs(editing.id);
       _tarefaDataInput.value = editing.dataTarefa || '';
       if (_temPublicacoes) {
         _tarefaDataLabel.childNodes[0].textContent = 'Ultima publicação ';
@@ -1361,7 +1363,7 @@
       obj  = tarefaDetalheId ? state.tarefas.find(t => t.id === tarefaDetalheId) : null;
       nome = obj?.titulo || 'Tarefa';
     } else if (tipo === 'pub-view') {
-      const pub = _pubViewId ? state.publicacoes.find(p => p.id === _pubViewId) : null;
+      const pub = arqBuscarPublicacao(_pubViewId);
       if (pub) {
         titleLabel = 'Informações da Publicação';
         const t = state.tarefas.find(t => t.id === pub.tarefaId);
@@ -1786,7 +1788,7 @@
       const rotina = state.rotinas.find(r => r.id === t.rotinaId);
       const ativo  = state.ativos[t.equipamentoIdx];
       const flag   = getTaskFlag(t);
-      const nPubs  = state.publicacoes.filter(p => p.tarefaId === t.id).length;
+      const nPubs  = arqContarPubs(t.id);
       const statusChip = t.status === 'Ativo'
         ? '<span class="chip chip-green">Ativo</span>'
         : '<span class="chip chip-gray">Inativo</span>';
@@ -1832,7 +1834,7 @@
     const rotina = state.rotinas.find(r => r.id === t.rotinaId);
     const ativo  = state.ativos[t.equipamentoIdx];
     const flag   = getTaskFlag(t);
-    const nPubs  = state.publicacoes.filter(p => p.tarefaId === id).length;
+    const nPubs  = arqContarPubs(id);
 
     document.getElementById('tarefa-detalhe-title').textContent = t.titulo || rotina?.nome || 'Tarefa';
     document.getElementById('tarefa-detalhe-subtitle').textContent = ativo?.nome || '';
@@ -1977,7 +1979,7 @@
     // Permissões
     _mbtn('btn-editar-tarefa', _can('tarefas.editar'));
     // Excluir: só visível se não há publicações vinculadas
-    const temPubs = state.publicacoes.some(p => p.tarefaId === tarefaDetalheId);
+    const temPubs = arqTemPubs(tarefaDetalheId);
     const btnDelTarefa = document.getElementById('btn-excluir-tarefa');
     if (btnDelTarefa) btnDelTarefa.style.display = (!temPubs && _can('tarefas.excluir')) ? '' : 'none';
   }
@@ -1988,6 +1990,7 @@
 
   function excluirTarefaAtual() {
     if (!_can('tarefas.excluir')) { showToast('Sem permissão para excluir tarefas.', 'error'); return; }
+    if (arqTemPubs(tarefaDetalheId)) { showToast('Esta tarefa possui publicações registradas e não pode ser excluída.', 'error'); return; }
     if (!confirm('Excluir esta tarefa? O histórico de publicações também será removido.')) return;
     state.tarefas = state.tarefas.filter(t => t.id !== tarefaDetalheId);
     state.publicacoes = state.publicacoes.filter(p => p.tarefaId !== tarefaDetalheId);
@@ -2015,7 +2018,7 @@
     } else if (ctx === 'edit-pub') {
       tarefaId = document.getElementById('edit-pub-id')?.value || null;
       // edit-pub-id guarda o pubId; precisamos do tarefaId da publicação
-      const pub = tarefaId ? state.publicacoes.find(p => p.id === tarefaId) : null;
+      const pub = arqBuscarPublicacao(tarefaId);
       tarefaId = pub?.tarefaId || null;
     }
     const tarefa = tarefaId ? state.tarefas.find(t => t.id === tarefaId) : null;
@@ -2391,7 +2394,7 @@
       const repetir = tarefaAtual.repetir || rotina?.repetir;
       const vezes   = tarefaAtual.vezes   ?? rotina?.vezes;
       if (repetir === 'Por') {
-        const nPubs = state.publicacoes.filter(p => p.tarefaId === tarefaDetalheId).length;
+        const nPubs = arqContarPubs(tarefaDetalheId);
         if (nPubs >= vezes) {
           state.tarefas[tIdx].status = 'Inativo';
           state.tarefas[tIdx].autoInativada = true;
@@ -2448,7 +2451,7 @@
     const canEditAtiv = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
     const canDelAtiv  = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
     const { col: sCol, dir: sDir } = _historicoSort;
-    const allPubs = state.publicacoes.filter(p => p.tarefaId === tarefaId)
+    const allPubs = todasPublicacoes().filter(p => p.tarefaId === tarefaId)
       .sort((a, b) => {
         let ka, kb;
         if (sCol === 'dataRealizada')  { ka = dataRealizadaSortKey(a.dataRealizada); kb = dataRealizadaSortKey(b.dataRealizada); }
@@ -2462,6 +2465,7 @@
     const totalPages = Math.max(1, Math.ceil(allPubs.length / HISTORICO_PER_PAGE));
     if (_historicoPage >= totalPages) _historicoPage = totalPages - 1;
     const pubs = allPubs.slice(_historicoPage * HISTORICO_PER_PAGE, (_historicoPage + 1) * HISTORICO_PER_PAGE);
+    arqRenderRodape('historico-arq-rodape', document.querySelector('#modal-historico .data-table-wrapper'), [tarefaId]);
 
     if (allPubs.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6"><div class="data-table-empty">
@@ -2477,15 +2481,16 @@
       const nCheck = p.checklistMarcado?.length || 0;
       const checkStr = nCheck > 0 ? `<span class="chip chip-green">${nCheck} item${nCheck>1?'s':''}</span>` : '<span style="color:var(--text-muted)">—</span>';
       const pubPor = p.publicadoPorNome || '<span style="color:var(--text-muted)">—</span>';
+      const editavel = !p._arq;
       return `<tr class="historico-pub-row" onclick="viewPublicacao('${p.id}')">
-        <td style="font-weight:600;">${formatDataRealizadaHtml(p.dataRealizada)}</td>
+        <td style="font-weight:600;">${formatDataRealizadaHtml(p.dataRealizada)} ${arqSeloHtml(p)}</td>
         <td style="font-size:12px;color:var(--text-muted);">${formatDate(p.dataPublicacao)}</td>
         <td style="font-size:12.5px;">${pubPor}</td>
         <td>${checkStr}</td>
         <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--text-secondary);">${p.notas || '<span style="color:var(--text-muted)">—</span>'}</td>
         <td onclick="event.stopPropagation();" style="white-space:nowrap;">
-          ${canEditAtiv ? `<button class="btn btn-outline btn-icon" onclick="abrirEditarPublicacao('${p.id}')" title="Editar" style="padding:5px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ''}
-          ${canDelAtiv  ? `<button class="btn btn-outline btn-icon" onclick="excluirPublicacao('${p.id}')" title="Excluir" style="padding:5px;color:var(--red);border-color:rgba(230,57,70,0.3);margin-left:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>` : ''}
+          ${canEditAtiv && editavel ? `<button class="btn btn-outline btn-icon" onclick="abrirEditarPublicacao('${p.id}')" title="Editar" style="padding:5px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ''}
+          ${canDelAtiv && editavel ? `<button class="btn btn-outline btn-icon" onclick="excluirPublicacao('${p.id}')" title="Excluir" style="padding:5px;color:var(--red);border-color:rgba(230,57,70,0.3);margin-left:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -2665,6 +2670,7 @@
 
   function abrirEditarPublicacao(pubId) {
     if (!_can('atividades.editar')) { showToast('Sem permissão para editar publicações.', 'error'); return; }
+    if (arqEhArquivada(pubId)) { showToast('Publicação arquivada: registro somente leitura.', 'info'); return; }
     const p = state.publicacoes.find(p => p.id === pubId);
     if (!p) return;
     const { date, time } = parseDataRealizada(p.dataRealizada);
@@ -2721,6 +2727,7 @@
 
   function excluirPublicacao(pubId) {
     if (!_can('atividades.excluir')) { showToast('Sem permissão para excluir publicações.', 'error'); return; }
+    if (arqEhArquivada(pubId)) { showToast('Publicação arquivada: registro somente leitura.', 'info'); return; }
     _pubExcluirId = pubId;
     openModal('modal-confirmar-excluir-pub');
   }
@@ -2736,7 +2743,7 @@
     if (p) {
       const t = state.tarefas.find(t => t.id === p.tarefaId);
       if (t?.autoInativada) {
-        const nPubs = state.publicacoes.filter(pp => pp.tarefaId === t.id).length;
+        const nPubs = arqContarPubs(t.id);
         if (t.repetir === 'Por' && nPubs < (t.vezes || 0)) {
           const tIdx = state.tarefas.findIndex(tt => tt.id === t.id);
           state.tarefas[tIdx].autoInativada = false;
@@ -2778,7 +2785,7 @@
 
   window.viewPublicacao = function viewPublicacao(pubId) {
     _pubViewId = pubId;
-    const p = state.publicacoes.find(p => p.id === pubId);
+    const p = arqBuscarPublicacao(pubId);
     if (!p) return;
     const t = state.tarefas.find(t => t.id === p.tarefaId);
     const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
@@ -2844,7 +2851,7 @@
       </div>` : '';
 
     document.getElementById('pub-view-subtitle').textContent =
-      `Realizada em ${formatDataRealizadaText(p.dataRealizada)}`;
+      `Realizada em ${formatDataRealizadaText(p.dataRealizada)}${p._arq ? ' · Arquivada (somente leitura)' : ''}`;
 
     const ativo = t ? state.ativos[t.equipamentoIdx] : null;
 
@@ -2920,10 +2927,10 @@
         </div>` : ''}`;
 
     const btnEditPub = document.querySelector('#modal-pub-view .modal-header button[onclick="editarPubView()"]');
-    if (btnEditPub) btnEditPub.style.display = _can('atividades.editar') ? '' : 'none';
+    if (btnEditPub) btnEditPub.style.display = (_can('atividades.editar') && !p._arq) ? '' : 'none';
 
     const btnExcluirPubView = document.getElementById('btn-excluir-pub-view');
-    if (btnExcluirPubView) btnExcluirPubView.style.display = _can('atividades.excluir') ? '' : 'none';
+    if (btnExcluirPubView) btnExcluirPubView.style.display = (_can('atividades.excluir') && !p._arq) ? '' : 'none';
 
     openModal('modal-pub-view');
   }
@@ -2969,25 +2976,29 @@
     const canDelete = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
     const { col: sCol, dir: sDir } = _atividadesSort;
-    const allPubs = state.publicacoes
+    const tarefaVisivel = t => {
+      if (!t) return false;
+      const ativo = state.ativos[t.equipamentoIdx];
+      if (!ativo) return false;
+      if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
+      if (fSetor && ativo.setor !== fSetor) return false;
+      if (fTabSetor && ativo.setor !== fTabSetor) return false;
+      if (fTabCat   && ativo.categoria !== fTabCat) return false;
+      if (fTabTipo) {
+        const rotina = state.rotinas.find(r => r.id === t.rotinaId);
+        if (!rotina || rotina.tipo !== fTabTipo) return false;
+      }
+      if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
+      if (fRotinaId !== null && t.rotinaId !== fRotinaId) return false;
+      return true;
+    };
+    const tarefasVisiveis = new Set(state.tarefas.filter(tarefaVisivel).map(t => t.id));
+    arqRenderRodape('atividades-arq-rodape', document.querySelector('#rpanel-atividades .data-table-wrapper'), [...tarefasVisiveis]);
+    const allPubs = todasPublicacoes()
       .slice()
       .filter(p => {
         if (_minhasAtividadesAtivo && _sess && p.publicadoPorId !== _sess.userId) return false;
-        const t = state.tarefas.find(t => t.id === p.tarefaId);
-        if (!t) return false;
-        const ativo = state.ativos[t.equipamentoIdx];
-        if (!ativo) return false;
-        if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
-        if (fSetor && ativo.setor !== fSetor) return false;
-        if (fTabSetor && ativo.setor !== fTabSetor) return false;
-        if (fTabCat   && ativo.categoria !== fTabCat) return false;
-        if (fTabTipo) {
-          const rotina = state.rotinas.find(r => r.id === t.rotinaId);
-          if (!rotina || rotina.tipo !== fTabTipo) return false;
-        }
-        if (fAtivoIdx !== null && t.equipamentoIdx !== fAtivoIdx) return false;
-        if (fRotinaId !== null && t.rotinaId !== fRotinaId) return false;
-        return true;
+        return tarefasVisiveis.has(p.tarefaId);
       })
       .sort((a, b) => {
         const ta = state.tarefas.find(t => t.id === a.tarefaId);
@@ -3042,7 +3053,7 @@
       const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
       const ativo  = t ? state.ativos[t.equipamentoIdx] : null;
       return `<tr onclick="viewPublicacao('${p.id}')">
-        <td style="font-weight:700;color:var(--text-primary);">${formatDataRealizadaHtml(p.dataRealizada)}</td>
+        <td style="font-weight:700;color:var(--text-primary);">${formatDataRealizadaHtml(p.dataRealizada)} ${arqSeloHtml(p)}</td>
         <td>
           <div style="font-weight:600;">Rotina: ${rotina?.nome || '—'}</div>
           <div style="font-size:11px;color:var(--text-muted);">${rotina?.tipo || ''}</div>
@@ -3057,8 +3068,8 @@
         <td style="font-size:12px;color:var(--text-muted);">${formatDate(p.dataPublicacao)}</td>
         <td style="font-size:12.5px;">${p.publicadoPorNome || '<span style="color:var(--text-muted)">—</span>'}</td>
         <td onclick="event.stopPropagation();" style="white-space:nowrap;">
-          ${canEdit ? `<button class="btn btn-outline btn-icon" onclick="abrirEditarPublicacao('${p.id}')" title="Editar" style="padding:5px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ''}
-          ${canDelete ? `<button class="btn btn-outline btn-icon" onclick="excluirPublicacao('${p.id}')" title="Excluir" style="padding:5px;color:var(--red);border-color:rgba(230,57,70,0.3);margin-left:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>` : ''}
+          ${canEdit && !p._arq ? `<button class="btn btn-outline btn-icon" onclick="abrirEditarPublicacao('${p.id}')" title="Editar" style="padding:5px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ''}
+          ${canDelete && !p._arq ? `<button class="btn btn-outline btn-icon" onclick="excluirPublicacao('${p.id}')" title="Excluir" style="padding:5px;color:var(--red);border-color:rgba(230,57,70,0.3);margin-left:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>` : ''}
         </td>
       </tr>`;
     }).join('');
@@ -3442,10 +3453,8 @@
 
     const rotinas = state.rotinas.filter(r => {
       if (fAtivoIdx !== null) {
-        if (isAtiv) return state.publicacoes.some(p => {
-          const t = state.tarefas.find(t => t.id === p.tarefaId);
-          return t?.rotinaId === r.id && t?.equipamentoIdx === fAtivoIdx;
-        });
+        if (isAtiv) return state.tarefas.some(t =>
+          t.rotinaId === r.id && t.equipamentoIdx === fAtivoIdx && arqTemPubs(t.id));
         return state.tarefas.some(t => t.rotinaId === r.id && t.equipamentoIdx === fAtivoIdx);
       }
       return true;
@@ -4149,7 +4158,7 @@
       tarefas.map(t => {
         const flag  = getTaskFlag(t);
         const ativo = state.ativos[t.equipamentoIdx];
-        const nPubs = state.publicacoes.filter(p => p.tarefaId === t.id).length;
+        const nPubs = arqContarPubs(t.id);
         const isAlert = flag.cls === 'flag-danger' || flag.cls === 'flag-warning';
         return `<div class="list-item-row" style="cursor:pointer;${isAlert ? 'border-left:3px solid ' + (flag.cls === 'flag-danger' ? 'var(--red)' : 'var(--amber)') + ';' : ''}" onclick="openTarefaDetalhe('${t.id}')">
           <div style="display:flex;flex-direction:column;gap:4px;flex:1;">
@@ -4189,7 +4198,7 @@
     const container = document.getElementById('rotina-view-atividades-list');
     const tarefaIds = state.tarefas.filter(t => t.rotinaId === rotinaViewId).map(t => t.id);
     const rotina = state.rotinas.find(r => r.id === rotinaViewId);
-    const allPubs = state.publicacoes
+    const allPubs = todasPublicacoes()
       .filter(p => tarefaIds.includes(p.tarefaId))
       .sort((a, b) => {
         const ka = dataRealizadaSortKey(a.dataRealizada) || a.dataPublicacao || '';
@@ -4201,7 +4210,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <strong>Nenhuma atividade registrada</strong>
         <p>As atividades aparecem após publicar tarefas desta rotina</p>
-      </div>`;
+      </div>` + arqRodapeHtml(tarefaIds);
       return;
     }
     const PER = HISTORICO_PER_PAGE;
@@ -4215,14 +4224,15 @@
         return `
         <div class="list-item-row" style="cursor:pointer;" onclick="viewPublicacao('${p.id}')">
           <div style="display:flex;flex-direction:column;gap:3px;flex:1;">
-            <div style="font-weight:600;font-size:13px;">${t?.titulo ? `${t.titulo} · ` : ''}Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
+            <div style="font-weight:600;font-size:13px;">${t?.titulo ? `${t.titulo} · ` : ''}Realizada: ${formatDataRealizadaHtml(p.dataRealizada)} ${arqSeloHtml(p)}</div>
             <div style="font-size:11px;color:var(--text-muted);">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
             <div style="font-size:11px;color:var(--text-muted);">Publicada em ${formatDate(p.dataPublicacao)}${p.publicadoPorNome ? ` · Por: ${p.publicadoPorNome}` : ''}</div>
           </div>
           ${p.notas ? `<span style="font-size:12px;color:var(--text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.notas}</span>` : ''}
         </div>`;
       }).join('') + `</div>` +
-      _renderAtivPagination('renderRotinaViewAtividades', _rotinaAtivPage, totalPages, allPubs.length);
+      _renderAtivPagination('renderRotinaViewAtividades', _rotinaAtivPage, totalPages, allPubs.length) +
+      arqRodapeHtml(tarefaIds);
   }
 
   function toggleRotinaStatus() {
@@ -4598,7 +4608,7 @@
     // Excluir: só visível se não há rotinas vinculadas, sem OTs publicadas e tem permissão
     const temRotinas = state.rotinas.some(r => r.equipamentoIdx === index);
     const tarefasDoAtivo = state.tarefas.filter(t => t.equipamentoIdx === index).map(t => t.id);
-    const temOTsPublicadas = state.publicacoes.some(p => tarefasDoAtivo.includes(p.tarefaId));
+    const temOTsPublicadas = tarefasDoAtivo.some(arqTemPubs);
     const btnDelAtivo = document.getElementById('btn-excluir-ativo');
     if (btnDelAtivo) btnDelAtivo.style.display = (!temRotinas && !temOTsPublicadas && !_ativoTemHistoricoVinculado(index) && _can('ativos.excluir')) ? '' : 'none';
   }
@@ -4620,7 +4630,7 @@
     const temRotinas = state.rotinas.some(r => r.equipamentoIdx === index);
     if (temRotinas) { showToast('Este ativo possui rotinas vinculadas e não pode ser excluído.', 'error'); return; }
     const tarefasDoAtivo = state.tarefas.filter(t => t.equipamentoIdx === index).map(t => t.id);
-    const temOTsPublicadas = state.publicacoes.some(p => tarefasDoAtivo.includes(p.tarefaId));
+    const temOTsPublicadas = tarefasDoAtivo.some(arqTemPubs);
     if (temOTsPublicadas) { showToast('Este ativo possui OTs publicadas e não pode ser excluído.', 'error'); return; }
     if (_ativoTemHistoricoVinculado(index)) { showToast('Este ativo possui OTs ou ocorrências registradas e não pode ser excluído.', 'error'); return; }
     if (!confirm('Excluir este ativo? Esta ação não pode ser desfeita.')) return;
@@ -4844,7 +4854,7 @@
       tarefas.map(t => {
         const rotina = state.rotinas.find(r => r.id === t.rotinaId);
         const flag   = getTaskFlag(t);
-        const nPubs  = state.publicacoes.filter(p => p.tarefaId === t.id).length;
+        const nPubs  = arqContarPubs(t.id);
         return `<div class="list-item-row" style="cursor:pointer;" onclick="openTarefaDetalhe('${t.id}')">
           <div style="flex:1;">
             <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -4866,7 +4876,7 @@
     const idx = ativoEdicaoIndex;
     const container = document.getElementById('ativo-atividades-list');
     const tarefaIds = state.tarefas.filter(t => t.equipamentoIdx === idx).map(t => t.id);
-    const allPubs = state.publicacoes
+    const allPubs = todasPublicacoes()
       .filter(p => tarefaIds.includes(p.tarefaId))
       .sort((a, b) => {
         const ka = dataRealizadaSortKey(a.dataRealizada) || a.dataPublicacao || '';
@@ -4874,7 +4884,7 @@
         return kb > ka ? 1 : kb < ka ? -1 : 0;
       });
     if (allPubs.length === 0) {
-      container.innerHTML = `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><strong>Nenhuma atividade registrada</strong><p>As atividades aparecem após publicar tarefas deste ativo</p></div>`;
+      container.innerHTML = `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><strong>Nenhuma atividade registrada</strong><p>As atividades aparecem após publicar tarefas deste ativo</p></div>` + arqRodapeHtml(tarefaIds);
       return;
     }
     const PER = HISTORICO_PER_PAGE;
@@ -4888,14 +4898,15 @@
         const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
         return `<div class="list-item-row" style="cursor:pointer;" onclick="viewPublicacao('${p.id}')">
           <div style="flex:1;">
-            <div style="font-weight:600;font-size:13px;">${t?.titulo ? `${t.titulo} · ` : ''}Realizada: ${formatDataRealizadaHtml(p.dataRealizada)}</div>
+            <div style="font-weight:600;font-size:13px;">${t?.titulo ? `${t.titulo} · ` : ''}Realizada: ${formatDataRealizadaHtml(p.dataRealizada)} ${arqSeloHtml(p)}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
             <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Publicada: ${formatDate(p.dataPublicacao)}${p.publicadoPorNome ? ` · Por: ${p.publicadoPorNome}` : ''}</div>
           </div>
           ${p.anexos?.length > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${p.anexos.length} anexo${p.anexos.length>1?'s':''}</span>` : ''}
         </div>`;
       }).join('') + `</div>` +
-      _renderAtivPagination('_renderAtivoAtividades', _ativoAtivPage, totalPages, allPubs.length);
+      _renderAtivPagination('_renderAtivoAtividades', _ativoAtivPage, totalPages, allPubs.length) +
+      arqRodapeHtml(tarefaIds);
   }
 
   // Abrir drawer de rotina pré-selecionando o ativo
@@ -5822,6 +5833,7 @@
     const nRotinas   = state.rotinas.length;
     const nTarefas   = state.tarefas.length;
     const nPubs      = state.publicacoes.length;
+    const nPubsArq   = typeof arqTotalArquivadas === 'function' ? arqTotalArquivadas() : 0;
     const nSetores   = state.setores.length;
     const nCats      = state.categorias.length;
     const raw        = JSON.stringify(state) || '';
@@ -5830,7 +5842,7 @@
       ['Ativos cadastrados', nAtivos],
       ['Rotinas', nRotinas],
       ['Tarefas', nTarefas],
-      ['Publicações', nPubs],
+      ['Publicações', nPubsArq ? `${nPubs} + ${nPubsArq} arquivadas` : nPubs],
       ['Setores', nSetores],
       ['Categorias', nCats],
       ['Tamanho do banco', sizeKb + ' KB'],
@@ -5842,9 +5854,14 @@
       </div>`).join('');
   }
 
-  function exportarBackup() {
+  async function exportarBackup() {
     // Inclui dados de auth se disponíveis
     const exportData = { ...state };
+    // Publicações arquivadas vão no formato compactado do banco (grupos + índice + execuções)
+    if (typeof arqExportarDados === 'function') {
+      const arquivo = await arqExportarDados();
+      if (arquivo) exportData.arquivoPublicacoes = arquivo;
+    }
     if (typeof authState !== 'undefined') {
       exportData.auth = {
         users:             authState.users,
@@ -5945,9 +5962,10 @@
           return;
         }
         // Separa dados de auth dos dados de sistema
-        const { auth: authBackup, ...stateData } = parsed;
+        const { auth: authBackup, arquivoPublicacoes, ...stateData } = parsed;
         state = stateData;
         saveState();
+        if (arquivoPublicacoes && typeof arqRestaurarDados === 'function') arqRestaurarDados(arquivoPublicacoes);
 
         // Restaura dados de auth (se presentes no backup)
         if (authBackup && typeof authState !== 'undefined' && typeof _saveAuth === 'function') {

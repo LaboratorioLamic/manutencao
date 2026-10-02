@@ -108,11 +108,24 @@ async function dbTransaction(path, updateFn) {
   }
 }
 
+// Escrita multi-caminho atômica: { 'a/b': valor, 'c/d': null, ... } grava tudo ou nada.
+// Retorna true em caso de sucesso, false em caso de falha.
+async function dbUpdate(updates) {
+  try {
+    await _db.ref().update(_stripUndefined(updates));
+    return true;
+  } catch (err) {
+    console.error('[bd.js] dbUpdate falhou:', err);
+    return false;
+  }
+}
+
 window.dbSave        = dbSave;
 window.dbLoad        = dbLoad;
 window.dbListen      = dbListen;
 window.dbRemove      = dbRemove;
 window.dbTransaction = dbTransaction;
+window.dbUpdate      = dbUpdate;
 
 // Sinaliza que o Firebase SDK está inicializado (não significa que há conexão)
 if (typeof window._dbReadyResolve === 'function') {

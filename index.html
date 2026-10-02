@@ -1008,6 +1008,20 @@
 
             </div>
 
+            <!-- Card: Arquivar histórico de publicações (arquivo.js) -->
+            <div class="cfg-backup-card arq-card" id="arq-card" style="display:none;">
+              <div style="display:flex;align-items:center;gap:14px;">
+                <div class="cfg-backup-card-icon arq-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
+                </div>
+                <div>
+                  <div class="cfg-backup-card-title">Arquivar histórico de atividades</div>
+                  <div class="cfg-backup-card-desc">Publicações com mais de 12 meses saem do banco principal e vão para um arquivo compactado, sem perda de dados. Elas continuam consultáveis (carregadas sob demanda), ficam somente leitura e cada grupo arquivado guarda um hash de integridade.</div>
+                </div>
+              </div>
+              <div id="arq-painel"></div>
+            </div>
+
             <!-- Aviso de integridade -->
             <div class="cfg-backup-warning">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -3151,6 +3165,7 @@
 <script src="key.js"></script>
 <script src="upload.js"></script>
 <script src="script.js"></script>
+<script src="arquivo.js"></script>
 <script src="agenda.js"></script>
 <script src="OT.js"></script>
 <script src="ocorrencias.js"></script>
