@@ -397,6 +397,7 @@
         <div class="home-grid">
           <div class="home-main">
             ${_renderKPIRow2(kpis)}
+            ${typeof ocRenderHomeCard === 'function' ? ocRenderHomeCard() : ''}
             ${_renderMidCharts(kpis)}
             ${_renderKPIRow1(kpis)}
             ${_renderBottomCharts(kpis)}

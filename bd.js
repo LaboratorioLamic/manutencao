@@ -86,9 +86,33 @@ function dbListen(path, callback) {
   return () => r.off('value');
 }
 
-window.dbSave   = dbSave;
-window.dbLoad   = dbLoad;
-window.dbListen = dbListen;
+async function dbRemove(path) {
+  try {
+    await _db.ref(path).remove();
+    return true;
+  } catch (err) {
+    console.error(`[bd.js] dbRemove("${path}") falhou:`, err);
+    return false;
+  }
+}
+
+// Atualização atômica (ex.: contadores sequenciais compartilhados entre usuários).
+// Retorna o valor final gravado, ou null em caso de falha.
+async function dbTransaction(path, updateFn) {
+  try {
+    const res = await _db.ref(path).transaction(updateFn);
+    return res.committed ? res.snapshot.val() : null;
+  } catch (err) {
+    console.error(`[bd.js] dbTransaction("${path}") falhou:`, err);
+    return null;
+  }
+}
+
+window.dbSave        = dbSave;
+window.dbLoad        = dbLoad;
+window.dbListen      = dbListen;
+window.dbRemove      = dbRemove;
+window.dbTransaction = dbTransaction;
 
 // Sinaliza que o Firebase SDK está inicializado (não significa que há conexão)
 if (typeof window._dbReadyResolve === 'function') {

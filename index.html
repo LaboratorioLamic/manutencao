@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="OT.css">
+<link rel="stylesheet" href="ocorrencias.css">
 <link rel="stylesheet" href="empresas.css">
 <link rel="stylesheet" href="home.css">
 </head>
@@ -276,6 +277,11 @@
     <div class="nav-item" onclick="switchTab('os')" id="nav-os">
       <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></span>
       Ordens de Trabalho
+    </div>
+    <div class="nav-item" onclick="switchTab('ocorrencias')" id="nav-ocorrencias">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
+      Ocorrências
+      <span class="oc-nav-badge" id="oc-nav-badge" style="display:none;"></span>
     </div>
     <div class="sidebar-divider"></div>
     <div class="nav-section-label" id="nav-section-sistema">Sistema</div>
@@ -768,6 +774,7 @@
           <p>Módulo de gestão de OS estará disponível em breve.</p>
         </div>
       </div>
+      <div id="tab-ocorrencias" class="tab-panel"></div>
       <div id="tab-config" class="tab-panel">
 
         <!-- Nav lateral esquerda -->
@@ -784,6 +791,10 @@
           <div class="rotina-nav-item" id="cnav-empresas" onclick="switchConfigTab('empresas')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
             Empresas
+          </div>
+          <div class="rotina-nav-item" id="cnav-ocorrencias" onclick="switchConfigTab('ocorrencias')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Ocorrências
           </div>
           <div class="rotina-nav-divider"></div>
           <div class="rotina-nav-item" id="cnav-backup" onclick="switchConfigTab('backup')">
@@ -886,6 +897,17 @@
           </div>
 
           <!-- PAINEL: EMPRESAS -->
+          <!-- PAINEL: CATÁLOGOS DE OCORRÊNCIAS -->
+          <div id="cpanel-ocorrencias" class="rotina-panel">
+            <div class="panel-header">
+              <div class="panel-header-left">
+                <h2>Ocorrências</h2>
+                <p>Listas usadas no registro e no tratamento das ocorrências de ativos</p>
+              </div>
+            </div>
+            <div id="cpanel-ocorrencias-body"></div>
+          </div>
+
           <div id="cpanel-empresas" class="rotina-panel">
             <div class="panel-header">
               <div class="panel-header-left">
@@ -2545,6 +2567,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
         <span id="avtab-label-atividades">Atividades</span>
       </button>
+      <button class="drawer-tab-btn" id="avtab-btn-ocorrencias" onclick="switchAtivoTab('ocorrencias')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <span id="avtab-label-ocorrencias">Ocorrências</span>
+      </button>
     </div>
 
     <div class="modal-body" style="padding:0;max-height:60vh;overflow-y:auto;">
@@ -2576,6 +2602,9 @@
       </div>
       <div id="avtab-atividades" style="padding:16px 24px;display:none;">
         <div id="ativo-atividades-list"></div>
+      </div>
+      <div id="avtab-ocorrencias" style="padding:16px 24px;display:none;">
+        <div id="ativo-ocorrencias-list"></div>
       </div>
     </div>
 
@@ -3124,6 +3153,7 @@
 <script src="script.js"></script>
 <script src="agenda.js"></script>
 <script src="OT.js"></script>
+<script src="ocorrencias.js"></script>
 <script src="empresas.js"></script>
 <script src="home.js"></script>
 </body>

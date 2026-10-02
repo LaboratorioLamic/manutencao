@@ -45,6 +45,7 @@ function otLoad() {
       const firstLoad = !_otFirebaseReady;
       _otFirebaseReady = true;
       _applyOtData(data);
+      _otSincronizarRefsAtivos();
       // Atualiza a view OT se estiver visível
       _otRenderView_mode();
       // Na primeira carga, re-renderiza o home para que os KPIs de OT apareçam com dados reais
@@ -128,7 +129,9 @@ let _otFormId        = null; // null = nova OT, string = editar
 let _otFromAtivoView = false; // true quando form foi aberto via otOpenFormForAtivo
 let _otViewId    = null; // OT aberta na view
 let _otSubTemp   = [];   // subtarefas em edição
-let _otAtivoIdx  = null; // ativo selecionado no form
+let _otAtivoIdx  = null; // ativo principal do form (= _otAtivoIdxs[0])
+let _otAtivoIdxs = [];   // todos os ativos vinculados no form
+let _otOcorrenciaIds = []; // ocorrências vinculadas no form
 let _otPubAnexos = [];   // anexos da publicação em progresso
 let _otFilterTipo = '';
 let _otFilterSev  = '';
@@ -156,6 +159,68 @@ let _otListShowFinais  = false;
 // ── DRAG & DROP STATE ─────────────────────────────────────────
 let _dragOtId      = null;
 let _dragOriginCol = null;
+
+// ── VÍNCULO COM ATIVO (id estável) ────────────────────────────
+function _otAtivoIdAtual() {
+  if (_otAtivoIdx === null || _otAtivoIdx === undefined || typeof state === 'undefined') return null;
+  return state.ativos[_otAtivoIdx]?.id || null;
+}
+
+function _otAtivoIdsAtuais() {
+  if (typeof state === 'undefined') return [];
+  return _otAtivoIdxs.map(i => state.ativos[i]?.id).filter(Boolean);
+}
+
+// ── VÍNCULOS MÚLTIPLOS ────────────────────────────────────────
+// Uma OT pode envolver vários ativos e várias ocorrências. A lista completa fica em
+// ativoIds; o primeiro é o ativo principal, espelhado em ativoId/ativoIdx para os
+// módulos que trabalham com um ativo só (Início, agenda, notificações).
+function otAtivoIds(o) {
+  if (Array.isArray(o?.ativoIds) && o.ativoIds.length) return o.ativoIds.filter(Boolean);
+  return o?.ativoId ? [o.ativoId] : [];
+}
+function otAtivoIdxs(o) {
+  if (typeof state === 'undefined' || !o) return [];
+  const ids = otAtivoIds(o);
+  if (ids.length && typeof _ativoIdxById === 'function') return ids.map(_ativoIdxById).filter(i => i >= 0);
+  const i = o.ativoIdx;
+  return (i !== null && i !== undefined && i !== '' && state.ativos[Number(i)]) ? [Number(i)] : [];
+}
+function otTemAtivo(o, idx) { return otAtivoIdxs(o).includes(Number(idx)); }
+function otOcorrenciaIds(o) {
+  if (Array.isArray(o?.ocorrenciaIds)) return o.ocorrenciaIds.filter(Boolean);
+  return o?.ocorrenciaId ? [o.ocorrenciaId] : [];
+}
+function _otNomeAtivos(o) {
+  const nomes = otAtivoIdxs(o).map(i => state.ativos[i]?.nome).filter(Boolean);
+  return nomes.length > 1 ? `${nomes[0]} +${nomes.length - 1}` : (nomes[0] || '');
+}
+
+// Mantém ativoId ⇄ ativoIdx coerentes. Só roda com ativos e OTs já carregados.
+function _otSincronizarRefsAtivos() {
+  if (!_otFirebaseReady || typeof _stateFirebaseReady === 'undefined' || !_stateFirebaseReady) return;
+  if (typeof state === 'undefined' || state.ativos.some(a => a && !a.id)) return;
+  let mudou = false;
+  otState.ordens.forEach(o => {
+    // O ativo principal é sempre o primeiro da lista
+    if (Array.isArray(o.ativoIds) && o.ativoIds.length && o.ativoId !== o.ativoIds[0]) { o.ativoId = o.ativoIds[0]; mudou = true; }
+    if (o.ativoId) {
+      const idx = _ativoIdxById(o.ativoId);
+      if (idx >= 0 && Number(o.ativoIdx) !== idx) { o.ativoIdx = idx; mudou = true; }
+    } else if (o.ativoIdx !== null && o.ativoIdx !== undefined && o.ativoIdx !== '') {
+      const a = state.ativos[Number(o.ativoIdx)];
+      if (a?.id) { o.ativoId = a.id; mudou = true; }
+    }
+  });
+  if (mudou) otSave();
+}
+
+function _otReavaliarPausaAtivos(otId) {
+  if (typeof state === 'undefined' || typeof _ativoAvaliarRetornoUso !== 'function') return;
+  state.ativos.forEach((ativo, ativoIdx) => {
+    if (ativo?.statusUso === 'em_pausa' && (ativo.pausaOTs || []).includes(otId)) _ativoAvaliarRetornoUso(ativoIdx);
+  });
+}
 
 // ── NÚMERO SEQUENCIAL ─────────────────────────────────────────
 function _otNextNum() {
@@ -299,7 +364,7 @@ function _otBuildTabHTML() {
     </button>
   </div>
   <div id="ot-main-content" style="flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0;"></div>
-  ${(typeof authHasPermission !== 'function' || authHasPermission('ot.criar')) ? `<button class="ot-fab" onclick="otOpenForm(null)" title="Nova OT">
+  ${(typeof authHasPermission !== 'function' || authHasPermission('ot.criarOT')) ? `<button class="ot-fab" onclick="otOpenForm(null)" title="Nova OT">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
   </button>` : ''}
 </div>`;
@@ -379,7 +444,7 @@ function _otRenderFilterAtivoList(q) {
   const otsVisiveis = _otGetFiltered();
   _otFilterAtivoIdx = savedAtivoIdx;
 
-  const idxComOTs = new Set(otsVisiveis.map(o => o.ativoIdx).filter(i => i !== null && i !== undefined));
+  const idxComOTs = new Set(otsVisiveis.flatMap(o => otAtivoIdxs(o)));
 
   const ativos = state.ativos.map((a, i) => ({ ...a, _idx: i }))
     .filter(a => {
@@ -403,7 +468,7 @@ function _otRenderFilterAtivoList(q) {
       </div>
       <div>
         <div class="ativo-search-card-name">${_escHtml(a.nome)}</div>
-        <div class="ativo-search-card-meta">${a.codigo ? a.codigo + ' · ' : ''}${a.setor || ''}${idxComOTs.has(a._idx) ? ` · ${otsVisiveis.filter(o => o.ativoIdx === a._idx).length} OT(s)` : ''}</div>
+        <div class="ativo-search-card-meta">${a.codigo ? a.codigo + ' · ' : ''}${a.setor || ''}${idxComOTs.has(a._idx) ? ` · ${otsVisiveis.filter(o => otTemAtivo(o, a._idx)).length} OT(s)` : ''}</div>
       </div>
     </div>`).join('');
 }
@@ -519,15 +584,15 @@ function _otPassesDateFilter(o) {
 function _otGetFiltered() {
   const sess = typeof currentSession !== 'undefined' ? currentSession : null;
   return otState.ordens.filter(o => {
-    const ativo = (o.ativoIdx !== null && o.ativoIdx !== undefined && typeof state !== 'undefined')
-      ? state.ativos[o.ativoIdx] : null;
-    if (ativo) {
-      if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
+    // Visível se o usuário enxerga ao menos um dos ativos da OT
+    const ativosOT = typeof state !== 'undefined' ? otAtivoIdxs(o).map(i => state.ativos[i]).filter(Boolean) : [];
+    if (ativosOT.length) {
+      if (typeof _userCanSeeAtivo === 'function' && !ativosOT.some(a => _userCanSeeAtivo(a))) return false;
     } else if (o.setor) {
       const fakeAtivo = { setor: o.setor };
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(fakeAtivo)) return false;
     }
-    if (_otFilterAtivoIdx !== null && o.ativoIdx !== _otFilterAtivoIdx) return false;
+    if (_otFilterAtivoIdx !== null && !otTemAtivo(o, _otFilterAtivoIdx)) return false;
     if (_otFilterMyOTs && sess) {
       const ids = o.responsavelIds || (o.responsavelId ? [o.responsavelId] : []);
       if (!ids.includes(sess.userId)) return false;
@@ -636,7 +701,7 @@ function _otCardHTML(o) {
   <div class="ot-card-meta">
     ${ativo ? `<div class="ot-card-meta-row">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-      <span class="ot-card-meta-val">${_escHtml(ativo.nome)}${ativo.codigo ? ' · ' + ativo.codigo : ''}</span>
+      <span class="ot-card-meta-val">${_escHtml(ativo.nome)}${ativo.codigo ? ' · ' + ativo.codigo : ''}${otAtivoIdxs(o).length > 1 ? `<b> +${otAtivoIdxs(o).length - 1}</b>` : ''}</span>
     </div>` : ''}
     ${o.responsavelNome ? `<div class="ot-card-meta-row">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
@@ -696,8 +761,7 @@ function _otRenderCalendario() {
       <div class="ot-cal-ots">
         ${ots.slice(0, maxShow).map(o => {
           const { cls } = _otCardDeadlineInfo(o);
-          const _ativoNome = (o.ativoIdx !== null && o.ativoIdx !== undefined && typeof state !== 'undefined')
-            ? (state.ativos[o.ativoIdx]?.nome || '') : '';
+          const _ativoNome = typeof state !== 'undefined' ? _otNomeAtivos(o) : '';
           return `<div class="ot-cal-ot-pill ${cls ? 'ot-cal-pill-' + (cls.includes('overdue') ? 'overdue' : 'warning') : ''}" onclick="otOpenView('${o.id}')" title="${_escHtml(o.titulo)}">
             <span class="ot-cal-pill-dot ot-cal-dot-${o.tipo}"></span>
             <span class="ot-cal-pill-body">
@@ -842,8 +906,7 @@ function _otRenderCalendarioSemanal(content) {
     const isToday = ds === todayStr;
     const pills = ots.map(o => {
       const { cls } = _otCardDeadlineInfo(o);
-      const ativoNome = (o.ativoIdx !== null && o.ativoIdx !== undefined)
-        ? (state.ativos[o.ativoIdx]?.nome || '') : '';
+      const ativoNome = _otNomeAtivos(o);
       const deadlineCls = cls ? (cls.includes('overdue') ? 'ot-cal-pill-overdue' : 'ot-cal-pill-warning') : '';
       return `<div class="ot-sem-pill ${deadlineCls}" onclick="otOpenView('${o.id}')" title="${_escHtml(o.titulo)}">
         <div class="ot-sem-pill-top">
@@ -1087,23 +1150,9 @@ function _otSetStatus(otId, newStatus, pubTipo, texto) {
   }
   otSave();
 
-  // Se a OT foi concluída ou cancelada, verificar se algum ativo em pausa
-  // tem todas as suas OTs de pausa finalizadas — se sim, retornar para "Em Uso"
-  if (['concluida', 'cancelada'].includes(newStatus) && typeof state !== 'undefined') {
-    state.ativos.forEach((ativo, ativoIdx) => {
-      if (ativo.statusUso !== 'em_pausa' || !ativo.pausaOTs || ativo.pausaOTs.length === 0) return;
-      if (!ativo.pausaOTs.includes(otId)) return;
-      const todasFinalizadas = ativo.pausaOTs.every(pid => {
-        const ot = otState.ordens.find(o => o.id === pid);
-        return !ot || ['concluida', 'cancelada'].includes(ot.status);
-      });
-      if (todasFinalizadas) {
-        state.ativos[ativoIdx] = { ...ativo, statusUso: 'em_uso', pausaOTs: [] };
-        if (typeof saveState === 'function') saveState();
-        showToast(`Ativo "${ativo.nome}" retornou para Em Uso automaticamente.`, 'success');
-      }
-    });
-  }
+  // Se a OT foi concluída ou cancelada, verificar se algum ativo em pausa por ela
+  // pode retornar para "Em Uso" (exige também a liberação das ocorrências que o pausaram)
+  if (['concluida', 'cancelada'].includes(newStatus)) _otReavaliarPausaAtivos(otId);
 
   _otRenderKanban();
   showToast(`OT movida para ${OT_STATUS_CFG[newStatus]?.label}.`, 'success');
@@ -1112,7 +1161,7 @@ function _otSetStatus(otId, newStatus, pubTipo, texto) {
 // ── EXCLUIR OT ────────────────────────────────────────────────
 let _otDeleteId = null;
 function otOpenDeleteConfirm(id) {
-  if (typeof authHasPermission === 'function' && !authHasPermission('ot.excluir')) {
+  if (typeof authHasPermission === 'function' && !authHasPermission('ot.excluirOT')) {
     showToast('Você não tem permissão para excluir OTs.', 'error'); return;
   }
   _otDeleteId = id;
@@ -1135,6 +1184,7 @@ function otConfirmDelete() {
   otState.ordens = otState.ordens.filter(x => x.id !== _otDeleteId);
   otState.publicacoes = otState.publicacoes.filter(p => p.otId !== _otDeleteId);
   otSave();
+  _otReavaliarPausaAtivos(_otDeleteId);
   otCloseModal('modal-ot-delete');
   otCloseModal('modal-ot-view');
   _otRenderView_mode();
@@ -1154,17 +1204,19 @@ function otConfirmCancel() {
   if (!motivo) { showToast('Informe o motivo do cancelamento.', 'error'); return; }
   const idx = otState.ordens.findIndex(x => x.id === _otCancelId);
   if (idx < 0) return;
+  const statusAntes = otState.ordens[idx].status;
   otState.ordens[idx].status             = 'cancelada';
   otState.ordens[idx].motivoCancelamento = motivo;
   otState.ordens[idx].atualizadoEm      = new Date().toISOString();
   const sess = typeof currentSession !== 'undefined' ? currentSession : null;
   otState.publicacoes.push({
     id: _otUid(), otId: _otCancelId, tipo: 'cancelamento',
-    texto: motivo, statusAntes: otState.ordens[idx].status, statusDepois: 'cancelada',
+    texto: motivo, statusAntes, statusDepois: 'cancelada',
     autorId: sess?.userId || null, autorNome: sess?.nomeCompleto || sess?.username || null,
     data: new Date().toISOString(), anexos: [],
   });
   otSave();
+  _otReavaliarPausaAtivos(_otCancelId);
   otCloseModal('modal-ot-cancel');
   _otRenderKanban();
   showToast('OT cancelada.', 'success');
@@ -1282,16 +1334,19 @@ function otFRespClose() {
 // ── MODAL FORMULÁRIO OT ───────────────────────────────────────
 function otOpenForm(id) {
   if (typeof authHasPermission === 'function') {
-    if (!id && !authHasPermission('ot.criar')) {
+    if (!id && !authHasPermission('ot.criarOT')) {
       showToast('Você não tem permissão para criar OTs.', 'error'); return;
     }
-    if (id && !authHasPermission('ot.editar')) {
+    if (id && !authHasPermission('ot.editarOT')) {
       showToast('Você não tem permissão para editar OTs.', 'error'); return;
     }
   }
   _otFormId        = id;
   _otFromAtivoView = false;
   _otAtivoIdx      = null;
+  _otAtivoIdxs     = [];
+  _otOcorrenciaIds = [];
+  if (typeof _ocOrigemOT !== 'undefined') _ocOrigemOT = null;
   _otRespId        = null;
   const o     = id ? otState.ordens.find(x => x.id === id) : null;
 
@@ -1307,8 +1362,10 @@ function otOpenForm(id) {
   // Alerta padrão em branco para novas OTs; preserva valor existente ao editar
   _otFormSetField('ot-f-prazo-alerta', (o?.prazoAlertaDias !== undefined && o?.prazoAlertaDias !== null) ? o.prazoAlertaDias : '');
   // Ativo vinculado
-  _otAtivoIdx = o?.ativoIdx ?? null;
+  _otAtivoIdxs = o ? otAtivoIdxs(o) : [];
   _otRenderAtivoChip();
+  _otOcorrenciaIds = o ? otOcorrenciaIds(o) : [];
+  _otRenderOcorrenciaChip();
 
   // Responsável
   _otBuildRespSelect(o?.responsavelIds || o?.responsavelId || '');
@@ -1479,87 +1536,121 @@ function _otOnTipoChange() {
 
 function otFormTipoChange() { _otOnTipoChange(); }
 
+const _OT_ICO_ATIVO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`;
+const _OT_ICO_OC = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+
+// ── ATIVOS VINCULADOS (vários; o primeiro é o principal) ──────
 function _otRenderAtivoChip() {
+  if (typeof state !== 'undefined') _otAtivoIdxs = _otAtivoIdxs.filter(i => state.ativos[i]);
+  _otAtivoIdx = _otAtivoIdxs.length ? _otAtivoIdxs[0] : null;
+  const setorEl = document.getElementById('ot-f-setor-display');
+  if (setorEl && _otAtivoIdx !== null) setorEl.textContent = state.ativos[_otAtivoIdx]?.setor || '';
   const wrap = document.getElementById('ot-ativo-chip-wrap');
   if (!wrap) return;
-  const ativo = (_otAtivoIdx !== null && typeof state !== 'undefined') ? state.ativos[_otAtivoIdx] : null;
-  if (ativo) {
-    wrap.innerHTML = `<div style="display:flex;align-items:center;gap:6px;">
-      <span class="ativo-selecionado-chip">
-        ${_escHtml(ativo.nome)}${ativo.codigo ? ' · ' + ativo.codigo : ''}
-        <span class="chip-x" onclick="otClearAtivo()">×</span>
-      </span>
-    </div>`;
-  } else {
-    wrap.innerHTML = `<button type="button" class="btn btn-outline" onclick="otOpenAtivoSearch()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-      Vincular Ativo
-    </button>`;
-  }
+  const chips = _otAtivoIdxs.map((idx, n) => {
+    const ativo = state.ativos[idx];
+    return `<span class="ativo-selecionado-chip"${n === 0 && _otAtivoIdxs.length > 1 ? ' title="Ativo principal"' : ''}>
+      ${n === 0 && _otAtivoIdxs.length > 1 ? '<b>★</b>' : ''}${_escHtml(ativo.nome)}${ativo.codigo ? ' · ' + _escHtml(ativo.codigo) : ''}
+      <span class="chip-x" onclick="otRemoveAtivo(${idx})">×</span>
+    </span>`;
+  }).join('');
+  wrap.innerHTML = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+    ${chips}
+    <button type="button" class="btn btn-outline" onclick="otOpenAtivoSearch()">
+      ${_OT_ICO_ATIVO}${_otAtivoIdxs.length ? 'Adicionar' : 'Vincular Ativo'}
+    </button>
+  </div>`;
 }
 
-function otClearAtivo() { _otAtivoIdx = null; _otRenderAtivoChip(); }
+function otRemoveAtivo(idx) { _otAtivoIdxs = _otAtivoIdxs.filter(i => i !== idx); _otRenderAtivoChip(); }
+function otClearAtivo() { _otAtivoIdxs = []; _otRenderAtivoChip(); }
+
+// ── OCORRÊNCIAS VINCULADAS (várias) ───────────────────────────
+function _otRenderOcorrenciaChip() {
+  const wrap = document.getElementById('ot-ocorrencia-chip-wrap');
+  if (!wrap) return;
+  const field = document.getElementById('ot-ocorrencia-field');
+  if (field) field.style.display = typeof ocState === 'undefined' ? 'none' : '';
+  if (typeof ocState === 'undefined') return;
+  const chips = _otOcorrenciaIds.map(id => {
+    const oc = ocState.ocorrencias[id];
+    const rotulo = oc ? `${oc.numero} · ${oc.titulo}` : 'Ocorrência não encontrada';
+    return `<span class="ativo-selecionado-chip ot-oc-chip" title="${_escHtml(rotulo)}">
+      ${_OT_ICO_OC}<span class="ot-oc-chip-txt">${_escHtml(rotulo)}</span>
+      <span class="chip-x" onclick="otRemoveOcorrencia('${id}')" title="Desvincular">×</span>
+    </span>`;
+  }).join('');
+  wrap.innerHTML = `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+    ${chips}
+    <button type="button" class="btn btn-outline" onclick="ocOpenPickerParaOT()">
+      ${_OT_ICO_OC}${_otOcorrenciaIds.length ? 'Adicionar' : 'Vincular Ocorrência'}
+    </button>
+  </div>`;
+}
+
+function otRemoveOcorrencia(id) { _otOcorrenciaIds = _otOcorrenciaIds.filter(x => x !== id); _otRenderOcorrenciaChip(); }
+function otClearOcorrencia() { _otOcorrenciaIds = []; _otRenderOcorrenciaChip(); }
+
+// ── SELETOR DE ATIVOS (seleção múltipla) ─────────────────────
+let _otAtivoSearchQ = '';
 
 function otOpenAtivoSearch() {
-  const list = document.getElementById('ot-ativo-search-list');
   const input = document.getElementById('ot-ativo-search-input');
   if (input) input.value = '';
+  _otAtivoSearchQ = '';
   _otRenderAtivoSearchList('');
   otOpenModal('modal-ot-ativo-search');
 }
 
-function otAtivoSearchInput(q) { _otRenderAtivoSearchList(q.toLowerCase()); }
+function otAtivoSearchInput(q) { _otAtivoSearchQ = q.toLowerCase(); _otRenderAtivoSearchList(_otAtivoSearchQ); }
 
 function _otRenderAtivoSearchList(q) {
   const list = document.getElementById('ot-ativo-search-list');
   if (!list || typeof state === 'undefined') return;
+  const sel = new Set(_otAtivoIdxs);
   const ativos = state.ativos.map((a, i) => ({ ...a, _idx: i }))
-    .filter(a => a.statusUso !== 'em_desuso' && (!q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q)))
+    .filter(a => (a.statusUso !== 'em_desuso' || sel.has(a._idx)) && (!q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q)))
     .sort((a, b) => {
       const sa = (a.setor || '').toLowerCase(), sb = (b.setor || '').toLowerCase();
       if (sa !== sb) return sa < sb ? -1 : 1;
       const ca = (a.codigo || '').toLowerCase(), cb = (b.codigo || '').toLowerCase();
       return ca < cb ? -1 : ca > cb ? 1 : 0;
     });
+  const cnt = document.getElementById('ot-ativo-search-count');
+  if (cnt) cnt.textContent = `${sel.size} selecionado${sel.size !== 1 ? 's' : ''}`;
   if (ativos.length === 0) {
     list.innerHTML = '<div class="autocomplete-empty">Nenhum ativo encontrado</div>';
     return;
   }
-  list.innerHTML = ativos.slice(0, 40).map(a => `
-    <div class="ativo-search-card" onclick="otSelectAtivo(${a._idx})">
+  list.innerHTML = ativos.slice(0, 60).map(a => `
+    <div class="ativo-search-card oc-pick${sel.has(a._idx) ? ' sel' : ''}" onclick="otSelectAtivo(${a._idx})">
+      <span class="oc-pick-check">${sel.has(a._idx) ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>' : ''}</span>
       <div class="ativo-search-card-icon">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       </div>
       <div>
         <div class="ativo-search-card-name">${_escHtml(a.nome)}</div>
-        <div class="ativo-search-card-meta">${a.codigo ? a.codigo + ' · ' : ''}${a.setor || ''}</div>
+        <div class="ativo-search-card-meta">${a.codigo ? _escHtml(a.codigo) + ' · ' : ''}${_escHtml(a.setor || '')}</div>
       </div>
     </div>`).join('');
 }
 
+// Marca/desmarca o ativo; o seletor fica aberto para escolher vários
 function otSelectAtivo(idx) {
-  _otAtivoIdx = idx;
-  otCloseModal('modal-ot-ativo-search');
+  if (_otAtivoIdxs.includes(idx)) _otAtivoIdxs = _otAtivoIdxs.filter(i => i !== idx);
+  else _otAtivoIdxs.push(idx);
   _otRenderAtivoChip();
-  // Preenche setor automaticamente
-  const ativo = typeof state !== 'undefined' ? state.ativos[idx] : null;
-  if (ativo?.setor) {
-    const setorEl = document.getElementById('ot-f-setor-display');
-    if (setorEl) setorEl.textContent = ativo.setor;
-  }
+  _otRenderAtivoSearchList(_otAtivoSearchQ);
 }
+
+function otAtivoSearchConcluir() { otCloseModal('modal-ot-ativo-search'); }
 
 function otOpenFormForAtivo(idx) {
   otOpenForm(null);
   // Pré-vincula o ativo e marca origem para atualizar a lista ao salvar
-  _otAtivoIdx      = idx;
+  _otAtivoIdxs     = [idx];
   _otFromAtivoView = true;
   _otRenderAtivoChip();
-  const ativo = typeof state !== 'undefined' ? state.ativos[idx] : null;
-  if (ativo?.setor) {
-    const setorEl = document.getElementById('ot-f-setor-display');
-    if (setorEl) setorEl.textContent = ativo.setor;
-  }
 }
 
 // ── TABS DO FORM ──────────────────────────────────────────────
@@ -1706,6 +1797,9 @@ function otSaveForm() {
   }
 
   const now = new Date().toISOString();
+  // Ocorrências vinculadas antes desta gravação (para registrar vínculo/desvínculo nelas)
+  const _ocsAnteriores = _otFormId ? otOcorrenciaIds(otState.ordens.find(x => x.id === _otFormId)) : [];
+  const _ativoIdsForm = _otAtivoIdsAtuais();
 
   if (_otFormId) {
     // Editar existente
@@ -1718,6 +1812,10 @@ function otSaveForm() {
       severidade: document.getElementById('ot-f-severidade')?.value || 'media',
       prazo:      document.getElementById('ot-f-prazo')?.value      || '',
       ativoIdx:   _otAtivoIdx,
+      ativoId:    _otAtivoIdAtual(),
+      ativoIds:   _ativoIdsForm,
+      ocorrenciaIds: _otOcorrenciaIds.slice(),
+      ocorrenciaId:  null, // substituído por ocorrenciaIds
       responsavelIds:  respIds,
       responsavelId:   respIds[0] || '',
       responsavelNome: respUsers.map(u => u.nomeCompleto).join(', '),
@@ -1752,6 +1850,10 @@ function otSaveForm() {
       severidade: document.getElementById('ot-f-severidade')?.value || 'media',
       prazo:      document.getElementById('ot-f-prazo')?.value      || '',
       ativoIdx:   _otAtivoIdx,
+      ativoId:    _otAtivoIdAtual(),
+      ativoIds:   _ativoIdsForm,
+      ocorrenciaIds: _otOcorrenciaIds.slice(),
+      ocorrenciaId:  null, // substituído por ocorrenciaIds
       setor:      (_otAtivoIdx !== null && typeof state !== 'undefined')
                     ? (state.ativos[_otAtivoIdx]?.setor || '') : '',
       solicitanteId:   sess?.userId       || null,
@@ -1786,20 +1888,24 @@ function otSaveForm() {
     });
   }
 
-  // Se causou parada, aplica status em_pausa no ativo com esta OT associada
-  if (causouParada && _otAtivoIdx !== null && typeof state !== 'undefined') {
-    const ativo = state.ativos[_otAtivoIdx];
-    if (ativo) {
-      const otId = _otFormId || otState.ordens[otState.ordens.length - 1]?.id;
+  // Se causou parada, aplica status em_pausa em todos os ativos da OT
+  if (causouParada && _otAtivoIdxs.length && typeof state !== 'undefined') {
+    const otId = _otFormId || otState.ordens[otState.ordens.length - 1]?.id;
+    _otAtivoIdxs.forEach(i => {
+      const ativo = state.ativos[i];
+      if (!ativo) return;
       ativo.statusUso = 'em_pausa';
       ativo.pausaOTs  = Array.from(new Set([...(ativo.pausaOTs || []), otId]));
-      if (typeof saveState === 'function') saveState();
-    }
+    });
+    if (typeof saveState === 'function') saveState();
   }
 
   const _wasFromAtivoView = _otFromAtivoView;
   _otFromAtivoView = false;
   otSave();
+  // Vincula à ocorrência de origem ou gera a ocorrência quando o ativo falhou
+  const _otSalva = _otFormId ? otState.ordens.find(x => x.id === _otFormId) : otState.ordens[otState.ordens.length - 1];
+  if (typeof ocAposSalvarOT === 'function') ocAposSalvarOT(_otSalva, _ocsAnteriores);
   otCloseModal('modal-ot-form');
   _otRenderKanban();
   if (_wasFromAtivoView && typeof window._renderAtivoOTs === 'function') window._renderAtivoOTs();
@@ -1812,8 +1918,8 @@ function otOpenView(id) {
   const o = otState.ordens.find(x => x.id === id);
   if (!o) return;
   _otRenderView(o);
-  const canDelOT  = typeof authHasPermission !== 'function' || authHasPermission('ot.excluir');
-  const canEditOT = typeof authHasPermission !== 'function' || authHasPermission('ot.editar');
+  const canDelOT  = typeof authHasPermission !== 'function' || authHasPermission('ot.excluirOT');
+  const canEditOT = typeof authHasPermission !== 'function' || authHasPermission('ot.editarOT');
   const btnDel  = document.getElementById('btn-ot-delete');
   const btnEdit = document.getElementById('btn-ot-view-edit');
   if (btnDel)  btnDel.style.display  = (!canDelOT  || ['concluida','cancelada'].includes(o.status)) ? 'none' : '';
@@ -1822,8 +1928,8 @@ function otOpenView(id) {
 }
 
 function _otRenderView(o) {
-  const ativo = (o.ativoIdx !== null && o.ativoIdx !== undefined && typeof state !== 'undefined')
-    ? state.ativos[o.ativoIdx] : null;
+  const ativosOT = typeof state !== 'undefined' ? otAtivoIdxs(o).map(i => state.ativos[i]).filter(Boolean) : [];
+  const ativo = ativosOT[0] || null;
   const tipoCfg = OT_TIPO_CFG[o.tipo] || {};
   const sevCfg  = OT_SEV_CFG[o.severidade]  || {};
 
@@ -1874,6 +1980,7 @@ function _otRenderView(o) {
     <span class="ot-view-hero-badge"><span class="ot-badge ${tipoCfg.cls}" style="font-size:11px;">${tipoCfg.label}</span></span>
     <span class="ot-view-hero-badge"><span class="ot-badge ${sevCfg.cls}" style="font-size:11px;">${sevCfg.label}</span></span>
     ${o.terceirizado ? `<span class="ot-view-hero-badge"><span class="ot-badge ot-badge-terceiro" style="font-size:11px;color:#fff;background:rgba(139,92,246,0.35);border-color:rgba(139,92,246,0.55);">Terceirizado</span></span>` : ''}
+    ${typeof ocBadgeLink === 'function' ? otOcorrenciaIds(o).map(ocBadgeLink).join('') : ''}
   </div>
 </div>
 
@@ -1902,9 +2009,16 @@ function _otRenderView(o) {
     <div class="detail-label">Responsável Técnico</div>
     <div class="detail-value">${_escHtml(o.responsavelNome || '—')}</div>
   </div>
-  ${ativo ? `<div class="detail-card">
-    <div class="detail-label">Ativo Vinculado</div>
-    <div class="detail-value">${_escHtml(ativo.nome)}${ativo.codigo ? '<br><span style="font-size:12px;font-family:DM Mono,monospace;color:var(--text-muted)">' + ativo.codigo + '</span>' : ''}</div>
+  ${otOcorrenciaIds(o).length && typeof ocState !== 'undefined' ? `<div class="detail-card">
+    <div class="detail-label">${otOcorrenciaIds(o).length > 1 ? `Ocorrências Vinculadas (${otOcorrenciaIds(o).length})` : 'Ocorrência Vinculada'}</div>
+    <div class="detail-value">${otOcorrenciaIds(o).map(id => {
+      const oc = ocState.ocorrencias[id];
+      return oc ? `<div class="ot-view-link" onclick="ocAbrirDeOT('${id}')" title="Abrir ocorrência">${_escHtml(oc.numero)} <span style="font-size:12px;color:var(--text-muted)">${_escHtml(oc.titulo)}</span></div>` : '<div style="color:var(--text-muted)">Ocorrência excluída</div>';
+    }).join('')}</div>
+  </div>` : ''}
+  ${ativosOT.length ? `<div class="detail-card">
+    <div class="detail-label">${ativosOT.length > 1 ? `Ativos Vinculados (${ativosOT.length})` : 'Ativo Vinculado'}</div>
+    <div class="detail-value">${ativosOT.map(a => `<div>${_escHtml(a.nome)}${a.codigo ? ' <span style="font-size:12px;font-family:DM Mono,monospace;color:var(--text-muted)">' + _escHtml(a.codigo) + '</span>' : ''}</div>`).join('')}</div>
   </div>` : ''}
   <div class="detail-card">
     <div class="detail-label">Setor</div>
@@ -2806,6 +2920,10 @@ function _otModalsHTML() {
             <label class="field-label">Ativo Vinculado</label>
             <div id="ot-ativo-chip-wrap"></div>
           </div>
+          <div class="form-field" id="ot-ocorrencia-field">
+            <label class="field-label">Ocorrência Vinculada</label>
+            <div id="ot-ocorrencia-chip-wrap"></div>
+          </div>
           <div class="form-row">
             <div class="form-field">
               <label class="field-label">Prazo</label>
@@ -3187,7 +3305,7 @@ function _otModalsHTML() {
         <div class="modal-header-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         </div>
-        <div><div class="modal-title">Vincular Ativo</div></div>
+        <div><div class="modal-title">Vincular Ativos</div><div class="modal-subtitle">Marque todos os ativos envolvidos na OT</div></div>
       </div>
       <button class="modal-close" onclick="otCloseModal('modal-ot-ativo-search')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -3200,6 +3318,13 @@ function _otModalsHTML() {
           oninput="otAtivoSearchInput(this.value)">
       </div>
       <div id="ot-ativo-search-list" class="ativo-search-list"></div>
+    </div>
+    <div class="modal-footer" style="justify-content:space-between;">
+      <span id="ot-ativo-search-count" style="font-size:12.5px;color:var(--text-muted);"></span>
+      <button class="btn btn-primary" onclick="otAtivoSearchConcluir()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:14px;height:14px;"><polyline points="20 6 9 17 4 12"/></svg>
+        Concluir
+      </button>
     </div>
   </div>
 </div>
@@ -3330,7 +3455,7 @@ function _otModalsHTML() {
 
 // ── EDITAR A PARTIR DA VIEW ───────────────────────────────────
 function otEditFromView() {
-  if (typeof authHasPermission === 'function' && !authHasPermission('ot.editar')) {
+  if (typeof authHasPermission === 'function' && !authHasPermission('ot.editarOT')) {
     showToast('Você não tem permissão para editar OTs.', 'error'); return;
   }
   const o = _otViewId ? otState.ordens.find(x => x.id === _otViewId) : null;

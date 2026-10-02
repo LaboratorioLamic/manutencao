@@ -55,10 +55,11 @@
 
     if (isModalOpen('modal-visualizar') && ativoEdicaoIndex !== null && ativoEdicaoIndex !== undefined) {
       _atualizarBadgesAtivoTabs(ativoEdicaoIndex);
-      const avTab = getActiveSubTab('avtab', ['info', 'rotinas', 'tarefas', 'atividades']);
+      const avTab = getActiveSubTab('avtab', ['info', 'rotinas', 'tarefas', 'atividades', 'ocorrencias']);
       if (avTab === 'rotinas') _renderAtivoRotinas();
       if (avTab === 'tarefas') _renderAtivoTarefas();
       if (avTab === 'atividades') _renderAtivoAtividades();
+      if (avTab === 'ocorrencias' && typeof _renderAtivoOcorrencias === 'function') _renderAtivoOcorrencias();
     }
 
     if (isModalOpen('modal-tarefa-detalhe') && tarefaDetalheId) {
@@ -88,6 +89,8 @@
           publicacoes:Array.isArray(data.publicacoes)? data.publicacoes: state.publicacoes
         };
       }
+      if (_sincronizarRefsAtivos()) saveState();
+      if (typeof _otSincronizarRefsAtivos === 'function') _otSincronizarRefsAtivos();
       refreshTaskFlagsUI();
       if (typeof _initTopbarSectorFilter === 'function' && typeof currentSession !== 'undefined' && currentSession) {
         _initTopbarSectorFilter();
@@ -97,6 +100,56 @@
 
   // ── UTILITÁRIOS ──
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+  // ── IDENTIFICAÇÃO ESTÁVEL DE ATIVOS ──
+  // Ativos possuem `id` fixo. Os vínculos legados por posição (equipamentoIdx / ativoIdx)
+  // continuam existindo, mas são recalculados a partir do id sempre que divergirem.
+  function _ativoById(id)    { return id ? (state.ativos.find(a => a?.id === id) || null) : null; }
+  function _ativoIdxById(id) { return id ? state.ativos.findIndex(a => a?.id === id) : -1; }
+  window._ativoById    = _ativoById;
+  window._ativoIdxById = _ativoIdxById;
+
+  // Garante id em todos os ativos e mantém equipamentoId ⇄ equipamentoIdx coerentes
+  // em rotinas e tarefas. Retorna true se algo mudou.
+  function _sincronizarRefsAtivos() {
+    let mudou = false;
+    // Id determinístico na migração: clientes simultâneos geram o mesmo valor
+    state.ativos.forEach((a, i) => { if (a && !a.id) { a.id = 'atv_m' + i; mudou = true; } });
+    const sync = rec => {
+      if (!rec) return;
+      if (rec.equipamentoId) {
+        const idx = _ativoIdxById(rec.equipamentoId);
+        if (idx >= 0 && rec.equipamentoIdx !== idx) { rec.equipamentoIdx = idx; mudou = true; }
+      } else {
+        const a = state.ativos[rec.equipamentoIdx];
+        if (a?.id) { rec.equipamentoId = a.id; mudou = true; }
+      }
+    };
+    state.rotinas.forEach(sync);
+    state.tarefas.forEach(sync);
+    return mudou;
+  }
+
+  // Retorna ao status "Em uso" um ativo em pausa quando todas as causas da pausa
+  // foram resolvidas: OTs concluídas/canceladas e ocorrências liberadas/canceladas.
+  function _ativoAvaliarRetornoUso(ativoIdx) {
+    const ativo = state.ativos[ativoIdx];
+    if (!ativo || ativo.statusUso !== 'em_pausa') return false;
+    const pOTs = ativo.pausaOTs || [];
+    const pOcs = ativo.pausaOcorrencias || [];
+    if (pOTs.length === 0 && pOcs.length === 0) return false;
+    const otsOk = pOTs.every(pid => {
+      const ot = (typeof otState !== 'undefined' ? otState.ordens : []).find(o => o.id === pid);
+      return !ot || ['concluida', 'cancelada'].includes(ot.status);
+    });
+    const ocsOk = pOcs.every(oid => typeof ocPausaResolvida !== 'function' || ocPausaResolvida(oid, ativo.id));
+    if (!otsOk || !ocsOk) return false;
+    state.ativos[ativoIdx] = { ...ativo, statusUso: 'em_uso', pausaOTs: [], pausaOcorrencias: [] };
+    saveState();
+    showToast(`Ativo "${ativo.nome}" retornou para Em Uso automaticamente.`, 'success');
+    return true;
+  }
+  window._ativoAvaliarRetornoUso = _ativoAvaliarRetornoUso;
   function formatDate(str) {
     if (!str) return '—';
     const value = typeof str === 'string' ? str : String(str);
@@ -264,10 +317,10 @@
   }
 
   // ── NAVEGAÇÃO ──
-  const TAB_TITLES = { inicio:'Início', ativos:'Ativos', rotina:'Rotina', os:'Ordens de Trabalho', config:'Configurações' };
+  const TAB_TITLES = { inicio:'Início', ativos:'Ativos', rotina:'Rotina', os:'Ordens de Trabalho', ocorrencias:'Ocorrências', config:'Configurações' };
   function switchTab(tabId) {
     // Guardas de permissão — verificar antes de qualquer alteração no DOM
-    if (['ativos','rotina','os'].includes(tabId)) {
+    if (['ativos','rotina','os','ocorrencias'].includes(tabId)) {
       if (typeof authCanViewTab === 'function' && !authCanViewTab(tabId)) {
         showToast('Sem permissão para visualizar esta aba.', 'error');
         switchTab('inicio');
@@ -324,7 +377,7 @@
   }
 
   // ── CONFIG SUBTABS ──
-  const CONFIG_TABS_ORDER = ['usuario','grupos','empresas','backup'];
+  const CONFIG_TABS_ORDER = ['usuario','grupos','empresas','ocorrencias','backup'];
 
   function _switchConfigTabFirst() {
     const first = CONFIG_TABS_ORDER.find(t => {
@@ -344,6 +397,7 @@
     if (tab === 'usuario')  { if (typeof renderUsersTable  === 'function') renderUsersTable(); }
     if (tab === 'grupos')   { if (typeof renderGroupsTable === 'function') renderGroupsTable(); }
     if (tab === 'empresas') { if (typeof empRenderTable    === 'function') empRenderTable(); }
+    if (tab === 'ocorrencias') { if (typeof ocRenderConfigCatalogos === 'function') ocRenderConfigCatalogos(); }
   }
 
   // ── NOTIFICAÇÕES ──
@@ -1226,7 +1280,7 @@
   let _rastreabilidadeCtx = null; // { tipo: 'ativo'|'rotina'|'tarefa', id }
 
   // Campos a ignorar no diff (internos/não editáveis pelo usuário)
-  const _DIFF_IGNORE = new Set(['_historico','id','autoInativada','proximaData','status']);
+  const _DIFF_IGNORE = new Set(['_historico','id','autoInativada','proximaData','status','equipamentoId']);
 
   // Rótulos legíveis para cada campo
   const _FIELD_LABELS = {
@@ -1633,7 +1687,7 @@
 
     const tarefa = {
       id: tarefaEdicaoId || uid(),
-      titulo, equipamentoIdx: equipIdx,
+      titulo, equipamentoIdx: equipIdx, equipamentoId: state.ativos[equipIdx]?.id || null,
       rotinaId, dataTarefa: data,
       fazerCada, frequencia, repetir, vezes, diasSemana,
       proximaData: isSempre ? null : proxima,
@@ -3812,6 +3866,7 @@
       const rotina = {
         id: rotinaEdicaoId || uid(),
         nome, tipo, equipamentoIdx: _selectedEquipIdx,
+        equipamentoId: state.ativos[_selectedEquipIdx]?.id || null,
         status: rotinaExistente?.status || 'Ativo',
         _historico: rotinaExistente?._historico || [],
         isentoPreventiva: isentoAtivo,
@@ -4517,6 +4572,21 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:12px;height:12px;flex-shrink:0;color:var(--cyan);"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
           </div>`;
         }).join('')}
+      </div>` : ''}
+      ${ativo.statusUso === 'em_pausa' && typeof ocState !== 'undefined' && (ativo.pausaOcorrencias || []).some(id => !ocPausaResolvida(id, ativo.id)) ? `
+      <div class="view-pausa-ots">
+        <div class="detail-label" style="margin-bottom:8px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:12px;height:12px;color:var(--red);"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+          Ocorrências aguardando liberação formal
+        </div>
+        ${ativo.pausaOcorrencias.filter(id => !ocPausaResolvida(id, ativo.id)).map(id => {
+          const oc = ocState.ocorrencias[id];
+          return `<div class="view-pausa-ot-item" onclick="ocOpenView('${id}','eficacia')" title="Abrir ocorrência">
+            <span class="view-pausa-ot-num">${oc?.numero || id}</span>
+            <span class="view-pausa-ot-title">${_ocEsc(oc?.titulo) || '—'}</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:12px;height:12px;flex-shrink:0;color:var(--cyan);"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+          </div>`;
+        }).join('')}
       </div>` : ''}`;
 
     // Atualiza badges das abas
@@ -4530,7 +4600,17 @@
     const tarefasDoAtivo = state.tarefas.filter(t => t.equipamentoIdx === index).map(t => t.id);
     const temOTsPublicadas = state.publicacoes.some(p => tarefasDoAtivo.includes(p.tarefaId));
     const btnDelAtivo = document.getElementById('btn-excluir-ativo');
-    if (btnDelAtivo) btnDelAtivo.style.display = (!temRotinas && !temOTsPublicadas && _can('ativos.excluir')) ? '' : 'none';
+    if (btnDelAtivo) btnDelAtivo.style.display = (!temRotinas && !temOTsPublicadas && !_ativoTemHistoricoVinculado(index) && _can('ativos.excluir')) ? '' : 'none';
+  }
+
+  // OTs e ocorrências são evidências do histórico do ativo: impedem a exclusão
+  function _ativoTemHistoricoVinculado(index) {
+    const ativo = state.ativos[index];
+    if (!ativo) return false;
+    const temOT = (typeof otState !== 'undefined' ? otState.ordens : [])
+      .some(o => (ativo.id && otAtivoIds(o).includes(ativo.id)) || otTemAtivo(o, index));
+    const temOc = typeof ocListarPorAtivo === 'function' && ocListarPorAtivo(ativo.id, { incluirCanceladas: true }).length > 0;
+    return temOT || temOc;
   }
 
   window.excluirAtivoAtual = function () {
@@ -4542,12 +4622,21 @@
     const tarefasDoAtivo = state.tarefas.filter(t => t.equipamentoIdx === index).map(t => t.id);
     const temOTsPublicadas = state.publicacoes.some(p => tarefasDoAtivo.includes(p.tarefaId));
     if (temOTsPublicadas) { showToast('Este ativo possui OTs publicadas e não pode ser excluído.', 'error'); return; }
+    if (_ativoTemHistoricoVinculado(index)) { showToast('Este ativo possui OTs ou ocorrências registradas e não pode ser excluído.', 'error'); return; }
     if (!confirm('Excluir este ativo? Esta ação não pode ser desfeita.')) return;
-    // Ajusta índices de rotinas/tarefas que referenciam ativos após o removido
+    // Ajusta índices de rotinas/tarefas/OTs que referenciam ativos após o removido
     state.rotinas.forEach(r => { if (r.equipamentoIdx > index) r.equipamentoIdx--; });
     state.tarefas.forEach(t => { if (t.equipamentoIdx > index) t.equipamentoIdx--; });
+    let otsAjustadas = false;
+    (typeof otState !== 'undefined' ? otState.ordens : []).forEach(o => {
+      if (o.ativoIdx !== null && o.ativoIdx !== undefined && Number(o.ativoIdx) > index) {
+        o.ativoIdx = Number(o.ativoIdx) - 1;
+        otsAjustadas = true;
+      }
+    });
     state.ativos.splice(index, 1);
     saveState();
+    if (otsAjustadas && typeof otSave === 'function') otSave();
     closeModal('modal-visualizar');
     renderCards();
     showToast('Ativo excluído.', 'success');
@@ -4583,7 +4672,7 @@
     const lbO = document.getElementById('avtab-label-ots');
     if (lbO) {
       const otsAbertas = (typeof otState !== 'undefined' ? otState.ordens : [])
-        .filter(o => Number(o.ativoIdx) === index && !['concluida','cancelada'].includes(o.status));
+        .filter(o => otTemAtivo(o, index) && !['concluida','cancelada'].includes(o.status));
       if (otsAbertas.length > 0) {
         lbO.innerHTML = `OT's <span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:20px;font-size:10px;font-weight:700;background:var(--cyan);color:#fff;margin-left:4px;">${otsAbertas.length}</span>`;
       } else {
@@ -4593,7 +4682,7 @@
   }
 
   function switchAtivoTab(tab) {
-    ['info','rotinas','tarefas','ots','atividades'].forEach(t => {
+    ['info','rotinas','tarefas','ots','atividades','ocorrencias'].forEach(t => {
       document.getElementById('avtab-' + t).style.display = t === tab ? 'block' : 'none';
       document.getElementById('avtab-btn-' + t).classList.toggle('active', t === tab);
     });
@@ -4601,6 +4690,7 @@
     if (tab === 'tarefas')    _renderAtivoTarefas();
     if (tab === 'ots')        _renderAtivoOTs();
     if (tab === 'atividades') _renderAtivoAtividades();
+    if (tab === 'ocorrencias' && typeof _renderAtivoOcorrencias === 'function') _renderAtivoOcorrencias();
   }
 
   function _renderAtivoOTs() {
@@ -4608,7 +4698,7 @@
     const container = document.getElementById('ativo-ots-list');
     if (!container) return;
 
-    const canCreate = typeof authHasPermission !== 'function' || authHasPermission('ot.criar');
+    const canCreate = typeof authHasPermission !== 'function' || authHasPermission('ot.criarOT');
     const btnNovaOT = canCreate
       ? `<button class="btn btn-primary btn-sm" style="gap:6px;font-size:12.5px;"
             onclick="otOpenFormForAtivo(${idx})">
@@ -4618,7 +4708,7 @@
       : '';
 
     const ordens = (typeof otState !== 'undefined' ? otState.ordens : [])
-      .filter(o => Number(o.ativoIdx) === idx && !['concluida','cancelada'].includes(o.status))
+      .filter(o => otTemAtivo(o, idx) && !['concluida','cancelada'].includes(o.status))
       .sort((a, b) => (b.criadoEm || '') < (a.criadoEm || '') ? -1 : 1);
 
     if (ordens.length === 0) {
@@ -4967,20 +5057,27 @@
     const statusUso = document.getElementById('btn-ativo-em-pausa')?.classList.contains('active') ? 'em_pausa'
       : document.getElementById('btn-ativo-em-desuso')?.classList.contains('active') ? 'em_desuso'
       : 'em_uso';
+    const ativoExistente = ativoEdicaoIndex !== null ? state.ativos[ativoEdicaoIndex] : null;
+    // Ocorrências que retiraram o ativo de uso só se resolvem pela liberação formal na própria ocorrência
+    const pausaOcorrencias = (ativoExistente?.pausaOcorrencias || [])
+      .filter(oid => typeof ocPausaResolvida !== 'function' || !ocPausaResolvida(oid, ativoExistente.id));
+    if (pausaOcorrencias.length > 0 && statusUso !== 'em_pausa') {
+      showToast('Ativo retirado de uso por ocorrência. Registre a liberação na ocorrência para alterar o status.', 'error'); return;
+    }
     const pausaOTs  = statusUso === 'em_pausa' ? _ativoGetPausaOTs() : [];
-    if (statusUso === 'em_pausa' && pausaOTs.length === 0) {
+    if (statusUso === 'em_pausa' && pausaOTs.length === 0 && pausaOcorrencias.length === 0) {
       showToast('Adicione ao menos uma OT associada à pausa.', 'error'); return;
     }
 
-    const ativoExistente = ativoEdicaoIndex !== null ? state.ativos[ativoEdicaoIndex] : null;
     const tipo = document.getElementById('ativo-tipo').value || 'Equipamento';
     const ativo = {
+      id: ativoExistente?.id || uid(),
       nome, codigo, setor, categoria, tipo,
       marca: tipo === 'Equipamento' ? (document.getElementById('ativo-marca').value.trim() || "-") : "-",
       modelo: tipo === 'Equipamento' ? (document.getElementById('ativo-modelo').value.trim() || "-") : "-",
       serie: tipo === 'Equipamento' ? (document.getElementById('ativo-serie').value.trim() || "-") : "-",
       nota: document.getElementById('ativo-nota').value.trim(),
-      statusUso, pausaOTs,
+      statusUso, pausaOTs, pausaOcorrencias,
       _historico: ativoExistente?._historico || []
     };
 
@@ -5069,7 +5166,7 @@
     const idx = ativoEdicaoIndex;
     const candidatas = otState.ordens.filter(o =>
       !['concluida','cancelada'].includes(o.status) &&
-      (idx === null || o.ativoIdx === idx || o.ativoIdx == null)
+      (idx === null || otTemAtivo(o, idx) || o.ativoIdx == null)
     );
 
     // Monta modal simples
