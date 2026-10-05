@@ -398,6 +398,7 @@
           <div class="home-main">
             ${_renderKPIRow2(kpis)}
             ${typeof ocRenderHomeCard === 'function' ? ocRenderHomeCard() : ''}
+            ${typeof cqRenderHomeCard === 'function' ? cqRenderHomeCard() : ''}
             ${_renderMidCharts(kpis)}
             ${_renderKPIRow1(kpis)}
             ${_renderBottomCharts(kpis)}

@@ -319,10 +319,10 @@
   }
 
   // ── NAVEGAÇÃO ──
-  const TAB_TITLES = { inicio:'Início', ativos:'Ativos', rotina:'Rotina', os:'Ordens de Trabalho', ocorrencias:'Ocorrências', config:'Configurações' };
+  const TAB_TITLES = { inicio:'Início', ativos:'Ativos', rotina:'Rotina', os:'Ordens de Trabalho', ocorrencias:'Ocorrências', cq:'Controle de Qualidade', config:'Configurações' };
   function switchTab(tabId) {
     // Guardas de permissão — verificar antes de qualquer alteração no DOM
-    if (['ativos','rotina','os','ocorrencias'].includes(tabId)) {
+    if (['ativos','rotina','os','ocorrencias','cq'].includes(tabId)) {
       if (typeof authCanViewTab === 'function' && !authCanViewTab(tabId)) {
         showToast('Sem permissão para visualizar esta aba.', 'error');
         switchTab('inicio');
@@ -379,7 +379,7 @@
   }
 
   // ── CONFIG SUBTABS ──
-  const CONFIG_TABS_ORDER = ['usuario','grupos','empresas','ocorrencias','backup'];
+  const CONFIG_TABS_ORDER = ['usuario','grupos','empresas','ocorrencias','cq','backup'];
 
   function _switchConfigTabFirst() {
     const first = CONFIG_TABS_ORDER.find(t => {
@@ -400,6 +400,7 @@
     if (tab === 'grupos')   { if (typeof renderGroupsTable === 'function') renderGroupsTable(); }
     if (tab === 'empresas') { if (typeof empRenderTable    === 'function') empRenderTable(); }
     if (tab === 'ocorrencias') { if (typeof ocRenderConfigCatalogos === 'function') ocRenderConfigCatalogos(); }
+    if (tab === 'cq')       { if (typeof cqRenderConfig    === 'function') cqRenderConfig(); }
   }
 
   // ── NOTIFICAÇÕES ──

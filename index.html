@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="OT.css">
 <link rel="stylesheet" href="ocorrencias.css">
+<link rel="stylesheet" href="cq.css">
 <link rel="stylesheet" href="empresas.css">
 <link rel="stylesheet" href="home.css">
 </head>
@@ -282,6 +283,11 @@
       <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
       Ocorrências
       <span class="oc-nav-badge" id="oc-nav-badge" style="display:none;"></span>
+    </div>
+    <div class="nav-item" onclick="switchTab('cq')" id="nav-cq" style="display:none;">
+      <span class="nav-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6"/><path d="M10 3v6.5L4.6 18.4A2 2 0 006.3 21.5h11.4a2 2 0 001.7-3.1L14 9.5V3"/><line x1="7.5" y1="15" x2="16.5" y2="15"/></svg></span>
+      Controle de Qualidade
+      <span class="oc-nav-badge cq-nav-badge" id="cq-nav-badge" style="display:none;"></span>
     </div>
     <div class="sidebar-divider"></div>
     <div class="nav-section-label" id="nav-section-sistema">Sistema</div>
@@ -775,6 +781,7 @@
         </div>
       </div>
       <div id="tab-ocorrencias" class="tab-panel"></div>
+      <div id="tab-cq" class="tab-panel"></div>
       <div id="tab-config" class="tab-panel">
 
         <!-- Nav lateral esquerda -->
@@ -795,6 +802,10 @@
           <div class="rotina-nav-item" id="cnav-ocorrencias" onclick="switchConfigTab('ocorrencias')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
             Ocorrências
+          </div>
+          <div class="rotina-nav-item" id="cnav-cq" onclick="switchConfigTab('cq')" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6"/><path d="M10 3v6.5L4.6 18.4A2 2 0 006.3 21.5h11.4a2 2 0 001.7-3.1L14 9.5V3"/><line x1="7.5" y1="15" x2="16.5" y2="15"/></svg>
+            Controle de Qualidade
           </div>
           <div class="rotina-nav-divider"></div>
           <div class="rotina-nav-item" id="cnav-backup" onclick="switchConfigTab('backup')">
@@ -906,6 +917,17 @@
               </div>
             </div>
             <div id="cpanel-ocorrencias-body"></div>
+          </div>
+
+          <!-- PAINEL: CONTROLE DE QUALIDADE -->
+          <div id="cpanel-cq" class="rotina-panel">
+            <div class="panel-header">
+              <div class="panel-header-left">
+                <h2>Controle de Qualidade</h2>
+                <p>Unidades, catálogos, estação de trabalho e validação do módulo</p>
+              </div>
+            </div>
+            <div id="cpanel-cq-body"></div>
           </div>
 
           <div id="cpanel-empresas" class="rotina-panel">
@@ -3169,6 +3191,14 @@
 <script src="agenda.js"></script>
 <script src="OT.js"></script>
 <script src="ocorrencias.js"></script>
+<script src="cq-engine.js"></script>
+<script src="cq.js"></script>
+<script src="cq-cadastros.js"></script>
+<script src="cq-lancamento.js"></script>
+<script src="cq-graficos.js"></script>
+<script src="cq-acoes.js"></script>
+<script src="cq-exemplo.js"></script>
+<script src="cq-planilha.js"></script>
 <script src="empresas.js"></script>
 <script src="home.js"></script>
 </body>

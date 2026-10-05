@@ -845,13 +845,13 @@ function ocOpenForm(id, opts = {}) {
 
   const set = (fid, v) => { const el = document.getElementById(fid); if (el) el.value = v ?? ''; };
   set('oc-f-tipo', oc?.tipo || opts.tipo || 'falha');
-  ocFormTipoChange(oc?.subtipo || '');
-  set('oc-f-titulo', oc?.titulo || '');
-  set('oc-f-descricao', oc?.descricao || '');
-  set('oc-f-data-ocorrencia', oc?.dataHoraOcorrencia || _ocNowLocal());
+  ocFormTipoChange(oc?.subtipo || opts.subtipo || '');
+  set('oc-f-titulo', oc?.titulo || opts.titulo || '');
+  set('oc-f-descricao', oc?.descricao || opts.descricao || '');
+  set('oc-f-data-ocorrencia', oc?.dataHoraOcorrencia || opts.dataHoraOcorrencia || _ocNowLocal());
   set('oc-f-data-deteccao', oc?.dataHoraDeteccao || _ocNowLocal());
-  document.getElementById('oc-f-metodo').innerHTML = _ocOptions(ocState.catalogos.metodosDetec, oc?.metodoDetec || '');
-  set('oc-f-severidade', oc?.severidade || 'media');
+  document.getElementById('oc-f-metodo').innerHTML = _ocOptions(ocState.catalogos.metodosDetec, oc?.metodoDetec || opts.metodoDetec || '');
+  set('oc-f-severidade', oc?.severidade || opts.severidade || 'media');
   set('oc-f-acao-imediata', oc?.acaoImediata?.texto || '');
   const e = oc?.dadosEspecificos || {};
   ['leitura', 'faixaAceitavel', 'unidade', 'duracaoMin', 'pessoasEnvolvidas', 'fabricante', 'numAlerta', 'lotesAfetados'].forEach(k => set('oc-f-esp-' + k, e[k] || ''));
@@ -1019,6 +1019,7 @@ async function ocSaveForm() {
       _ocTrilha(oc, 'criacao', `Ocorrência registrada — ${nomes.length > 1 ? `${nomes.length} ativos: ` : 'ativo: '}${nomes.join(', ')}`);
     }
     await _ocCommit(oc, _ocFormId ? 'Ocorrência atualizada.' : `Ocorrência ${oc.numero} registrada.`);
+    if (!_ocFormId && oc.origem?.tipo === 'cq' && typeof cqAposCriarOcorrencia === 'function') cqAposCriarOcorrencia(oc);
     _ocAplicarPausa(oc);
     otCloseModal('modal-oc-form');
     if (!_ocFormId) ocOpenView(oc.id);
@@ -1231,6 +1232,7 @@ ${_ocSecao('O que aconteceu', `<div class="oc-grid">
 </div>`)}
 ${_ocSecao('Ação imediata (contenção)', `<div class="oc-texto">${_ocEsc(oc.acaoImediata.texto) || '—'}</div>${_ocAssinado(oc.acaoImediata)}`)}
 ${oc.origem?.tipo === 'ot' ? `<div class="oc-nota">Gerada automaticamente a partir da ${_ocEsc(oc.origem.otNumero || 'OT')}.</div>` : ''}
+${oc.origem?.tipo === 'cq' ? `<div class="oc-nota">Originada no Controle de Qualidade — não conformidade ${typeof cqAbrirNC === 'function' ? `<a href="#" onclick="otCloseModal('modal-oc-view');switchTab('cq');setTimeout(()=>cqAbrirNC('${_ocEsc(oc.origem.unidadeId)}','${_ocEsc(oc.origem.ncAno)}','${_ocEsc(oc.origem.ncId)}'),80);return false;">${_ocEsc(oc.origem.ncNumero || 'CQ')}</a>` : _ocEsc(oc.origem.ncNumero || '')}.</div>` : ''}
 ${_ocSecao('Ordens de trabalho vinculadas', ots.length ? ots.map(o => `<div class="oc-ot-link" onclick="ocAbrirOT('${o.id}')">
     ${OC_ICO.ot}<span class="oc-num">${_ocEsc(o.numero)}</span><span style="flex:1;">${_ocEsc(o.titulo)}</span><span class="oc-ot-st">${OT_ST[o.status] || o.status}</span>
   </div>`).join('') : `<div class="oc-vazio">Nenhuma OT vinculada.</div>`)}
