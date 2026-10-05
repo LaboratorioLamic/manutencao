@@ -36,6 +36,20 @@ const CQ_MODELOS_MICRO = [
   { nome: 'Coloração de Ziehl-Neelsen (BAAR)', codigo: 'MIC-BAAR',
     escala: ['BAAR presentes (bacilos vermelhos)', 'BAAR ausentes', 'Coloração inadequada'] },
 ];
+// Monitoramento da esterilização a vapor (RDC 1002/2025, arts. 88-90; bulas dos indicadores).
+// Integrador tipo 5/6 em todo ciclo; indicador biológico semanal (ampola teste = negativo, ampola controle = positivo).
+const CQ_MODELOS_ESTER = [
+  { nome: 'Integrador químico tipo 5 (vapor)', codigo: 'EST-IQ5',
+    escala: ['Viragem completa (aprovado)', 'Viragem incompleta ou ausente (reprovado)'] },
+  { nome: 'Indicador biológico (G. stearothermophilus)', codigo: 'EST-IB',
+    escala: ['Negativo (sem crescimento, meio púrpura)', 'Positivo (crescimento, meio amarelo)'] },
+  { nome: 'Teste de Bowie & Dick', codigo: 'EST-BD',
+    escala: ['Mudança de cor uniforme (aprovado)', 'Mudança de cor não uniforme (reprovado)'] },
+];
+const CQ_MODELOS = {
+  micro: { lista: CQ_MODELOS_MICRO, titulo: 'Modelos de microbiologia', sub: 'Controle de meios de cultura e colorações', esp: 'Microbiologia', nomeCurto: 'microbiologia' },
+  ester: { lista: CQ_MODELOS_ESTER, titulo: 'Modelos de esterilização', sub: 'Indicadores químico e biológico da autoclave', esp: 'Outros', nomeCurto: 'esterilização' },
+};
 const CQ_ORIGEM_ALVO = {
   fabricante: { label: 'Fabricante (bula)', cls: 'cq-st-alerta' },
   provisorio: { label: 'Provisório (laboratório)', cls: 'cq-st-alerta' },
@@ -64,6 +78,7 @@ function cqRenderCadastros(body) {
   const nSemUn = CQ_COLECOES_UNIDADE.reduce((n, c) => n + Object.values(cfg[c] || {}).filter(_cqSemUnidade).length, 0);
   const novo = {
     analitos: podeCfg ? `<button class="btn btn-outline btn-sm" onclick="cqModelosMicro()" title="Cria analitos qualitativos para meios de cultura e colorações">${CQ_ICO.beaker} Modelos de microbiologia</button>
+      <button class="btn btn-outline btn-sm" onclick="cqModelosMicro('ester')" title="Cria analitos qualitativos para o integrador químico, o indicador biológico e o Bowie &amp; Dick da autoclave">${CQ_ICO.beaker} Modelos de esterilização</button>
       <button class="btn btn-primary btn-sm" onclick="cqAnalitoForm(null)">${CQ_ICO.plus} Novo analito</button>` : '',
     materiais: podeCfg ? `<button class="btn btn-outline btn-sm" onclick="cqLoteForm(null)">${CQ_ICO.plus} Novo lote</button>
       <button class="btn btn-primary btn-sm" onclick="cqMaterialForm(null)">${CQ_ICO.plus} Novo material / cepa</button>` : '',
@@ -764,37 +779,41 @@ function cqAssociarSemUnidade() {
   });
 }
 
-// Cria os analitos qualitativos de microbiologia que ainda não existem
-function cqModelosMicro() {
+// Cria os analitos qualitativos de um conjunto de modelos (microbiologia ou esterilização) que ainda não existem
+function cqModelosMicro(tipo) {
   if (!_cqCan('configurar')) return;
+  const mod = CQ_MODELOS[tipo] || CQ_MODELOS.micro;
   const u = _cqUnidadeAtivaId();
   const un = cqState.config.unidades[u];
   const porNome = new Map(Object.values(cqState.config.analitos).map(a => [(a.nome || '').toLowerCase(), a]));
-  const novos = CQ_MODELOS_MICRO.filter(m => !porNome.has(m.nome.toLowerCase()));
+  const novos = mod.lista.filter(m => !porNome.has(m.nome.toLowerCase()));
   // Já cadastrados só em outras unidades: associa à unidade ativa em vez de duplicar
-  const associar = CQ_MODELOS_MICRO.map(m => porNome.get(m.nome.toLowerCase())).filter(a => a && !_cqNaUnidade(a, u));
-  if (!novos.length && !associar.length) { showToast('Os analitos de microbiologia já estão cadastrados nesta unidade.', 'success'); return; }
+  const associar = mod.lista.map(m => porNome.get(m.nome.toLowerCase())).filter(a => a && !_cqNaUnidade(a, u));
+  if (!novos.length && !associar.length) { showToast(`Os analitos de ${mod.nomeCurto} já estão cadastrados nesta unidade.`, 'success'); return; }
   _cqPrompt({
-    titulo: 'Modelos de microbiologia', subtitulo: `Controle de meios de cultura e colorações · ${un?.sigla || ''}`,
+    titulo: mod.titulo, subtitulo: `${mod.sub} · ${un?.sigla || ''}`,
     corpo: `<div class="cq-nota">${novos.length ? `Serão criados ${novos.length} analito(s) qualitativo(s) na unidade ${_cqEsc(un?.sigla || '')}. ` : ''}${associar.length ? `${associar.length} já cadastrado(s) em outra unidade será(ão) associado(s) a ${_cqEsc(un?.sigla || '')}. ` : ''}Revise os resultados possíveis com o RT antes de cadastrar os testes.</div>
       ${novos.map(m => `<div class="cq-modelo-item"><b>${_cqEsc(m.nome)}</b><div class="cq-muted">${_cqEsc(m.escala.join(' · '))}</div></div>`).join('')}
-      ${associar.map(a => `<div class="cq-modelo-item"><b>${_cqEsc(a.nome)}</b><div class="cq-muted">Existente (${_cqEsc(_cqSiglasUnidades(_cqUnidadesRec(a)))}) — será associado</div></div>`).join('')}`,
+      ${associar.map(a => `<div class="cq-modelo-item"><b>${_cqEsc(a.nome)}</b><div class="cq-muted">Existente (${_cqEsc(_cqSiglasUnidades(_cqUnidadesRec(a)))}) — será associado</div></div>`).join('')}
+      ${tipo === 'ester' ? `<div class="cq-nota">Depois: vincule cada analito à autoclave, cadastre os indicadores como material de controle (com lote e validade) e crie os testes —
+        integrador: nível 1 “Pacote teste”, esperado “Viragem completa”, a cada corrida; indicador biológico: nível 1 “Ampola teste (no pacote)” esperado “Negativo”
+        e nível 2 “Ampola controle (fora da autoclave)” esperado “Positivo”, mesmo lote nos dois níveis, semanal. Ative a ficha do ciclo da autoclave em Configurações › Unidade.</div>` : ''}`,
     confirmar: novos.length ? 'Criar analitos' : 'Associar analitos',
     onConfirm: async () => {
       const updates = {};
       const criados = [];
       novos.forEach(m => {
         const rec = { id: _cqUid() + m.codigo.slice(-2).toLowerCase(), codigo: m.codigo, nome: m.nome, unidadeMedida: '', decimais: 0, tipo: 'qualitativo',
-                      especialidade: 'Microbiologia', limitesDecisao: [], escala: [...m.escala], ativo: true, unidadeIds: [u],
+                      especialidade: mod.esp, limitesDecisao: [], escala: [...m.escala], ativo: true, unidadeIds: [u],
                       criadoEm: _cqAgora(), criadoPor: _cqAssinatura(), atualizadoEm: _cqAgora() };
-        _cqTrilhaAdd(rec, 'criacao', 'Analito cadastrado a partir do modelo de microbiologia');
+        _cqTrilhaAdd(rec, 'criacao', `Analito cadastrado a partir do modelo de ${mod.nomeCurto}`);
         updates[`${CQ_KEYS.config}/analitos/${rec.id}`] = rec;
         criados.push(rec);
       });
       associar.forEach(a => {
         const p = `${CQ_KEYS.config}/analitos/${a.id}`;
         updates[`${p}/unidadeIds`] = [..._cqUnidadesRec(a), u];
-        updates[`${p}/trilha/${_cqTk()}${a.id.slice(-3)}`] = _cqTrilhaEntry('edicao', `Associado à unidade ${un?.sigla || u} (modelos de microbiologia)`);
+        updates[`${p}/trilha/${_cqTk()}${a.id.slice(-3)}`] = _cqTrilhaEntry('edicao', `Associado à unidade ${un?.sigla || u} (modelos de ${mod.nomeCurto})`);
       });
       if (!(await window.dbUpdate(updates))) { showToast('Falha ao gravar. Verifique a conexão e tente novamente.', 'error'); return false; }
       criados.forEach(r => { cqState.config.analitos[r.id] = r; });

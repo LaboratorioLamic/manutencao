@@ -316,6 +316,39 @@ body.dark-mode .cq-chip-amarelo { color: #f4a261; }
 .cq-g-row .cq-g-nome { padding-right: 24px; }
 .cq-g-remover { position: absolute; top: 6px; right: 6px; }
 .cq-lanc-otref { max-width: 220px; padding: 5px 8px; font-size: 12.5px; }
+
+/* ── Ciclo de esterilização ── */
+.cq-ester { border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-card); padding: 12px 14px; margin: 4px 0 12px; }
+.cq-ester-head { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; }
+.cq-ester-tit { display: inline-flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; color: var(--text-primary); }
+.cq-ester-tit svg { width: 15px; height: 15px; color: var(--cyan); }
+.cq-ester-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0 12px; }
+.cq-ester .form-field { margin-bottom: 8px; }
+.cq-ester-lote { display: flex; gap: 6px; }
+.cq-ester-lote .field-input { flex: 1; min-width: 0; text-transform: uppercase; }
+.cq-ester-esp { display: block; font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.cq-ester .field-input.cq-es-fora { border-color: var(--red); background: rgba(230,57,70,0.06); }
+.cq-ester-st { display: flex; gap: 6px; align-items: flex-start; font-size: 12.5px; padding: 8px 10px; border-radius: var(--radius); }
+.cq-ester-st svg { width: 15px; height: 15px; flex-shrink: 0; }
+.cq-ester-st.ok { background: rgba(42,157,143,0.10); color: #1f7a6f; }
+.cq-ester-st.fora { background: rgba(230,57,70,0.10); color: var(--red); font-weight: 600; }
+.cq-ester-st.pend { background: var(--bg); color: var(--text-muted); }
+body.dark-mode .cq-ester-st.ok { color: #4fd1c5; }
+.cq-ester-resumo { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 12.5px; padding: 8px 10px; background: var(--bg); border-radius: var(--radius); margin-bottom: 8px; }
+.cq-ester-resumo > div { display: flex; flex-direction: column; gap: 2px; }
+.cq-ester-tbl { width: 100%; border-collapse: collapse; margin: 4px 0; }
+.cq-ester-tbl th, .cq-ester-tbl td { text-align: left; font-size: 12.5px; padding: 5px 8px; border-bottom: 1px solid var(--border); }
+.cq-ester-tbl th { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .4px; }
+.cq-ester-pac { margin: 4px 0 6px 18px; font-size: 12.5px; columns: 2 220px; color: var(--text-primary); }
+.cq-ester-det { margin-bottom: 12px; }
+.cq-es-prog { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 8px; }
+.cq-es-prog-head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.cq-es-prog-head .field-input { flex: 1; }
+.cq-es-prog-campos { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
+.cq-es-prog-campos label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--text-muted); }
+.cq-es-prog-campos .field-input { padding: 6px 8px; font-size: 12.5px; }
+#cq-prompt.cq-prompt-largo .modal { width: min(760px, 96vw); }
+@media (max-width: 640px) { .cq-es-prog-campos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .cq-grade-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-card); }
 .cq-grade { width: 100%; border-collapse: collapse; min-width: 760px; }
 .cq-grade th {

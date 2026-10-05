@@ -21,6 +21,7 @@ const CQ_KEYS = {
   seq:        'gestao-cq-seq-v1',         // /{u}/{corridas|nc}/{ano}
   uso:        'gestao-cq-uso-v1',         // /{colecao}/{id}: true — cadastro já usado em lançamento
   exclusoes:  'gestao-cq-exclusoes-v1',   // /{tk} — cadastros excluídos antes de qualquer lançamento
+  cargas:     'gestao-cq-cargas-v1',      // /{u}/{lote da carga} — reserva do lote único do ciclo de esterilização
 };
 const CQ_VERSAO = '1.0.0';
 
@@ -1454,7 +1455,8 @@ function cqModalOpen({ titulo, subtitulo, corpo, rodape, icone, cor }) {
 function cqModalClose() { otCloseModal('cq-modal'); }
 
 // Prompt genérico: onConfirm retorna true (ou Promise<true>) para fechar
-function _cqPrompt({ titulo, subtitulo, corpo, confirmar, perigo, onConfirm }) {
+function _cqPrompt({ titulo, subtitulo, corpo, confirmar, perigo, onConfirm, largo }) {
+  document.getElementById('cq-prompt')?.classList.toggle('cq-prompt-largo', !!largo);
   document.getElementById('cq-prompt-title').textContent = titulo || '';
   document.getElementById('cq-prompt-sub').textContent = subtitulo || '';
   document.getElementById('cq-prompt-body').innerHTML = corpo || '';
@@ -1728,6 +1730,7 @@ function cqUnidadeForm(id) {
           <div class="cq-membros">${equipsUn.map(g => `<div class="cq-membro"><span>${_cqEsc(g.nome)}<span class="cq-muted"> ${g.testes.length} teste(s)</span></span>
             <select class="field-select cq-un-modo-equip" data-k="${_cqEsc(_cqChaveModoEquip(g.key))}"><option value="">Padrão da unidade</option>${Object.entries(CQ_MODOS_CORRIDA).map(([k, l]) => `<option value="${k}" ${pol.modoCorridaEquip?.[_cqChaveModoEquip(g.key)] === k ? 'selected' : ''}>${_cqEsc(l)}</option>`).join('')}</select></div>`).join('')}</div></div>` : ''}
       </div>
+      ${typeof _cqEsterUnidadeHTML === 'function' ? _cqEsterUnidadeHTML(id, equipsUn) : ''}
       <div class="form-section"><div class="form-section-title">${CQ_ICO.lock}Membros e papéis</div>
         <div class="cq-nota">Só os membros veem e lançam nesta unidade. As ações permitidas dependem também das permissões do grupo do usuário.</div>
         <div class="cq-membros">${users.map(u => `<div class="cq-membro"><span>${_cqEsc(u.nomeCompleto || u.username)}<span class="cq-muted"> ${_cqEsc(u.cargo || '')}</span></span>

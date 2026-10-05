@@ -69,13 +69,14 @@ function cqRenderLancar(body) {
   const g = grupos.find(x => x.key === _cqLanc.grupo);
   if (g && !_cqLanc.carregado) { _cqLancCarregarGrupo(); return; }
   // Atualização remota durante a digitação: só recalcula as linhas, sem perder o foco
-  if (g && body.dataset.lancGrupo === _cqLanc.grupo && document.activeElement?.closest?.('#cq-grade')) {
+  if (g && body.dataset.lancGrupo === _cqLanc.grupo && document.activeElement?.closest?.('#cq-grade, #cq-l-ester')) {
     _cqGradeAtualizarTudo();
     return;
   }
   body.dataset.lancGrupo = g ? _cqLanc.grupo : '';
   const users = _cqUsuarios().filter(x => _cqPapel(u, x.id) || x.id === _cqSess().id);
   const agora = _cqNowLocal();
+  const ester = g && typeof _cqEsterLancCfg === 'function' ? _cqEsterLancCfg() : null;
   body.innerHTML = `
   <div class="cq-lanc">
     ${_cqLanc.repeticaoDe ? `<div class="cq-alerta-box cq-info-box">${CQ_ICO.repeat} Repetição do controle da corrida ${_cqEsc(_cqLanc.repeticaoDe.numero)}. A repetição isolada não é ação corretiva: registre causa e ação na não conformidade.</div>` : ''}
@@ -87,7 +88,7 @@ function cqRenderLancar(body) {
         </select></div>
       <div class="form-field" style="max-width:200px;"><label class="field-label">Data/hora da corrida <span class="required">*</span></label>
         <input type="datetime-local" class="field-input" id="cq-l-dh" max="${agora}" value="${_cqEsc(_cqLanc.dataHora)}" onchange="cqLancDataHora(this.value)"></div>
-      <div class="form-field" style="max-width:240px;"><label class="field-label">Executado por <span class="required">*</span></label>
+      <div class="form-field" style="max-width:240px;"><label class="field-label">${ester ? 'Operador do equipamento' : 'Executado por'} <span class="required">*</span></label>
         <select class="field-select" id="cq-l-oper" onchange="_cqLanc.operadorId=this.value">${users.map(x => `<option value="${x.id}" ${x.id === _cqLanc.operadorId ? 'selected' : ''}>${_cqEsc(x.nomeCompleto || x.username)}</option>`).join('')}</select></div>
       ${g ? _cqLancModoHTML() : ''}
     </div>
@@ -101,6 +102,7 @@ function cqRenderLancar(body) {
       <label class="oc-check"><input type="checkbox" ${_cqLanc.flags.reinicioEquip ? 'checked' : ''} onchange="_cqLanc.flags.reinicioEquip=this.checked"> Após reinício do equipamento</label>
       <input type="text" class="field-input cq-lanc-otref" placeholder="Nº OT / ocorrência (opcional)" value="${_cqEsc(_cqLanc.flags.otRef)}" oninput="_cqLanc.flags.otRef=this.value">
     </div>
+    ${typeof _cqEsterLancHTML === 'function' ? _cqEsterLancHTML() : ''}
     ${_cqLanc.rascunhoRestaurado ? `<div class="cq-alerta-box cq-info-box">${CQ_ICO.undo} Rascunho não salvo restaurado deste computador. <a href="#" onclick="cqLancDescartarRascunho();return false;">Descartar rascunho</a></div>` : ''}
     ${_cqLancAddHTML()}
     <div class="cq-grade-wrap"><table class="cq-grade" id="cq-grade">${_cqGradeHTML(g)}</table></div>
@@ -111,7 +113,7 @@ function cqRenderLancar(body) {
       <button class="btn btn-primary" id="cq-l-salvar" onclick="cqLancSalvar()">${CQ_ICO.check} Salvar corrida</button>
     </div>` : `<div class="cq-vazio">${grupos.length ? 'Selecione o equipamento para lançar os controles.' : 'Nenhum teste ativo nesta unidade. Cadastre testes em Cadastros.'}</div>`}
   </div>`;
-  if (g) { _cqLancAtualizarRetro(); _cqGradeAtualizarTudo(); }
+  if (g) { _cqLancAtualizarRetro(); _cqGradeAtualizarTudo(); if (ester) _cqEsterAtualizar(); }
 }
 
 function cqLancGrupo(k) {
@@ -133,6 +135,8 @@ function cqLancDataHora(v) {
   if (grade && diaAntes !== (v || '').slice(0, 10)) grade.innerHTML = _cqGradeHTML();
   _cqGradeAtualizarTudo();
   _cqLancCarregarHistoricos();
+  // Leitura de ciclo já registrado: os ciclos oferecidos dependem da data/hora da corrida
+  if (_cqLanc.ciclo?.modo === 'vinculado' && typeof _cqEsterRedesenhar === 'function') _cqEsterRedesenhar();
 }
 
 function _cqLancAtualizarRetro() {
@@ -186,6 +190,11 @@ function _cqLancCarregarGrupo() {
     const sel = _cqArr(rasc.selecionados).filter(id => _cqLanc.linhas[id]);
     testes.forEach(t => { if (_cqLinhaPreenchida(_cqLanc.linhas[t.id]) && !sel.includes(t.id)) sel.push(t.id); });
     _cqLanc.selecionados = sel;
+    // Ficha do ciclo de esterilização digitada
+    if (rasc.ciclo && typeof rasc.ciclo === 'object') {
+      _cqLanc.ciclo = { ...rasc.ciclo };
+      if (rasc.ciclo.lote || rasc.ciclo.pacotes || rasc.ciclo.temp) _cqLanc.rascunhoRestaurado = true;
+    }
   }
   _cqLanc.carregado = true;
   const body = document.getElementById('cq-body');
@@ -213,7 +222,8 @@ async function _cqLancCarregarHistoricos() {
 function _cqRascunhoKey() { return `cq-draft-${_cqLanc.u}-${_cqLanc.grupo}`; }
 function _cqRascunhoSalvar() {
   if (!_cqLanc?.grupo || _cqLanc.repeticaoDe) return;
-  try { localStorage.setItem(_cqRascunhoKey(), JSON.stringify({ em: _cqAgora(), linhas: _cqLanc.linhas, selecionados: _cqLanc.selecionados })); } catch (e) { /* sem storage */ }
+  const ciclo = typeof _cqEsterRascunho === 'function' ? _cqEsterRascunho() : null;
+  try { localStorage.setItem(_cqRascunhoKey(), JSON.stringify({ em: _cqAgora(), linhas: _cqLanc.linhas, selecionados: _cqLanc.selecionados, ciclo })); } catch (e) { /* sem storage */ }
 }
 function _cqRascunhoLimpar() { try { localStorage.removeItem(_cqRascunhoKey()); } catch (e) { /* sem storage */ } }
 function cqLancDescartarRascunho() { _cqRascunhoLimpar(); const k = _cqLanc.grupo, modo = _cqLanc.modo; _cqLanc = _cqLancNovo(k); _cqLanc.modo = modo; _cqLancCarregarGrupo(); }
@@ -690,6 +700,7 @@ function _cqAvaliarLinha(t) {
   let r = null;
   if (atual.length && !erros.length) {
     r = CQEngine.avaliarCorrida({ atual, historico: _cqLanc.hist[t.id] || [], regras: t.regras || {}, opcoes: { gatilho12s: !!t.opcoesRegras?.gatilho12s } });
+    if (typeof _cqEsterAplicar === 'function') r = _cqEsterAplicar(r, _cqEsterFalhasLanc());
   }
   return { porNivel, r, completo, preenchidos, erros };
 }
@@ -711,9 +722,11 @@ function _cqAvaliarLinhaQual(t) {
   });
   const preenchidos = Object.keys(porNivel).length;
   const completo = preenchidos === _cqNiveisTeste(t).length && !erros.length;
-  const r = atual.length && !erros.length
+  let r = atual.length && !erros.length
     ? CQEngine.avaliarCorridaQualitativa({ atual, tipo: an?.tipo, escala, tolerancia: an?.toleranciaPassos })
     : null;
+  // Ciclo de esterilização com parâmetro físico fora da especificação: indicador rejeitado
+  if (r && typeof _cqEsterAplicar === 'function') r = _cqEsterAplicar(r, _cqEsterFalhasLanc());
   return { porNivel, r, completo, preenchidos, erros, qual: true };
 }
 
@@ -858,19 +871,30 @@ async function cqLancSalvar() {
     return;
   }
   if (!realizados.length) { showToast(_cqLancFrac() && !testes.length ? 'Adicione ao menos um teste à corrida.' : 'Nenhum resultado digitado.', 'error'); return; }
+  // Ficha do ciclo de esterilização (RDC 1002, art. 91)
+  const ester = typeof _cqEsterValidar === 'function' ? _cqEsterValidar(dh) : { ciclo: null };
+  if (ester.erro) { showToast(ester.erro, 'error'); return; }
+  const ciclo = ester.ciclo;
 
   const btn = document.getElementById('cq-l-salvar');
   if (btn) btn.disabled = true;
   _cqSalvando = true;
+  let reservaLote = null;     // caminho do lote da carga reservado; liberado se a corrida não for gravada
+  let gravou = false;
   try {
     // Reavalia com o histórico atualizado (outra estação pode ter salvo agora)
     const antesDe = CQEngine.chaveTempo(dh) + '_~';
     lanc.dataHora = dh;
     await Promise.all(realizados.map(async t => { lanc.hist[t.id] = _cqTesteQual(t) ? [] : await cqHistoricoTeste(u, t, antesDe, { forcar: true }); }));
-    const numero = await _cqProximoNumero(u, 'corridas');
-    if (!numero) { showToast('Não foi possível gerar o número da corrida. Tente novamente.', 'error'); return; }
     const ck = CQEngine.chaveCorrida(dh);
     const mes = CQEngine.mesDe(dh);
+    if (ciclo && !ciclo.vinculo) {
+      const res = await _cqEsterReservarLote(u, ciclo.loteCarga, { corridaKey: ck, mes, dataHora: dh, equip: g.key });
+      if (!res.ok) { showToast(res.msg, 'error'); return; }
+      reservaLote = res.path;
+    }
+    const numero = await _cqProximoNumero(u, 'corridas');
+    if (!numero) { showToast('Não foi possível gerar o número da corrida. Tente novamente.', 'error'); return; }
     const pol = _cqPolitica(u);
     const podeLiberar = _cqCan('liberar');
     const verificacao = g.ativo?.statusUso === 'em_pausa';
@@ -948,7 +972,8 @@ async function cqLancSalvar() {
       testesHdr[t.id] = {
         niveis: niveisMap, lr: l.lr || null, lk: l.lk || null, prep: prepId, posCalibracao: !!l.posCalibracao,
         trocaLoteReagente: trocaLr, trocaLoteCalibrador: trocaLk, versaoConfig: t.versaoConfig || 1,
-        avaliacao: { status: r.status, violacoes: r.violacoes.map(v => ({ regra: v.regra, severidade: v.severidade, escopo: v.escopo, niveis: v.niveis, texto: v.texto })) },
+        avaliacao: { status: r.status, violacoes: r.violacoes.map(v => ({ regra: v.regra, severidade: v.severidade, escopo: v.escopo, niveis: v.niveis, texto: v.texto })),
+                     ...(r.statusIndicadores ? { statusIndicadores: r.statusIndicadores } : {}) },
         decisao,
       };
       if (!ult || (ult.dataHora || '') <= dh) {
@@ -972,7 +997,21 @@ async function cqLancSalvar() {
     };
     hdr.status = _cqStatusCorrida(hdr);
     if (_cqLancFrac()) hdr.fracionada = true;
-    hdr.trilha[_cqTk()] = _cqTrilhaEntry('criacao', `Corrida ${numero} lançada${hdr.fracionada ? ' (fracionada)' : ''} — ${resumoTxt.join('; ')}`);
+    let txtCiclo = '';
+    if (ciclo) {
+      hdr.ciclo = ciclo;
+      if (ciclo.vinculo) {
+        // Leitura do indicador biológico: referência cruzada no ciclo de origem
+        const v = ciclo.vinculo;
+        updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/ciclo/leituras/${ck}`] = { numero, mes, dataHora: dh };
+        updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/trilha/${_cqTk()}`] = _cqTrilhaEntry('edicao', `Leitura de indicador do ciclo ${ciclo.loteCarga} registrada na corrida ${numero}`);
+        txtCiclo = ` · leitura do ciclo ${ciclo.loteCarga} (corrida ${v.numero || v.key})`;
+      } else {
+        updates[`${reservaLote}/numero`] = numero;
+        txtCiclo = ` · ciclo ${ciclo.loteCarga}, ${ciclo.programa.nome}, ${ciclo.pacotes.length} pacote(s)${ciclo.conforme ? '' : ` — parâmetros físicos fora da especificação: ${ciclo.falhas.join('; ')}`}`;
+      }
+    }
+    hdr.trilha[_cqTk()] = _cqTrilhaEntry('criacao', `Corrida ${numero} lançada${hdr.fracionada ? ' (fracionada)' : ''}${txtCiclo} — ${resumoTxt.join('; ')}`);
     updates[`${CQ_KEYS.corridas}/${u}/${mes}/${ck}`] = hdr;
     const pend = _cqResumoPendencia({ ...hdr, key: ck, mes });
     if (pend) updates[`${CQ_KEYS.indices}/${u}/pendentes/${ck}`] = pend;
@@ -985,6 +1024,7 @@ async function cqLancSalvar() {
 
     const ok = await window.dbUpdate(updates);
     if (!ok) { showToast('Falha ao gravar a corrida. Nada foi salvo; tente novamente.', 'error'); return; }
+    gravou = true;
     // Atualiza caches dos resultados
     Object.entries(updates).forEach(([p, v]) => {
       if (!p.startsWith(CQ_KEYS.resultados + '/')) return;
@@ -997,9 +1037,12 @@ async function cqLancSalvar() {
     const repet = lanc.repeticaoDe;
     _cqLanc = _cqLancNovo(lanc.grupo);
     if (!repet) _cqLanc.modo = lanc.modo;   // fracionada: próxima corrida começa vazia, no mesmo modo
+    if (lanc.ciclo && typeof _cqEsterVazio === 'function') _cqLanc.ciclo = _cqEsterVazio(lanc.ciclo.programaId);   // mantém o programa
     cqRender();
     if (pend || repet) cqAbrirCorrida(mes, ck);
   } finally {
+    // Corrida não gravada: libera o lote da carga reservado
+    if (reservaLote && !gravou) await window.dbUpdate({ [reservaLote]: null });
     _cqSalvando = false;
     if (btn) btn.disabled = false;
   }
@@ -1058,7 +1101,8 @@ function _cqCorrRenderLista() {
       const st = c.status || _cqStatusCorrida(c);
       return `<tr class="ot-list-row" onclick="cqAbrirCorrida('${c.mes}','${c.key}')">
         <td class="oc-num">${_cqEsc(c.numero)}${c.repeticaoDe ? ' <span title="Repetição">↻</span>' : ''}</td><td style="white-space:nowrap;">${_cqFmtDH(c.dataHora)}${c.retroativo ? ' <span class="cq-badge cq-st-alerta" title="Retroativo">R</span>' : ''}</td>
-        <td>${_cqEsc(c.ativoSnap?.nome || c.sistemaAnalitico || '—')}${c.flags?.verificacao ? ' <span class="cq-badge cq-st-pendente">verificação</span>' : ''}${c.observacao ? ` <span class="cq-badge cq-st-alerta" title="${_cqEsc(c.observacao)}">sem lote</span>` : ''}</td>
+        <td>${_cqEsc(c.ativoSnap?.nome || c.sistemaAnalitico || '—')}${c.flags?.verificacao ? ' <span class="cq-badge cq-st-pendente">verificação</span>' : ''}${c.observacao ? ` <span class="cq-badge cq-st-alerta" title="${_cqEsc(c.observacao)}">sem lote</span>` : ''}
+          ${c.ciclo?.loteCarga ? ` <span class="cq-badge ${c.ciclo.conforme === false ? 'cq-st-rejeitado' : 'cq-st-semalvo'}" title="${c.ciclo.vinculo ? 'Leitura de indicador do ciclo' : 'Lote da carga'}${c.ciclo.conforme === false ? ' — parâmetros físicos fora da especificação' : ''}">${c.ciclo.vinculo ? 'leitura ' : ''}${_cqEsc(c.ciclo.loteCarga)}</span>` : ''}</td>
         <td>${ts.length}</td>
         <td style="white-space:nowrap;">${cont('aceito') ? `<span class="cq-badge cq-st-aceito">${cont('aceito')}</span> ` : ''}${cont('alerta') ? `<span class="cq-badge cq-st-alerta">${cont('alerta')}</span> ` : ''}${cont('rejeitado') ? `<span class="cq-badge cq-st-rejeitado">${cont('rejeitado')}</span> ` : ''}${cont('sem_alvo') ? `<span class="cq-badge cq-st-semalvo">${cont('sem_alvo')}</span>` : ''}</td>
         <td>${_cqBadge(CQ_CORRIDA_STATUS, st)}</td><td>${_cqEsc(c.operadorNome || '—')}</td></tr>`;
@@ -1152,6 +1196,7 @@ async function _cqCorrRenderDetalhe(forcar) {
       ${c.repeticaoDe ? `<div><span class="cq-muted">Repetição de</span><a href="#" onclick="cqAbrirCorrida('${CQEngine.mesDe(c.repeticaoDe)}','${c.repeticaoDe}');return false;">${_cqEsc(c.repeticaoDe)}</a></div>` : ''}
     </div>
     ${flags.length ? `<div class="cq-det-flags">${flags.map(f => `<span class="cq-tag">${_cqEsc(f)}</span>`).join('')}</div>` : ''}
+    ${typeof _cqEsterDetalheHTML === 'function' ? _cqEsterDetalheHTML(c) : ''}
     <div class="oc-table-scroll"><table class="ot-list-table cq-table cq-det-tbl"><thead><tr><th class="ot-list-th">Teste</th><th class="ot-list-th">Resultados</th><th class="ot-list-th">Avaliação</th><th class="ot-list-th">Decisão</th></tr></thead><tbody>${linhas}</tbody></table></div>
     <details class="cq-det-trilha"><summary>Rastreabilidade da corrida</summary>${_cqTrilhaHTML(c)}</details>`;
   document.getElementById('cq-modal-foot').innerHTML = `
@@ -1375,6 +1420,8 @@ async function _cqAlterarResultado(ctx, testeId, resKey, op) {
     av = CQEngine.avaliarCorrida({ atual: atuais.map(x => ({ nivel: x.nivel, z: x.z ?? null })), historico: hist, regras: t.regras || {},
                                    opcoes: { gatilho12s: !!t.opcoesRegras?.gatilho12s } });
   }
+  // Ciclo de esterilização fora da especificação continua rejeitando o teste
+  if (c.ciclo && !c.ciclo.vinculo && typeof _cqEsterAplicar === 'function') av = _cqEsterAplicar(av, c.ciclo.falhas);
   atuais.forEach(x => {
     const rk = Object.entries(ct.niveis).find(([n]) => Number(n) === Number(x.nivel))?.[1];
     if (!rk) return;
@@ -1385,7 +1432,8 @@ async function _cqAlterarResultado(ctx, testeId, resKey, op) {
   const cbase = `${CQ_KEYS.corridas}/${ctx.u}/${ctx.mes}/${ctx.key}`;
   const statusAntes = ct.avaliacao?.status;
   updates[`${cbase}/testes/${testeId}/avaliacao`] = { status: atuais.length ? av.status : 'sem_alvo',
-    violacoes: av.violacoes.map(v => ({ regra: v.regra, severidade: v.severidade, escopo: v.escopo, niveis: v.niveis, texto: v.texto })) };
+    violacoes: av.violacoes.map(v => ({ regra: v.regra, severidade: v.severidade, escopo: v.escopo, niveis: v.niveis, texto: v.texto })),
+    statusIndicadores: av.statusIndicadores || null };
   const dec = _cqAnalito(t.analitoId)?.decimais ?? 2;
   const txt = op.tipo === 'correcao'
     ? (qual ? `${_cqNomeTeste(t)} N${r.nivel}: resultado corrigido de “${r.obtido}” para “${op.valor}” — ${op.motivo}`
@@ -1442,6 +1490,7 @@ async function cqImprimirCorrida() {
   <div class="meta"><div><b>Unidade:</b> ${_cqEsc(un?.sigla)} — ${_cqEsc(un?.nome)}${un?.cnes ? ` (CNES ${_cqEsc(un.cnes)})` : ''}</div><div><b>Equipamento:</b> ${_cqEsc(c.ativoSnap?.nome || c.sistemaAnalitico || '')}${c.ativoSnap?.serie ? ` · S/N ${_cqEsc(c.ativoSnap.serie)}` : ''}</div>
   <div><b>Data/hora:</b> ${_cqFmtDH(c.dataHora)}</div><div><b>Executado por:</b> ${_cqEsc(c.operadorNome)}</div>
   <div><b>Lançado por:</b> ${_cqEsc(c.lancadoPorNome)} em ${_cqFmtDH(c.lancadoEm)} (estação ${_cqEsc(c.estacao || '')})</div><div><b>Situação:</b> ${_cqEsc(CQ_CORRIDA_STATUS[_cqStatusCorrida(c)]?.label)}</div>${c.observacao ? `<div style="grid-column:1/-1;"><b>Observação:</b> ${_cqEsc(c.observacao)}</div>` : ''}</div>
+  ${typeof _cqEsterImpressaoHTML === 'function' ? _cqEsterImpressaoHTML(c) : ''}
   <table><thead><tr><th>Teste</th><th>Nível</th><th>Resultado</th><th>Alvo (média ± DP) / esperado</th><th>z</th><th>Avaliação / decisão</th></tr></thead><tbody>${linhas.join('')}</tbody></table>
   <p><small>Emitido em ${_cqFmtDH(_cqAgora())} por ${_cqEsc(_cqSess().nome)} · Sistema LAMIC — Controle de Qualidade v${CQ_VERSAO}</small></p>
   <script>window.onload=()=>window.print()<\/script></body></html>`;

@@ -523,6 +523,7 @@
   E.REGRAS_QUAL = {
     QL_DISC: { label: 'Discordante', descricao: 'Resultado diferente do esperado para o controle' },
     QL_1CAT: { label: '±1 categoria', descricao: 'Diferença de uma categoria/diluição em relação ao esperado (semiquantitativo)' },
+    FIS_ESP: { label: 'Parâmetro físico', descricao: 'Tempo, temperatura ou pressão do ciclo de esterilização fora da especificação do programa' },
   };
   E.rotuloRegra = function (k) { return (E.REGRAS[k] || E.REGRAS_QUAL[k])?.label || k; };
 
