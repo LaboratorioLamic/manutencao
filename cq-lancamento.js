@@ -607,12 +607,11 @@ function _cqLancPrepHTML(t, l) {
   const ins = l.lr ? cqState.config.insumos[l.lr] : null;
   if (!ins?.preparoInterno) return '';
   const dia = (_cqLanc.dataHora || _cqNowLocal()).slice(0, 10);
-  // Uso único: cada corrida registra um preparo novo (os anteriores não são oferecidos)
+  // Uso único: só os preparos ainda não usados em corrida (registrados antes na aba Preparos), do mais antigo ao mais novo
   const unico = !!ins.preparoUsoUnico;
-  const preps = unico ? [] : _cqPreparosDe(ins).filter(p => !p.finalizado || p.id === l.prep);
-  if (unico) l.prep = 'novo';
-  if (l.prep === undefined) l.prep = preps.find(p => _cqPrepUsavel(p, dia))?.id || 'novo';
-  if (l.prep === 'novo') { l.prepData = l.prepData || dia; l.prepResp = l.prepResp || _cqSess().id; }
+  const preps = _cqPreparosDe(ins).filter(p => (!p.finalizado && !(unico && Object.keys(p.corridas || {}).length)) || p.id === l.prep);
+  if (l.prep === undefined) l.prep = (unico ? [...preps].reverse() : preps).find(p => _cqPrepUsavel(p, dia))?.id || 'novo';
+  if (l.prep === 'novo') { l.prepData = l.prepData || dia; l.prepResp = l.prepResp || _cqSess().id; l.prepUn = l.prepUn || _cqPrepUltimaUnidade(_cqLoteCru(ins).produtoId) || 'mL'; }
   const respNome = id => { const u = _cqUsuarios().find(x => x.id === id); return u ? (u.nomeCompleto || u.username) : ''; };
   const ops = preps.map(p => {
     const venc = p.validade && p.validade < dia;
@@ -620,7 +619,9 @@ function _cqLancPrepHTML(t, l) {
   }).join('');
   const info = `cqPreparoInfo('${ins.id}','${l.prep}','${l.prepData || ''}','${_cqEsc(respNome(l.prepResp)).replace(/'/g, '&#39;')}')`;
   const camposNovo = `<input type="date" class="field-input" title="Data do preparo" max="${dia}" value="${_cqEsc(l.prepData)}" onchange="cqLancPrepCampo('${t.id}','prepData',this.value)">
-      <select class="field-select" title="Responsável pelo preparo" onchange="cqLancPrepCampo('${t.id}','prepResp',this.value)">${_cqUsuarios().map(u => `<option value="${u.id}" ${u.id === l.prepResp ? 'selected' : ''}>${_cqEsc(u.nomeCompleto || u.username)}</option>`).join('')}</select>`;
+      <select class="field-select" title="Responsável pelo preparo" onchange="cqLancPrepCampo('${t.id}','prepResp',this.value)">${_cqUsuarios().map(u => `<option value="${u.id}" ${u.id === l.prepResp ? 'selected' : ''}>${_cqEsc(u.nomeCompleto || u.username)}</option>`).join('')}</select>
+      <div class="cq-prep-qtd-lin"><input type="number" class="field-input" min="0" step="any" inputmode="decimal" title="Quantidade preparada (opcional)" placeholder="Qtd. (opcional)" value="${_cqEsc(l.prepQtd || '')}" onchange="cqLancPrepCampo('${t.id}','prepQtd',this.value)">
+        <select class="field-select" title="Unidade" onchange="cqLancPrepCampo('${t.id}','prepUn',this.value)">${CQ_UNID_PREPARO.map(x => `<option ${x === l.prepUn ? 'selected' : ''}>${x}</option>`).join('')}</select></div>`;
   // Lote sem preparos registrados: a lista teria só "+ Novo preparo", então vai direto para data e responsável
   if (!preps.length) {
     return `<div class="cq-prep-novo">
@@ -638,7 +639,7 @@ function _cqLancPrepHTML(t, l) {
 function cqLancPrep(tid, v) {
   const l = _cqLanc.linhas[tid];
   l.prep = v;
-  if (v !== 'novo') { l.prepData = ''; l.prepResp = ''; }
+  if (v !== 'novo') { l.prepData = ''; l.prepResp = ''; l.prepQtd = ''; }
   _cqRascunhoSalvar();
   _cqLancRedesenharGrade();
 }
@@ -856,6 +857,7 @@ async function cqLancSalvar() {
         if (!pp) problemas.push(`${_cqNomeTeste(t)}: preparo não encontrado — escolha outro`);
         else if (pp.situacao === 'reprovado') problemas.push(`${_cqNomeTeste(t)}: preparo de ${_cqFmtData(pp.data)} reprovado no controle`);
         else if (pp.finalizado) problemas.push(`${_cqNomeTeste(t)}: preparo de ${_cqFmtData(pp.data)} finalizado — escolha outro ou registre um novo`);
+        else if (insP.preparoUsoUnico && Object.keys(pp.corridas || {}).length) problemas.push(`${_cqNomeTeste(t)}: preparo ${pp.codigo || 'de ' + _cqFmtData(pp.data)} de uso único já usado em outra corrida`);
         else if (pp.validade && pp.validade < hoje) problemas.push(`${_cqNomeTeste(t)}: preparo de ${_cqFmtData(pp.data)} vencido (${_cqFmtData(pp.validade)}) — RDC 978, art. 102`);
       }
     }
@@ -904,6 +906,7 @@ async function cqLancSalvar() {
     const idxUltimo = (cqState.indices[u] || {}).ultimo || {};
     const resumoTxt = [];
     const prepNovos = {};      // `${lr}|${chave}` → objeto do preparo criado nesta corrida (compartilhado entre testes)
+    const prepSeqUsado = {};   // lr → números de preparo já usados nesta corrida
     const prepDoTeste = (t, l, autoLib) => {
       const ins = l.lr ? cqState.config.insumos[l.lr] : null;
       if (!ins?.preparoInterno || !l.prep) return null;
@@ -915,13 +918,16 @@ async function cqLancSalvar() {
         if (!prepNovos[k]) {
           const resp = _cqUsuarios().find(x => x.id === l.prepResp);
           const data = leg ? leg.data : l.prepData;
-          const obj = { id: _cqUid(), data, responsavelId: leg ? null : l.prepResp, responsavel: leg ? leg.responsavel : (resp?.nomeCompleto || resp?.username || ''),
-            validade: _cqPrepValidade(ins, data), situacao: leg ? 'liberado' : 'em_avaliacao', legado: !!leg, criadoEm: ass.em, criadoPor: ass, corridas: {} };
+          const seq = _cqPrepSeq(ins) + (prepSeqUsado[l.lr] = (prepSeqUsado[l.lr] || 0) + 1) - 1;
+          const qtd = leg ? 0 : Number(String(l.prepQtd || '').replace(',', '.'));
+          const obj = { id: _cqUid(), seq, codigo: _cqPrepCodigo(ins, seq), data, responsavelId: leg ? null : l.prepResp, responsavel: leg ? leg.responsavel : (resp?.nomeCompleto || resp?.username || ''),
+            ...(qtd > 0 ? { quantidade: qtd, unidadeQtd: l.prepUn || '' } : {}),
+            validade: _cqPrepValidade(ins, data), situacao: leg ? 'liberado' : 'em_avaliacao', legado: !!leg, origem: 'lancamento', criadoEm: ass.em, criadoPor: ass, corridas: {} };
           // Uso único: consumido nesta corrida (sai dos lançamentos; a decisão da corrida ainda libera ou reprova)
           if (ins.preparoUsoUnico) obj.finalizado = { auto: true, motivo: `uso único — corrida ${numero}`, ...ass };
           prepNovos[k] = obj;
           updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${obj.id}`] = obj;
-          updates[`${CQ_KEYS.config}/insumos/${l.lr}/trilha/${_cqTk()}${obj.id.slice(-3)}`] = _cqTrilhaEntry('edicao', `Preparo de ${_cqFmtData(data)} (${obj.responsavel}) registrado na corrida ${numero}`);
+          updates[`${CQ_KEYS.config}/insumos/${l.lr}/trilha/${_cqTk()}${obj.id.slice(-3)}`] = _cqTrilhaEntry('edicao', `Preparo ${obj.codigo} de ${_cqFmtData(data)} (${obj.responsavel}${_cqPrepQtdTxt(obj) ? ', ' + _cqPrepQtdTxt(obj) : ''}) registrado na corrida ${numero}`);
         }
         const obj = prepNovos[k];
         obj.corridas[ck] = uso;
@@ -929,6 +935,8 @@ async function cqLancSalvar() {
         return obj.id;
       }
       updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${l.prep}/corridas/${ck}`] = uso;
+      // Uso único registrado antes (aba Preparos): consumido nesta corrida
+      if (ins.preparoUsoUnico && !_cqPreparo(ins, l.prep)?.finalizado) updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${l.prep}/finalizado`] = { auto: true, motivo: `uso único — corrida ${numero}`, ...ass };
       if (autoLib && _cqPreparo(ins, l.prep)?.situacao === 'em_avaliacao') {
         updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${l.prep}/situacao`] = 'liberado';
         updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${l.prep}/avaliacao`] = avaliacao;

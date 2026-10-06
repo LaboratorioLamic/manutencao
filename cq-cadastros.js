@@ -67,13 +67,21 @@ const _cqCadExp = new Map();      // analitoId → expandido (sem entrada: segue
 
 function cqRenderCadastros(body) {
   // Ordem: analito (equipamentos/sistemas e seus testes) → materiais e lotes → reagentes. O teste é criado dentro do analito.
-  const tabs = { analitos: 'Analitos e testes', materiais: 'Controles/Materiais', insumos: 'Reagentes, meios e insumos' };
+  const tabs = { analitos: 'Analitos e testes', materiais: 'Controles/Materiais', insumos: 'Reagentes, meios e insumos', preparos: 'Preparos' };
   if (!tabs[_cqCadTab]) _cqCadTab = 'analitos';
   _cqCadBusca = '';   // as abas usam os filtros de analito, equipamento, situação e ativos no lugar da busca
   const cfg = cqState.config;
   const uAt = _cqUnidadeAtivaId();
   const qtd = { analitos: _cqDaUnidade('analitos', uAt).length, materiais: _cqDaUnidade('materiais', uAt).length,
-                insumos: _cqDaUnidade('insumoProdutos', uAt).length + _cqDaUnidade('insumos', uAt).filter(i => !_cqProdutoInsumo(i)).length };
+                insumos: _cqDaUnidade('insumoProdutos', uAt).length + _cqDaUnidade('insumos', uAt).filter(i => !_cqProdutoInsumo(i)).length,
+                preparos: _cqPrepAbaItens(uAt).filter(x => !x.p.finalizado).length };
+  const tabsHTML = `<div class="ot-modal-tabs cq-subtabs">${Object.entries(tabs).map(([k, l], i) => `<button class="ot-modal-tab-btn${k === _cqCadTab ? ' active' : ''}" onclick="cqCadTab('${k}')"${k === 'preparos' ? ' title="Preparos em uso"' : ''}><span class="cq-step${qtd[k] ? ' feito' : ''}">${i + 1}</span>${l}${qtd[k] ? `<span class="cq-step-qtd">${qtd[k]}</span>` : ''}</button>`).join('')}</div>`;
+  // Preparos: formulário de registro + lista, com filtros próprios
+  if (_cqCadTab === 'preparos') {
+    body.innerHTML = `<div class="cq-cad">${tabsHTML}${_cqPrepAbaHTML(uAt)}</div>`;
+    _cqPrepAbaLista();
+    return;
+  }
   const podeCfg = _cqCan('configurar');
   const nSemUn = CQ_COLECOES_UNIDADE.reduce((n, c) => n + Object.values(cfg[c] || {}).filter(_cqSemUnidade).length, 0);
   const novo = {
@@ -112,7 +120,7 @@ function cqRenderCadastros(body) {
   }
   body.innerHTML = `
   <div class="cq-cad">
-    <div class="ot-modal-tabs cq-subtabs">${Object.entries(tabs).map(([k, l], i) => `<button class="ot-modal-tab-btn${k === _cqCadTab ? ' active' : ''}" onclick="cqCadTab('${k}')"><span class="cq-step${qtd[k] ? ' feito' : ''}">${i + 1}</span>${l}${qtd[k] ? `<span class="cq-step-qtd">${qtd[k]}</span>` : ''}</button>`).join('')}</div>
+    ${tabsHTML}
     <div class="cq-toolbar cq-toolbar-wrap">
       ${filtros}
       <div class="cq-spacer"></div>${podeCfg && nSemUn ? `<button class="btn btn-outline btn-sm" onclick="cqAssociarSemUnidade()" title="Cadastros antigos sem unidade aparecem em todas as unidades">${CQ_ICO.unidade} Associar ${nSemUn} cadastro(s) sem unidade</button>` : ''}${novo}
@@ -282,6 +290,7 @@ function _cqTestesCompactoHTML(a, ts) {
 }
 
 function _cqCadRenderLista() {
+  if (_cqCadTab === 'preparos') { _cqPrepAbaLista(); return; }
   const el = document.getElementById('cq-cad-lista');
   if (!el) return;
   const q = _cqCadBusca.toLowerCase().trim();
@@ -1480,7 +1489,7 @@ function _cqPrepFinalizadoTxt(p) {
   if (!f) return '';
   return `${f.auto ? 'finalizado automaticamente' : `finalizado por ${f.porNome || '—'}`} em ${_cqFmtDH(f.em)}${f.motivo ? ` — ${f.motivo}` : ''}`;
 }
-function _cqPrepTxt(p) { return p ? `${_cqFmtData(p.data)} · ${p.responsavel || '—'}` : ''; }
+function _cqPrepTxt(p) { return p ? `${p.codigo ? p.codigo + ' · ' : ''}${_cqFmtData(p.data)} · ${p.responsavel || '—'}` : ''; }
 
 // Quem pode alterar a situação de um preparo (equivale a decidir sobre o controle dele)
 function _cqPodeSituacaoPreparo() { return _cqCan('liberar') || _cqCan('configurar'); }
@@ -1502,27 +1511,28 @@ function _cqPrepSituacaoBtn(i, p, onde) {
 function _cqPreparosHistoricoHTML(i) {
   const ps = _cqPreparosDe(i);
   const hoje = _cqHoje();
-  if (!ps.length) return `<div class="cq-nota">Nenhum preparo registrado. ${i.preparoUsoUnico ? 'Lote de uso único: cada corrida registra o seu preparo.' : 'O primeiro é criado no lançamento da corrida (“+ Novo preparo”).'}</div>`;
+  if (!ps.length) return `<div class="cq-nota">Nenhum preparo registrado. Registre em Cadastros › Preparos ou no lançamento da corrida (“+ Novo preparo”).${i.preparoUsoUnico ? ' Lote de uso único: cada preparo serve a uma corrida.' : ''}</div>`;
   const item = p => {
     const nC = Object.keys(p.corridas || {}).length;
     const venc = !p.finalizado && p.validade && p.validade < hoje;
     const sub = [`${nC} corrida(s)`, p.finalizado ? _cqPrepFinalizadoTxt(p) : _cqPrepAvaliacaoTxt(p), p.legado ? 'cadastro antigo' : ''].filter(Boolean).join(' · ');
+    const quem = [p.codigo, p.responsavel || '—', _cqPrepQtdTxt(p)].filter(Boolean).join(' · ');
     return `<div class="cq-prep-item${p.finalizado ? ' finalizado' : ''}">
       <div class="cq-prep-data"><b>${_cqFmtData(p.data)}</b><small class="${venc ? 'cq-txt-vermelho' : ''}" title="Validade do preparado">val. ${_cqFmtData(p.validade)}</small></div>
-      <div class="cq-prep-info"><span title="${_cqEsc(p.responsavel || '')}">${_cqEsc(p.responsavel || '—')}</span><small title="${_cqEsc(sub)}">${_cqEsc(sub)}</small></div>
+      <div class="cq-prep-info"><span title="${_cqEsc(quem)}">${_cqEsc(quem)}</span><small title="${_cqEsc(sub)}">${_cqEsc(sub)}</small></div>
       ${_cqPrepSituacaoBtn(i, p, 'lote')}
-      <button type="button" class="cq-icobtn" title="Imprimir rótulo" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print}</button>
+      <span class="cq-prep-item-acoes"><button type="button" class="cq-icobtn" title="Imprimir etiqueta" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print}</button>${_cqPrepBtnExcluir(i, p, 'lote')}</span>
     </div>`;
   };
   const ativos = ps.filter(p => !p.finalizado), fins = ps.filter(p => p.finalizado);
   return `${i.preparoUsoUnico ? '<div class="cq-nota" style="margin-bottom:8px;">Lote de uso único: um preparo por corrida, finalizado automaticamente ao registrar a corrida.</div>' : ''}
-    ${ativos.length ? `<div class="cq-prep-lista">${ativos.map(item).join('')}</div>` : '<div class="cq-nota">Nenhum preparo em uso: o próximo é registrado no lançamento da corrida.</div>'}
+    ${ativos.length ? `<div class="cq-prep-lista">${ativos.map(item).join('')}</div>` : '<div class="cq-nota">Nenhum preparo em uso: registre o próximo em Cadastros › Preparos ou no lançamento da corrida.</div>'}
     ${fins.length ? `<details class="cq-prep-fins"${ativos.length ? '' : ' open'}><summary>Finalizados (${fins.length})</summary><div class="cq-prep-lista">${fins.map(item).join('')}</div></details>` : ''}
     ${_cqPodeSituacaoPreparo() ? '<div class="cq-nota" style="margin-top:8px;">Clique na situação para alterá-la ou finalizar o preparo (com justificativa). Preparos finalizados ou reprovados não são oferecidos nos lançamentos.</div>' : ''}`;
 }
 
 // Altera a situação de um preparo (aba Preparos do lote, lançamento da corrida ou informações do preparo)
-function cqPreparoSituacao(insId, prepId, onde) {
+function cqPreparoSituacao(insId, prepId, onde, opts = {}) {
   if (!_cqPodeSituacaoPreparo()) { showToast('Sem permissão para alterar a situação do preparo.', 'error'); return; }
   const i = cqState.config.insumos[insId];
   const p = i ? _cqPreparo(i, prepId) : null;
@@ -1531,12 +1541,15 @@ function cqPreparoSituacao(insId, prepId, onde) {
   const atual = p.situacao || 'em_avaliacao';
   const finAtual = !!p.finalizado;
   _cqPrompt({
-    titulo: 'Situação do preparo', subtitulo: `${i.nome} · lote ${i.lote} · preparo de ${_cqFmtData(p.data)}`,
+    titulo: opts.finalizar ? 'Finalizar preparo' : 'Situação do preparo', subtitulo: `${i.nome} · lote ${i.lote} · preparo ${p.codigo ? p.codigo + ' · ' : ''}de ${_cqFmtData(p.data)}`,
     corpo: `<div class="form-field"><label class="field-label">Situação</label>
-        <select id="cq-prep-sit" class="field-select">${_cqMapOptions(CQ_SITUACAO_PREPARO, atual, null)}</select>
-        ${p.avaliacao ? `<div class="cq-nota">Atual: ${_cqEsc(CQ_SITUACAO_PREPARO[atual]?.label || atual)} — ${_cqEsc(_cqPrepAvaliacaoTxt(p))}.</div>` : ''}</div>
-      <label class="oc-check"><input type="checkbox" id="cq-prep-fin" ${finAtual ? 'checked' : ''}> Preparo finalizado (consumido ou descartado) — não aparece mais nos lançamentos</label>
-      ${finAtual ? `<div class="cq-nota">${_cqEsc(_cqPrepFinalizadoTxt(p))}. Desmarque para reabrir.</div>` : ''}
+        <div class="cq-prep-sit-lin">
+          <select id="cq-prep-sit" class="field-select">${_cqMapOptions(CQ_SITUACAO_PREPARO, atual, null)}</select>
+          <input type="checkbox" id="cq-prep-fin" hidden ${finAtual || opts.finalizar ? 'checked' : ''}>
+          ${_cqPrepBtnFinHTML(finAtual || !!opts.finalizar)}
+        </div>
+        ${p.avaliacao ? `<div class="cq-nota">Atual: ${_cqEsc(CQ_SITUACAO_PREPARO[atual]?.label || atual)} — ${_cqEsc(_cqPrepAvaliacaoTxt(p))}.</div>` : ''}
+        <div id="cq-prep-fin-nota" class="cq-prep-fin-nota" data-atual="${finAtual ? 1 : 0}" data-txt="${_cqEsc(finAtual ? _cqPrepFinalizadoTxt(p) : '')}">${_cqPrepFinNotaHTML(finAtual, finAtual || !!opts.finalizar, finAtual ? _cqPrepFinalizadoTxt(p) : '')}</div></div>
       <div class="form-field" style="margin-top:10px;"><label class="field-label">Justificativa <span class="required">*</span></label>
         <textarea id="cq-prep-just" class="field-textarea" style="min-height:70px;" placeholder="Ex.: esterilidade lida após 48 h sem crescimento; preparo liberado. / Placas consumidas."></textarea></div>
       <div class="cq-nota">Reprovado ou finalizado: deixa de ser oferecido nos lançamentos. Corridas que já usaram o preparo não mudam.</div>`,
@@ -1564,16 +1577,39 @@ function cqPreparoSituacao(insId, prepId, onde) {
       }
       updates[`${pb}/historico/${_cqTk()}`] = { de: atual, para: sit, finalizado: fin, motivo: just, ...ass };
       updates[`${CQ_KEYS.config}/insumos/${insId}/atualizadoEm`] = ass.em;
-      updates[`${CQ_KEYS.config}/insumos/${insId}/trilha/${_cqTk()}`] = _cqTrilhaEntry('edicao', `Preparo de ${_cqFmtData(p.data)} ${fin && !finAtual ? 'finalizado' : !fin && finAtual ? 'reaberto' : 'alterado'}: ${just}`, diffs);
+      updates[`${CQ_KEYS.config}/insumos/${insId}/trilha/${_cqTk()}`] = _cqTrilhaEntry('edicao', `Preparo ${p.codigo ? p.codigo + ' ' : ''}de ${_cqFmtData(p.data)} ${fin && !finAtual ? 'finalizado' : !fin && finAtual ? 'reaberto' : 'alterado'}: ${just}`, diffs);
       if (!(await window.dbUpdate(updates))) { showToast('Falha ao gravar. Verifique a conexão.', 'error'); return false; }
       const cru = _cqLoteCru(i).preparos?.[prepId];
       if (cru) { if (avaliacao) { cru.situacao = sit; cru.avaliacao = avaliacao; } cru.finalizado = finalizado; }
       showToast(fin && !finAtual ? 'Preparo finalizado.' : !fin && finAtual ? 'Preparo reaberto.' : `Preparo ${para.toLowerCase()}.`, 'success');
       if (onde === 'lote') cqInsumoForm(insId, { aba: 'preparos' });
+      else if (onde === 'aba') cqRender();
       else if (onde === 'lanc' && typeof _cqLancRedesenharGrade === 'function') _cqLancRedesenharGrade();
       return true;
     },
   });
+}
+
+// Botão Finalizar (stop) da janela de situação do preparo; alterna o checkbox oculto cq-prep-fin
+function _cqPrepBtnFinHTML(on) {
+  return `<button type="button" id="cq-prep-fin-btn" class="btn cq-btn-fin ${on ? 'on' : ''}" aria-pressed="${on}" onclick="cqPrepFinAlternar()"
+    title="${on ? 'Clique para manter o preparo em uso' : 'Preparo consumido ou descartado: deixa de aparecer nos lançamentos'}">
+    <svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>${on ? 'Finalizado' : 'Finalizar'}</button>`;
+}
+function _cqPrepFinNotaHTML(atual, on, txt) {
+  if (atual && on) return `<span class="cq-muted">${_cqEsc(txt)}. Clique em “Finalizado” para reabrir.</span>`;
+  if (atual && !on) return `<span class="cq-prep-fin-aviso reabrir">${CQ_ICO.play} Será reaberto e voltará a aparecer nos lançamentos.</span>`;
+  if (on) return `<span class="cq-prep-fin-aviso">${CQ_ICO.alerta} Será finalizado: deixa de aparecer nos lançamentos.</span>`;
+  return '';
+}
+function cqPrepFinAlternar() {
+  const chk = document.getElementById('cq-prep-fin');
+  const btn = document.getElementById('cq-prep-fin-btn');
+  if (!chk || !btn) return;
+  chk.checked = !chk.checked;
+  btn.outerHTML = _cqPrepBtnFinHTML(chk.checked);
+  const nota = document.getElementById('cq-prep-fin-nota');
+  if (nota) nota.innerHTML = _cqPrepFinNotaHTML(nota.dataset.atual === '1', chk.checked, nota.dataset.txt || '');
 }
 
 // Informações do preparo (botão ⓘ do lançamento)
@@ -1592,41 +1628,458 @@ function cqPreparoInfo(insId, prepId, dataNovo, respNovo) {
         ${lin('Riscos', _cqEsc(pf.riscos || 'Ver FISPQ'))}${lin('Validade após preparo', pf.validadeDias ? `${pf.validadeDias} dia(s)` : 'a do produto')}
         ${i.preparoUsoUnico ? lin('Uso', 'Único — um preparo por corrida') : ''}
       </div>
-      <div class="cq-sec-titulo" style="margin-top:14px;">${p?.novo ? 'Novo preparo (será registrado ao salvar a corrida)' : 'Preparo selecionado'}</div>
-      ${p ? `<div class="cq-info-grid">${lin('Data do preparo', _cqFmtData(p.data))}${lin('Responsável', _cqEsc(p.responsavel))}
+      <div class="cq-sec-titulo" style="margin-top:14px;">${p?.novo ? 'Novo preparo (será registrado ao salvar a corrida)' : `Preparo${p?.codigo ? ' ' + _cqEsc(p.codigo) : ''}`}</div>
+      ${p ? `<div class="cq-info-grid">${lin('Data do preparo', _cqFmtDH(p.dataHora || p.data))}${lin('Responsável', _cqEsc(p.responsavel))}
+          ${_cqPrepQtdTxt(p) ? lin('Quantidade preparada', _cqEsc(_cqPrepQtdTxt(p))) : ''}${p.observacoes ? lin('Observações', _cqEsc(p.observacoes)) : ''}
           ${lin('Validade do preparado', _cqFmtData(p.validade))}${lin('Situação', _cqPrepSituacaoBtn(i, p, 'info'))}
           ${p.avaliacao ? lin(p.avaliacao.manual ? 'Situação definida' : 'Avaliado', _cqEsc(_cqPrepAvaliacaoTxt(p)) + (p.avaliacao.motivo ? `<div class="cq-muted">${_cqEsc(p.avaliacao.motivo)}</div>` : '')) : ''}
           ${p.finalizado ? lin('Finalizado', _cqEsc(_cqPrepFinalizadoTxt(p))) : ''}
           ${lin('Corridas que usaram', String(corridas.length))}</div>
         ${corridas.length ? `<div class="cq-muted" style="margin-top:6px;font-size:12px;">${corridas.slice(0, 8).map(c => `${_cqEsc(c.numero || '')} (${_cqFmtDH(c.dataHora)})`).join(' · ')}${corridas.length > 8 ? '…' : ''}</div>` : ''}`
         : '<div class="cq-nota">Nenhum preparo selecionado.</div>'}`,
-    rodape: `<div></div><div style="display:flex;gap:8px;">${p && !p.novo ? `<button class="btn btn-outline" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print} Imprimir rótulo</button>` : ''}
+    rodape: `<div>${p && _cqPodeExcluirPreparo(p) ? `<button class="btn btn-outline cq-btn-perigo" onclick="cqPreparoExcluir('${i.id}','${p.id}','info')">${CQ_ICO.lixo} Excluir</button>` : ''}</div><div style="display:flex;gap:8px;">${p && !p.novo ? `<button class="btn btn-outline" onclick="cqModalClose();cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print} Imprimir etiqueta</button>` : ''}
       <button class="btn btn-outline" onclick="cqModalClose()">Fechar</button></div>`,
   });
   document.getElementById('cq-modal-foot').style.justifyContent = 'space-between';
 }
 
-// Rótulo do reagente/insumo preparado no laboratório (RDC 978, art. 101, I a VIII)
+// ── ETIQUETA DO PREPARO ─────────────────────────────────────
+// Etiquetadora: uma etiqueta por página, no tamanho da etiqueta. Folha A4: grade com linhas de corte.
+// Configuração por estação (a impressora fica no computador): localStorage 'cq-etiqueta'.
+// Conteúdo resumido (RDC 978, art. 101): produto, código do preparo, lote, quantidade, data do preparo,
+// validade e responsável; o tamanho da fonte e o número de linhas se ajustam ao tamanho da etiqueta.
+const CQ_ETQ_TAMANHOS = [[50, 30], [40, 25], [60, 40], [100, 50]];
+const CQ_ETQ_CONTAVEIS = { placas: 'placa', tubos: 'tubo', frascos: 'frasco', 'alíquotas': 'alíquota', 'lâminas': 'lâmina' };
+let _cqEtqDadosAtual = null;
+
+function _cqEtqNorm(c) {
+  const num = (v, min, max, d) => { const n = Number(String(v ?? '').replace(',', '.')); return n >= min && n <= max ? Math.round(n * 10) / 10 : d; };
+  return { modo: c?.modo === 'folha' ? 'folha' : 'etiquetadora', largura: num(c?.largura, 20, 150, 50), altura: num(c?.altura, 10, 100, 30) };
+}
+function _cqEtqCfg() {
+  let c = null;
+  try { c = JSON.parse(localStorage.getItem('cq-etiqueta') || 'null'); } catch (e) { c = null; }
+  return _cqEtqNorm(c);
+}
+function _cqEtqSalvarCfg(c) { try { localStorage.setItem('cq-etiqueta', JSON.stringify(_cqEtqNorm(c))); return true; } catch (e) { return false; } }
+function _cqEtqPorFolha(c) { return Math.max(0, Math.floor((194 + 2) / (c.largura + 2))) * Math.max(0, Math.floor((281 + 2) / (c.altura + 2))); }
+function _cqEtqResumo(c) { return `${c.modo === 'folha' ? 'Folha A4' : 'Etiquetadora'} · ${String(c.largura).replace('.', ',')} × ${String(c.altura).replace('.', ',')} mm${c.modo === 'folha' ? ` · ${_cqEtqPorFolha(c)} por folha` : ''}`; }
+
+function _cqEtqDados(i, pr) {
+  const fd = s => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(2, 4)}` : '—');
+  const nomes = String(pr.responsavel || '').trim().split(/\s+/).filter(Boolean);
+  return { produto: i.nome || '', codigo: pr.codigo || '', lote: i.lote || '', qtd: _cqPrepQtdTxt(pr), prep: fd(pr.data), val: fd(pr.validade || i.validade),
+           resp: nomes.length > 1 ? `${nomes[0]} ${nomes[nomes.length - 1]}` : (nomes[0] || '') };
+}
+function _cqEtqExemplo() { return { produto: 'Ágar Mueller Hinton', codigo: 'MH-2611-P06', lote: 'MH-2611', qtd: '500 mL', prep: '06/10/26', val: '03/11/26', resp: 'Maria Souza' }; }
+
+// Etiqueta com estilos inline em mm (mesma aparência na prévia e na impressão)
+function _cqEtiquetaHTML(d, cfg, folha) {
+  const W = cfg.largura, H = cfg.altura;
+  const pad = Math.max(1, Math.min(W, H) * 0.05);
+  const iw = W - 2 * pad, ih = H - 2 * pad;
+  const sw = iw / 47;                        // escala pela largura (base: 50 mm)
+  // Do mais completo ao mais enxuto: usa o primeiro em que a altura não força letra pequena demais
+  const niveis = [{ tit: 2, linhas: ['lote', 'datas', 'resp'] }, { tit: 1, linhas: ['lote', 'datas'] }, { tit: 1, linhas: ['val'] }];
+  const alturaBase = n => n.tit * 3.9 + (d.codigo ? 4.9 : 0) + n.linhas.length * 3.2;
+  let nv = niveis[0], esc = 1;
+  for (const n of niveis) {
+    nv = n;
+    esc = Math.min(sw, ih / alturaBase(n), 2.2);
+    if (esc >= Math.min(sw, 1) * 0.9 && esc >= 0.7) break;
+  }
+  const mm = v => `${(v * esc).toFixed(2)}mm`;
+  const e = _cqEsc;
+  const lin = html => `<div style="font-size:${mm(2.7)};line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${html}</div>`;
+  const L = {
+    lote: lin(`Lote <b>${e(d.lote)}</b>${d.qtd ? ` · ${e(d.qtd)}` : ''}`),
+    datas: lin(`Prep ${e(d.prep)} · Val <b>${e(d.val)}</b>`),
+    resp: d.resp ? lin(`Resp: ${e(d.resp)}`) : '',
+    val: lin(`Val <b>${e(d.val)}</b> · L ${e(d.lote)}`),
+  };
+  return `<div class="etq" style="box-sizing:border-box;width:${W}mm;height:${H}mm;padding:${pad.toFixed(2)}mm;overflow:hidden;display:flex;flex-direction:column;justify-content:center;gap:${mm(0.35)};font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;text-align:left;${folha ? 'border:0.2mm dashed #999;' : ''}">
+    <div style="font-size:${mm(3.4)};font-weight:700;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${nv.tit};word-break:break-word;">${e(d.produto)}</div>
+    ${d.codigo ? `<div style="font-size:${mm(4.2)};font-weight:800;line-height:1.15;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e(d.codigo)}</div>` : ''}
+    ${nv.linhas.map(k => L[k]).join('')}
+  </div>`;
+}
+// Prévia ampliada (cabe em ~280 px)
+function _cqEtqPrevHTML(d, cfg) {
+  const z = Math.min(1.6, 280 / (cfg.largura * 3.7795));
+  return `<div class="cq-etq-papel" style="zoom:${z.toFixed(3)};">${_cqEtiquetaHTML(d, cfg, false)}</div><div class="cq-etq-dim">${_cqEsc(_cqEtqResumo(cfg))}</div>`;
+}
+
+// Campos de modo e tamanho (Configurações e janela de impressão); px = prefixo dos ids
+function _cqEtqCamposHTML(px, cfg) {
+  const pre = CQ_ETQ_TAMANHOS.find(([l, a]) => l === cfg.largura && a === cfg.altura);
+  return `<div class="cq-etq-cfg">
+    <input type="hidden" id="${px}-modo" value="${cfg.modo}">
+    <div class="form-field"><label class="field-label">Imprimir em</label>
+      <div class="cq-seg" id="${px}-seg">${[['etiquetadora', 'Etiquetadora'], ['folha', 'Folha A4']].map(([k, l]) => `<button type="button" data-k="${k}" class="${cfg.modo === k ? 'active' : ''}" onclick="cqEtqModo('${px}','${k}')">${l}</button>`).join('')}</div></div>
+    <div class="form-field"><label class="field-label">Tamanho da etiqueta</label>
+      <div class="cq-etq-tam">
+        <select id="${px}-pre" class="field-select" onchange="cqEtqPreset('${px}',this.value)">${CQ_ETQ_TAMANHOS.map(([l, a]) => `<option value="${l}x${a}" ${pre && pre[0] === l && pre[1] === a ? 'selected' : ''}>${l} × ${a} mm${l === 50 && a === 30 ? ' (padrão)' : ''}</option>`).join('')}<option value="" ${pre ? '' : 'selected'}>Personalizado</option></select>
+        <input type="number" id="${px}-l" class="field-input" min="20" max="150" step="1" value="${cfg.largura}" title="Largura (mm), 20 a 150" oninput="cqEtqMudou('${px}')">
+        <span>×</span>
+        <input type="number" id="${px}-a" class="field-input" min="10" max="100" step="1" value="${cfg.altura}" title="Altura (mm), 10 a 100" oninput="cqEtqMudou('${px}')">
+        <span>mm</span>
+      </div></div>
+  </div>`;
+}
+function _cqEtqLer(px) { return _cqEtqNorm({ modo: _cqVal(px + '-modo'), largura: _cqVal(px + '-l'), altura: _cqVal(px + '-a') }); }
+function cqEtqModo(px, k) {
+  const h = document.getElementById(px + '-modo');
+  if (h) h.value = k;
+  document.querySelectorAll(`#${px}-seg button`).forEach(b => b.classList.toggle('active', b.dataset.k === k));
+  cqEtqMudou(px);
+}
+function cqEtqPreset(px, v) {
+  if (v) {
+    const [l, a] = v.split('x');
+    const el = document.getElementById(px + '-l'), ea = document.getElementById(px + '-a');
+    if (el) el.value = l;
+    if (ea) ea.value = a;
+  }
+  cqEtqMudou(px);
+}
+function cqEtqMudou(px) {
+  const c = _cqEtqLer(px);
+  const sel = document.getElementById(px + '-pre');
+  if (sel) sel.value = CQ_ETQ_TAMANHOS.some(([l, a]) => l === c.largura && a === c.altura) ? `${c.largura}x${c.altura}` : '';
+  const prev = document.getElementById(px + '-prev');
+  if (prev) prev.innerHTML = _cqEtqPrevHTML(px === 'cq-etqp' && _cqEtqDadosAtual ? _cqEtqDadosAtual : _cqEtqExemplo(), c);
+}
+// Configurações › Etiquetas de preparo (esta estação)
+function cqEtqSalvarCfgForm() {
+  const l = Number(_cqVal('cq-etqc-l')), a = Number(_cqVal('cq-etqc-a'));
+  if (!(l >= 20 && l <= 150) || !(a >= 10 && a <= 100)) { showToast('Tamanho inválido: largura de 20 a 150 mm e altura de 10 a 100 mm.', 'error'); return; }
+  if (!_cqEtqSalvarCfg(_cqEtqLer('cq-etqc'))) { showToast('Não foi possível gravar neste navegador.', 'error'); return; }
+  showToast('Configuração de etiquetas salva nesta estação.', 'success');
+}
+
+function _cqEtqImprimir(d, cfg, copias) {
+  const folha = cfg.modo === 'folha';
+  const css = folha
+    ? '@page{size:A4;margin:8mm}html,body{margin:0}body{display:flex;flex-wrap:wrap;gap:2mm;align-content:flex-start}.etq{break-inside:avoid;page-break-inside:avoid}'
+    : `@page{size:${cfg.largura}mm ${cfg.altura}mm;margin:0}html,body{margin:0;padding:0}.etq{break-after:page;page-break-after:always}.etq:last-child{break-after:auto;page-break-after:auto}`;
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiqueta ${_cqEsc(d.codigo || d.lote)}</title>
+    <style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact}${css}</style></head>
+    <body>${_cqEtiquetaHTML(d, cfg, folha).repeat(copias)}<script>window.onload=()=>window.print()<\/script></body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { showToast('Permita pop-ups para imprimir.', 'error'); return false; }
+  w.document.write(html);
+  w.document.close();
+  return true;
+}
+
+// Janela de impressão: prévia, cópias (placas/tubos… sugerem uma por unidade) e ajuste rápido
 function cqImprimirRotulo(id, prepId) {
   const i = cqState.config.insumos[id];
   if (!i?.preparoInterno) return;
-  const pf = i.preparo || {};
-  const pr = _cqPreparo(i, prepId) || _cqPreparosDe(i)[0] || {};
-  const p = { ...pf, data: pr.data, responsavel: pr.responsavel };
-  const un = _cqUnidade();
-  const linha = (l, v) => v ? `<div><b>${l}:</b> ${_cqEsc(v)}</div>` : '';
-  const rot = `<div class="rot"><div class="t">${_cqEsc(i.nome)}</div>
-    ${linha('Especificação', p.especificacao)}${linha('Lote', i.lote)}${linha('Preparo', _cqFmtData(p.data))}
-    ${linha('Validade', _cqFmtData(pr.validade || i.validade))}${linha('Preparado por', p.responsavel)}${linha('Armazenar', p.armazenamento)}
-    ${linha('Riscos', p.riscos || 'Ver FISPQ')}${un ? `<div class="u">${_cqEsc(un.sigla)} — ${_cqEsc(un.nome)}</div>` : ''}</div>`;
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Rótulo ${_cqEsc(i.lote)}</title>
-    <style>@page{margin:8mm}body{font:10px/1.3 system-ui,sans-serif;color:#000;display:flex;flex-wrap:wrap;gap:4mm}
-    .rot{width:62mm;border:1px solid #000;padding:2.5mm;box-sizing:border-box;page-break-inside:avoid}.t{font-weight:700;font-size:11.5px;margin-bottom:1mm}.u{margin-top:1mm;font-size:8.5px;color:#333}</style></head>
-    <body>${rot.repeat(8)}<script>window.onload=()=>window.print()<\/script></body></html>`;
-  const w = window.open('', '_blank');
-  if (!w) { showToast('Permita pop-ups para imprimir.', 'error'); return; }
-  w.document.write(html);
-  w.document.close();
+  const pr = _cqPreparo(i, prepId) || _cqPreparosDe(i)[0];
+  if (!pr) { showToast('Nenhum preparo para imprimir.', 'error'); return; }
+  const d = _cqEtqDados(i, pr);
+  _cqEtqDadosAtual = d;
+  const cfg = _cqEtqCfg();
+  const unid = CQ_ETQ_CONTAVEIS[pr.unidadeQtd];
+  const contavel = !!unid && pr.quantidade >= 1 && pr.quantidade <= 300;
+  _cqPrompt({
+    titulo: 'Imprimir etiqueta', subtitulo: `${i.nome} · ${pr.codigo || 'lote ' + i.lote}`, confirmar: 'Imprimir',
+    corpo: `<div class="cq-etq-prev" id="cq-etqp-prev">${_cqEtqPrevHTML(d, cfg)}</div>
+      <div class="cq-etq-lin">
+        <div class="form-field"><label class="field-label">Cópias</label>
+          <input type="number" id="cq-etqp-copias" class="field-input" min="1" max="300" step="1" value="${contavel ? Math.round(pr.quantidade) : 1}" onkeydown="if(event.key==='Enter')cqPromptConfirmar()"></div>
+        ${contavel ? `<div class="cq-nota">Uma etiqueta por ${unid} (${_cqEsc(_cqPrepQtdTxt(pr))}).</div>` : ''}
+      </div>
+      <details class="cq-etq-det"><summary>Ajustar impressão</summary>${_cqEtqCamposHTML('cq-etqp', cfg)}
+        <div class="cq-nota">O ajuste fica salvo nesta estação (também em Configurações › Controle de Qualidade). Na etiquetadora, use o mesmo tamanho de papel no driver da impressora.</div></details>`,
+    onConfirm: () => {
+      const n = Number(_cqVal('cq-etqp-copias'));
+      if (!(Number.isInteger(n) && n >= 1 && n <= 300)) { showToast('Cópias: de 1 a 300.', 'error'); return false; }
+      const c = _cqEtqLer('cq-etqp');
+      _cqEtqSalvarCfg(c);
+      return _cqEtqImprimir(d, c, n);
+    },
+  });
+}
+
+// ── ABA PREPAROS ────────────────────────────────────────────
+// Registro rápido de preparos (meio reconstituído, corante diluído, reagente fracionado) fora do
+// lançamento da corrida. Grava em insumos/{id}/preparos/{pid}, o mesmo lugar dos preparos criados
+// no lançamento, que passa a oferecê-los. Cada preparo recebe um código sequencial por lote
+// (LOTE-P01…) para identificar frasco, tubos ou placas.
+const CQ_UNID_PREPARO = ['mL', 'L', 'g', 'placas', 'tubos', 'frascos', 'alíquotas', 'lâminas'];
+let _cqPrepFiltro = 'em_uso';     // em_uso | finalizados | todos
+let _cqPrepProds = [];            // filtro de produtos (ids)
+let _cqPrepNovo = null;           // rascunho do formulário (sobrevive às atualizações vindas do banco)
+let _cqPrepDestaque = null;       // preparo recém-registrado (destacado na lista)
+
+function _cqPodeRegistrarPreparo() { return _cqCan('lancar') || _cqCan('configurar'); }
+// Atalho do cabeçalho: Cadastros › Preparos
+function cqAbrirPreparos() { _cqCadTab = 'preparos'; _cqCadExp.clear(); cqNav('cadastros'); }
+function cqPrepFiltro(v) { _cqPrepFiltro = v; cqRender(); }
+
+// Próximo número de preparo do lote (os antigos, sem número, também contam)
+function _cqPrepSeq(ins) {
+  const ps = Object.values(_cqLoteCru(ins)?.preparos || {}).filter(p => p && p.id);
+  return Math.max(ps.length, Number(_cqLoteCru(ins)?.preparoSeq) || 0, ...ps.map(p => Number(p.seq) || 0)) + 1;
+}
+function _cqPrepCodigo(ins, seq) { return `${ins.lote}-P${String(seq).padStart(2, '0')}`; }
+function _cqPrepQtdTxt(p) { return p?.quantidade ? `${String(p.quantidade).replace('.', ',')} ${p.unidadeQtd || ''}`.trim() : ''; }
+// Unidade de quantidade usada no último preparo do produto (sugestão do formulário)
+function _cqPrepUltimaUnidade(produtoId) {
+  if (!produtoId) return '';
+  const ps = _cqLotesDoProduto(produtoId).flatMap(i => Object.values(_cqLoteCru(i).preparos || {})).filter(p => p?.unidadeQtd);
+  ps.sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
+  return ps[0]?.unidadeQtd || '';
+}
+// Produtos preparados no laboratório da unidade (ativos)
+function _cqPrepProdutos(u) {
+  return _cqDaUnidade('insumoProdutos', u).filter(p => p.preparoInterno && p.ativo !== false)
+    .sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt'));
+}
+// Lotes do produto que aceitam preparo: na unidade, em uso ou em avaliação e dentro da validade (em uso primeiro)
+function _cqPrepLotesValidos(produtoId, u, dia) {
+  const ord = l => ((l.status || 'em_uso') === 'em_uso' ? 0 : 1);
+  return _cqLotesDoProduto(produtoId).filter(i => _cqNaUnidade(i, u) && ['em_uso', 'em_avaliacao'].includes(i.status || 'em_uso') && !_cqLoteVencido(i, dia))
+    .sort((a, b) => ord(a) - ord(b) || (a.validade || '').localeCompare(b.validade || ''));
+}
+// Todos os preparos dos lotes da unidade preparados no laboratório
+function _cqPrepAbaItens(u) {
+  return _cqDaUnidade('insumos', u).filter(i => i.preparoInterno).flatMap(i => _cqPreparosDe(i).map(p => ({ i, p })));
+}
+function _cqPrepDias(de, ate) { return Math.round((Date.parse(ate + 'T00:00:00Z') - Date.parse(de + 'T00:00:00Z')) / 864e5); }
+
+// Rascunho do formulário, com produto, lote e unidade sugeridos
+function _cqPrepNovoEstado(u) {
+  if (!_cqPrepNovo || _cqPrepNovo.u !== u) _cqPrepNovo = { u, prod: '', lote: '', qtd: '', un: '', dh: '', resp: _cqSess().id, obs: '' };
+  const n = _cqPrepNovo;
+  const prods = _cqPrepProdutos(u);
+  if (!prods.some(p => p.id === n.prod)) { n.prod = prods.length === 1 ? prods[0].id : ''; n.lote = ''; n.un = ''; }
+  const lotes = n.prod ? _cqPrepLotesValidos(n.prod, u, (n.dh || _cqNowLocal()).slice(0, 10)) : [];
+  if (!lotes.some(l => l.id === n.lote)) n.lote = lotes[0]?.id || '';
+  if (n.prod && !n.un) n.un = _cqPrepUltimaUnidade(n.prod) || 'mL';
+  return n;
+}
+function cqPrepNovoCampo(k, v, redesenhar) {
+  const n = _cqPrepNovo;
+  if (!n) return;
+  n[k] = v;
+  if (k === 'prod') { n.lote = ''; n.un = ''; }
+  if (redesenhar) _cqPrepFormRedesenhar();
+}
+function _cqPrepFormRedesenhar() {
+  const w = document.getElementById('cq-prep-form-wrap');
+  if (w) w.innerHTML = _cqPrepFormHTML(_cqUnidadeAtivaId());
+}
+
+function _cqPrepFormHTML(u) {
+  const prods = _cqPrepProdutos(u);
+  if (!prods.length) return `<div class="cq-prep-form cq-prep-form-vazio">${CQ_ICO.beaker}<div><b>Nenhum produto preparado no laboratório nesta unidade.</b>
+    <small>Marque “Preparado ou fracionado pelo laboratório” no cadastro do produto (aba Reagentes, meios e insumos).</small></div></div>`;
+  const n = _cqPrepNovoEstado(u);
+  const agora = _cqNowLocal().slice(0, 16);
+  const dh = n.dh || agora;
+  const dia = dh.slice(0, 10);
+  const p = cqState.config.insumoProdutos[n.prod];
+  const lotes = n.prod ? _cqPrepLotesValidos(n.prod, u, dia) : [];
+  const ins = n.lote ? cqState.config.insumos[n.lote] : null;
+  const pf = p?.preparo || {};
+  const dica = p ? [pf.especificacao, pf.armazenamento, pf.validadeDias ? `validade de ${pf.validadeDias} dia(s) após o preparo` : 'validade do lote', ins?.preparoUsoUnico ? 'lote de uso único: cada preparo serve a uma corrida' : ''].filter(Boolean) : [];
+  const val = ins ? _cqPrepValidade(ins, dia) : null;
+  const optsLote = lotes.length
+    ? lotes.map(l => `<option value="${l.id}" ${l.id === n.lote ? 'selected' : ''}>${_cqEsc(l.lote)} · val. ${_cqFmtData(l.validade)}${(l.status || 'em_uso') === 'em_avaliacao' ? ' · em avaliação' : ''}</option>`).join('')
+    : `<option value="">${n.prod ? 'Nenhum lote em uso dentro da validade' : 'Escolha o produto'}</option>`;
+  return `<div class="cq-prep-form">
+    <div class="cq-prep-form-cab">${CQ_ICO.beaker}<b>Novo preparo</b>${ins ? `<span class="cq-prep-cod" title="Código do preparo (para o rótulo)">${_cqEsc(_cqPrepCodigo(ins, _cqPrepSeq(ins)))}</span>` : ''}</div>
+    <div class="cq-prep-form-grid">
+      <div class="form-field"><label class="field-label">Produto</label>
+        <select class="field-select" onchange="cqPrepNovoCampo('prod',this.value,true)"><option value="">— Selecione —</option>${prods.map(x => `<option value="${x.id}" ${x.id === n.prod ? 'selected' : ''}>${_cqEsc(x.nome)}${x.fabricante ? ' · ' + _cqEsc(x.fabricante) : ''}</option>`).join('')}</select></div>
+      <div class="form-field"><label class="field-label">Lote</label>
+        <select class="field-select" ${lotes.length ? '' : 'disabled'} onchange="cqPrepNovoCampo('lote',this.value,true)">${optsLote}</select></div>
+      <div class="form-field"><label class="field-label">Quantidade preparada <span class="required">*</span></label>
+        <div class="cq-pf-qtd"><input type="number" class="field-input" min="0" step="any" inputmode="decimal" value="${_cqEsc(n.qtd)}" placeholder="0" oninput="cqPrepNovoCampo('qtd',this.value)">
+        <select class="field-select" title="Unidade" onchange="cqPrepNovoCampo('un',this.value)">${CQ_UNID_PREPARO.map(x => `<option ${x === n.un ? 'selected' : ''}>${x}</option>`).join('')}</select></div></div>
+      <div class="form-field"><label class="field-label">Data e hora</label>
+        <input type="datetime-local" class="field-input" max="${agora}" value="${dh}" onchange="cqPrepNovoCampo('dh',this.value,true)"></div>
+      <div class="form-field"><label class="field-label">Responsável</label>
+        <select class="field-select" onchange="cqPrepNovoCampo('resp',this.value)">${_cqUsuarios().map(x => `<option value="${x.id}" ${x.id === n.resp ? 'selected' : ''}>${_cqEsc(x.nomeCompleto || x.username)}</option>`).join('')}</select></div>
+      <div class="form-field cq-pf-obs"><label class="field-label">Observações</label>
+        <input type="text" class="field-input" maxlength="200" value="${_cqEsc(n.obs)}" placeholder="Opcional — ex.: pH 7,32; 25 placas de 90 mm" oninput="cqPrepNovoCampo('obs',this.value)"></div>
+    </div>
+    <div class="cq-prep-form-pe">
+      <div class="cq-prep-dica">${dica.length ? `${CQ_ICO.info}<span>${dica.map(_cqEsc).join(' · ')}</span>` : ''}</div>
+      ${val ? `<div class="cq-prep-val-prev" title="Data do preparo + validade do produto, limitada à validade do lote">Validade <b>${_cqFmtData(val)}</b></div>` : ''}
+      <button class="btn btn-primary" ${ins ? '' : 'disabled'} onclick="cqPrepRegistrar()">${CQ_ICO.plus} Registrar preparo</button>
+    </div>
+  </div>`;
+}
+
+async function cqPrepRegistrar() {
+  if (!_cqPodeRegistrarPreparo()) { showToast('Sem permissão para registrar preparos.', 'error'); return; }
+  if (_cqSalvando) return;
+  const u = _cqUnidadeAtivaId();
+  const n = _cqPrepNovoEstado(u);
+  const ins = n.lote ? cqState.config.insumos[n.lote] : null;
+  const agora = _cqNowLocal().slice(0, 16);
+  const dh = n.dh || agora;
+  const dia = dh.slice(0, 10);
+  const qtd = Number(String(n.qtd).replace(',', '.'));
+  if (!ins) { showToast('Escolha o produto e o lote.', 'error'); return; }
+  if (!(qtd > 0)) { showToast('Informe a quantidade preparada.', 'error'); return; }
+  if (dh > agora) { showToast('Data e hora do preparo no futuro.', 'error'); return; }
+  if (!_cqPrepLotesValidos(n.prod, u, dia).some(l => l.id === ins.id)) { showToast(`Lote ${ins.lote} vencido, em quarentena ou encerrado na data do preparo.`, 'error'); return; }
+  const validade = _cqPrepValidade(ins, dia);
+  if (validade && validade < _cqHoje()) { showToast(`Preparo já vencido (validade ${_cqFmtData(validade)}).`, 'error'); return; }
+  if (!_cqPodeGravar()) return;
+  const resp = _cqUsuarios().find(x => x.id === n.resp);
+  const ass = _cqAssinatura();
+  const seq = _cqPrepSeq(ins);
+  const obj = { id: _cqUid(), seq, codigo: _cqPrepCodigo(ins, seq), data: dia, dataHora: dh, responsavelId: n.resp || null, responsavel: resp?.nomeCompleto || resp?.username || '',
+    quantidade: qtd, unidadeQtd: n.un || '', observacoes: (n.obs || '').trim(), validade, situacao: 'em_avaliacao', legado: false, origem: 'preparos',
+    criadoEm: ass.em, criadoPor: ass, corridas: {} };
+  const base = `${CQ_KEYS.config}/insumos/${ins.id}`;
+  const updates = {
+    [`${base}/preparos/${obj.id}`]: obj,
+    [`${base}/atualizadoEm`]: ass.em,
+    [`${base}/trilha/${_cqTk()}`]: _cqTrilhaEntry('edicao', `Preparo ${obj.codigo} registrado: ${_cqPrepQtdTxt(obj)} em ${_cqFmtDH(dh)} por ${obj.responsavel || '—'}${obj.observacoes ? ` — ${obj.observacoes}` : ''}`),
+  };
+  _cqSalvando = true;
+  try {
+    if (!(await window.dbUpdate(updates))) { showToast('Falha ao gravar. Verifique a conexão.', 'error'); return; }
+  } finally { _cqSalvando = false; }
+  const cru = _cqLoteCru(ins);
+  (cru.preparos = cru.preparos || {})[obj.id] = obj;
+  if (ins !== cru) ins.preparos = cru.preparos;
+  Object.assign(n, { qtd: '', dh: '', obs: '' });
+  _cqPrepDestaque = obj.id;
+  if (_cqPrepFiltro === 'finalizados') _cqPrepFiltro = 'em_uso';
+  showToast(`Preparo ${obj.codigo} registrado.`, 'success');
+  cqRender();
+}
+
+// Exclusão de preparo nunca usado em corrida (registrado por engano ou em duplicidade).
+// Quem configura o CQ ou quem registrou o preparo; cópia vai para o histórico de exclusões e a trilha do lote.
+function _cqPrepUsado(p) { return !!p && (p.legado || Object.keys(p.corridas || {}).length > 0); }
+function _cqPodeExcluirPreparo(p) {
+  if (!p || p.novo || _cqPrepUsado(p)) return false;
+  return _cqCan('configurar') || (_cqPodeRegistrarPreparo() && !!p.criadoPor?.porId && p.criadoPor.porId === _cqSess().id);
+}
+function _cqPrepBtnExcluir(i, p, onde) {
+  return _cqPodeExcluirPreparo(p) ? `<button type="button" class="cq-icobtn cq-prep-excl" title="Excluir preparo (nunca usado em corrida)" onclick="event.stopPropagation();cqPreparoExcluir('${i.id}','${p.id}','${onde}')">${CQ_ICO.lixo}</button>` : '';
+}
+function cqPreparoExcluir(insId, prepId, onde) {
+  const i = cqState.config.insumos[insId];
+  const p = i ? _cqPreparo(i, prepId) : null;
+  if (!p) return;
+  if (_cqPrepUsado(p)) { showToast('Preparo já usado em corrida: não pode ser excluído. Finalize-o.', 'error'); return; }
+  if (!_cqPodeExcluirPreparo(p)) { showToast('Sem permissão para excluir este preparo.', 'error'); return; }
+  if (onde === 'info') cqModalClose();
+  const nome = `${p.codigo || 'preparo'} de ${_cqFmtData(p.data)}`;
+  _cqPrompt({
+    titulo: 'Excluir preparo', subtitulo: `${i.nome} · lote ${i.lote} · ${nome}`, perigo: true, confirmar: 'Excluir',
+    corpo: `<div class="cq-nota">Este preparo nunca foi usado em corrida. A exclusão o remove das listas e do lançamento; uma cópia fica no histórico de exclusões e na rastreabilidade do lote.${p.codigo ? ' O código não é reaproveitado.' : ''}</div>
+      <div class="form-field"><label class="field-label">Motivo <span class="required">*</span></label>
+        <input type="text" id="cq-prep-excl-motivo" class="field-input" maxlength="200" placeholder="Ex.: registrado em duplicidade / quantidade errada" onkeydown="if(event.key==='Enter')cqPromptConfirmar()"></div>`,
+    onConfirm: async () => {
+      const motivo = _cqVal('cq-prep-excl-motivo');
+      if (!motivo) { showToast('Informe o motivo da exclusão.', 'error'); return false; }
+      if (!_cqPodeGravar()) return false;
+      const pb = `${CQ_KEYS.config}/insumos/${insId}/preparos/${prepId}`;
+      // Revalida no banco: outra estação pode ter lançado uma corrida com este preparo
+      let atual;
+      try { atual = await _cqLerOuFalhar(pb); }
+      catch (err) { console.error('[cq-cadastros.js] cqPreparoExcluir:', err); showToast('Falha ao ler o banco. Nada foi excluído.', 'error'); return false; }
+      if (!atual) { showToast('Preparo não encontrado no banco.', 'error'); return true; }
+      if (Object.keys(atual.corridas || {}).length) { showToast('Este preparo passou a ser usado em corrida. Nada foi excluído.', 'error'); return true; }
+      const ass = _cqAssinatura();
+      // Mantém a sequência: o próximo preparo não reaproveita o código excluído
+      const seqMax = _cqPrepSeq(i) - 1;
+      const updates = {
+        [pb]: null,
+        [`${CQ_KEYS.config}/insumos/${insId}/atualizadoEm`]: ass.em,
+        [`${CQ_KEYS.config}/insumos/${insId}/preparoSeq`]: Math.max(seqMax, Number(_cqLoteCru(i).preparoSeq) || 0),
+        [`${CQ_KEYS.config}/insumos/${insId}/trilha/${_cqTk()}`]: _cqTrilhaEntry('exclusao', `Preparo ${nome} excluído (nunca usado em corrida): ${motivo}`,
+          [{ campo: 'Preparo', antes: [p.codigo, _cqFmtDH(p.dataHora || p.data), p.responsavel, _cqPrepQtdTxt(p)].filter(Boolean).join(' · '), depois: 'excluído' }]),
+        [`${CQ_KEYS.exclusoes}/${_cqTk()}`]: { colecao: 'preparos', id: prepId, insumoId: insId, resumo: `${i.nome} · lote ${i.lote} · ${nome}`, motivo, registro: atual, ...ass },
+      };
+      if (!(await window.dbUpdate(updates))) { showToast('Falha ao excluir. Verifique a conexão e tente novamente.', 'error'); return false; }
+      const cru = _cqLoteCru(i);
+      if (cru.preparos) delete cru.preparos[prepId];
+      cru.preparoSeq = updates[`${CQ_KEYS.config}/insumos/${insId}/preparoSeq`];
+      if (i !== cru) i.preparoSeq = cru.preparoSeq;
+      showToast(`Preparo ${p.codigo || ''} excluído.`.replace('  ', ' '), 'success');
+      if (onde === 'lote') cqInsumoForm(insId, { aba: 'preparos' });
+      else cqRender();
+      return true;
+    },
+  });
+}
+
+// Barra de validade do preparado: verde, amarela nos últimos 20% do prazo, vermelha vencido
+function _cqPrepValidadeBarra(p, hoje) {
+  if (!p.validade) return '<span class="cq-muted">—</span>';
+  if (p.finalizado) return `<span class="cq-muted">${_cqFmtData(p.validade)}</span>`;
+  const tot = Math.max(1, _cqPrepDias(p.data || hoje, p.validade)), rest = _cqPrepDias(hoje, p.validade);
+  const pct = rest < 0 ? 100 : Math.max(4, Math.min(100, rest / tot * 100));
+  const cls = rest < 0 ? 'venc' : pct <= 20 ? 'fim' : 'ok';
+  const txt = rest < 0 ? `vencido há ${-rest} d` : rest === 0 ? 'vence hoje' : `${rest} d`;
+  return `<div class="cq-pv ${cls}" title="Validade ${_cqFmtData(p.validade)}"><div class="cq-pv-bar"><i style="width:${pct}%"></i></div><span>${_cqFmtData(p.validade)} · ${txt}</span></div>`;
+}
+
+function _cqPrepAbaHTML(u) {
+  const itens = _cqPrepAbaItens(u);
+  const nUso = itens.filter(x => !x.p.finalizado).length;
+  const prods = new Map(_cqPrepProdutos(u).map(p => [p.id, p]));
+  itens.forEach(({ i }) => { const p = _cqProdutoInsumo(i); if (p) prods.set(p.id, p); });
+  const opsProd = [...prods.values()].sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt'))
+    .map(p => ({ value: p.id, label: p.nome, sub: [CQ_TIPOS_INSUMO[p.tipo], p.fabricante].filter(Boolean).join(' · ') }));
+  _cqPrepProds = _cqPrepProds.filter(id => prods.has(id));
+  const seg = [['em_uso', 'Em uso', nUso, CQ_ICO.play], ['finalizados', 'Finalizados', itens.length - nUso, ''], ['todos', 'Todos', null, '']];
+  return `${_cqPodeRegistrarPreparo() ? `<div id="cq-prep-form-wrap">${_cqPrepFormHTML(u)}</div>` : ''}
+    <div class="cq-toolbar cq-toolbar-wrap">
+      <div class="cq-seg cq-cad-ativo" role="group" aria-label="Preparos em uso ou finalizados">${seg.map(([k, l, nn, ico]) => `<button type="button" class="${_cqPrepFiltro === k ? 'active' : ''}" onclick="cqPrepFiltro('${k}')">${ico}${l}${nn !== null ? ` <span class="cq-seg-n">${nn}</span>` : ''}</button>`).join('')}</div>
+      <div class="cq-cad-equip">${_cqMultiHTML('cq-prep-prod', opsProd, _cqPrepProds, { placeholder: 'Todos os produtos', resumo: 'produtos',
+        onchange: v => { _cqPrepProds = v; _cqPrepAbaLista(); }, vazio: 'Nenhum produto preparado no laboratório nesta unidade.' })}</div>
+    </div>
+    <div id="cq-cad-lista"></div>`;
+}
+
+function _cqPrepAbaLista() {
+  const el = document.getElementById('cq-cad-lista');
+  if (!el) return;
+  const u = _cqUnidadeAtivaId();
+  const hoje = _cqHoje();
+  const podeSit = _cqPodeSituacaoPreparo();
+  const itens = _cqPrepAbaItens(u)
+    .filter(({ i, p }) => (!_cqPrepProds.length || _cqPrepProds.includes(_cqLoteCru(i).produtoId))
+      && (_cqPrepFiltro === 'todos' || (_cqPrepFiltro === 'finalizados') === !!p.finalizado))
+    .sort((a, b) => (b.p.dataHora || b.p.data || '').localeCompare(a.p.dataHora || a.p.data || '') || (b.p.criadoEm || '').localeCompare(a.p.criadoEm || ''));
+  const icoFim = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
+  const linha = ({ i, p }) => {
+    const nC = Object.keys(p.corridas || {}).length;
+    const fin = p.finalizado ? `<div class="cq-muted cq-prep-fin-txt" title="${_cqEsc(_cqPrepFinalizadoTxt(p))}">${_cqEsc(p.finalizado.auto ? 'finalizado automaticamente' : `finalizado por ${p.finalizado.porNome || '—'}`)}</div>` : '';
+    return `<tr class="ot-list-row${p.finalizado ? ' oc-row-final' : ''}${p.id === _cqPrepDestaque ? ' cq-prep-destaque' : ''}" onclick="cqPreparoInfo('${i.id}','${p.id}')" title="Detalhes do preparo">
+      <td class="cq-prep-cod-td">${p.codigo ? _cqEsc(p.codigo) : '<span class="cq-muted">—</span>'}</td>
+      <td><b>${_cqEsc(i.nome)}</b><div class="cq-muted">lote ${_cqEsc(i.lote)}${i.preparoUsoUnico ? ' · uso único' : ''}</div></td>
+      <td style="white-space:nowrap;">${_cqPrepQtdTxt(p) ? `<b>${_cqEsc(_cqPrepQtdTxt(p))}</b>` : '<span class="cq-muted">—</span>'}</td>
+      <td style="font-size:12.5px;white-space:nowrap;">${_cqFmtDH(p.dataHora || p.data)}<div class="cq-muted">${_cqEsc(p.responsavel || '—')}</div></td>
+      <td>${_cqPrepValidadeBarra(p, hoje)}</td>
+      <td>${_cqPrepSituacaoBtn(i, p, 'aba')}${fin}</td>
+      <td class="oc-num" style="text-align:center;">${nC || '<span class="cq-muted">0</span>'}</td>
+      <td class="cq-prep-acoes" onclick="event.stopPropagation()">
+        <button type="button" class="cq-icobtn" title="Imprimir etiqueta" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print}</button>
+        ${_cqPrepBtnExcluir(i, p, 'aba')}
+        ${podeSit && !p.finalizado && !p.legado ? `<button type="button" class="cq-icobtn cq-prep-fim" title="Finalizar (consumido ou descartado)" onclick="cqPreparoSituacao('${i.id}','${p.id}','aba',{finalizar:true})">${icoFim}</button>` : ''}
+      </td></tr>`;
+  };
+  const vazio = { em_uso: 'Nenhum preparo em uso', finalizados: 'Nenhum preparo finalizado', todos: 'Nenhum preparo registrado' }[_cqPrepFiltro] + (_cqPrepProds.length ? ' para os produtos selecionados.' : ' nesta unidade.');
+  el.innerHTML = `<div class="oc-table-scroll"><table class="ot-list-table cq-table cq-prep-tbl">
+    <thead><tr><th class="ot-list-th">Código</th><th class="ot-list-th">Produto · lote</th><th class="ot-list-th">Quantidade</th><th class="ot-list-th">Preparo</th>
+      <th class="ot-list-th">Validade</th><th class="ot-list-th">Situação</th><th class="ot-list-th" title="Corridas que usaram o preparo" style="text-align:center;">Corridas</th><th class="ot-list-th"></th></tr></thead>
+    <tbody>${itens.length ? itens.map(linha).join('') : `<tr><td colspan="8" class="cq-td-vazio">${vazio}</td></tr>`}</tbody></table></div>
+    ${podeSit ? '<div class="cq-nota" style="margin-top:8px;">Clique na situação para liberar, reprovar ou finalizar. Preparos finalizados, reprovados ou vencidos não são oferecidos no lançamento.</div>' : ''}`;
+  _cqPrepDestaque = null;
 }
 
 // Insumos utilizáveis num teste (validade e situação); `produto` é o id do produto (só os lotes dele)

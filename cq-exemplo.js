@@ -386,7 +386,8 @@ function _cqExemploMontar() {
       addTr(loteMH, dh, -5, 'edicao', `Preparo de ${_cqFmtData(x.data)} finalizado: ${motivo}`, [{ campo: 'Preparo finalizado', antes: 'Não', depois: 'Sim' }]);
     });
     const id = `ex-pr-${++nPrep}`;
-    const p = { id, data: dia, responsavelId: me.id, responsavel: me.nome, validade: _cqPrepValidade({ validade: loteMH.validade, preparo: { validadeDias: 28 } }, dia),
+    const p = { id, seq: nPrep, codigo: `MH-2611-P${String(nPrep).padStart(2, '0')}`, dataHora: dh.slice(0, 16), quantidade: nPrep % 2 ? 500 : 900, unidadeQtd: 'mL', origem: 'lancamento',
+      data: dia, responsavelId: me.id, responsavel: me.nome, validade: _cqPrepValidade({ validade: loteMH.validade, preparo: { validadeDias: 28 } }, dia),
       situacao: 'em_avaliacao', legado: false, criadoEm: _cqExIso(dh, 3), criadoPor: ass(dh, 3), corridas: {} };
     loteMH.preparos[id] = p;
     const c = gravarCorrida(dh, sisMic, [

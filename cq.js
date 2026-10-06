@@ -107,11 +107,14 @@ const CQ_ICO = {
   play:    `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M7 4.5v15a1 1 0 001.5.86l12-7.5a1 1 0 000-1.72l-12-7.5A1 1 0 007 4.5z"/></svg>`,
   pause:   `<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="4.5" width="4" height="15" rx="1.2"/><rect x="14" y="4.5" width="4" height="15" rx="1.2"/></svg>`,
   ban:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>`,
+  lixo:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>`,
   unidade: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>`,
   repeat:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>`,
   info:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="11"/><circle cx="12" cy="7.6" r="1.1" fill="currentColor" stroke="none"/></svg>`,
   busca:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`,
   shield:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>`,
+  banco:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 11v6c0 1.66 3.58 3 8 3s8-1.34 8-3v-6"/></svg>`,
+  usuarios:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`,
 };
 
 // ── INICIALIZAÇÃO ─────────────────────────────────────────────
@@ -1168,6 +1171,7 @@ function _cqRenderTopbar() {
     </div>
     ${window._dbAmbienteTeste ? '<span class="cq-badge cq-st-rejeitado">AMBIENTE DE TESTE</span>' : ''}
     <div class="cq-spacer"></div>
+    ${u && typeof cqAbrirPreparos === 'function' && _cqPodeRegistrarPreparo() ? `<button class="btn btn-outline cq-btn-prep${_cqSub === 'cadastros' && _cqCadTab === 'preparos' ? ' ativo' : ''}" onclick="cqAbrirPreparos()" title="Registrar e acompanhar preparos de reagentes e meios">${CQ_ICO.beaker} Preparos</button>` : ''}
     ${u && _cqCan('lancar') ? `<button class="btn btn-primary" onclick="cqNav('lancar')">${CQ_ICO.plus} Lançar corrida</button>` : ''}`;
 }
 
@@ -1569,75 +1573,128 @@ function cqRenderConfig() {
   const cat = cqState.config.catalogos;
   const validacoes = Object.values(cqState.config.validacoes).sort((a, b) => (b.data || '').localeCompare(a.data || ''));
   const catBloco = (k, titulo, desc) => `<div class="cq-cfg-cat">
-    <div class="cq-cfg-cat-tit">${titulo}</div><div class="cq-nota">${desc}</div>
+    <div class="cq-cfg-cat-tit">${titulo}<span class="cq-step-qtd">${_cqArr(cat[k]).length}</span></div><div class="cq-nota">${desc}</div>
     <div class="cq-tags">${_cqArr(cat[k]).map((v, i) => `<span class="cq-tag">${_cqEsc(v)}<button onclick="cqCatRemover('${k}',${i})" title="Remover">×</button></span>`).join('')}</div>
     <div class="cq-cfg-add"><input type="text" class="field-input" id="cq-cat-add-${k}" placeholder="Novo item" onkeydown="if(event.key==='Enter')cqCatAdicionar('${k}')">
       <button class="btn btn-outline btn-sm" onclick="cqCatAdicionar('${k}')">${CQ_ICO.plus} Adicionar</button></div>
   </div>`;
 
-  body.innerHTML = `
-  <div class="cq-cfg">
-    <section class="cq-cfg-sec">
-      <div class="cq-cfg-sec-head"><div><h3>Unidades</h3><p>Cada unidade que executa exames tem CIQ e CEQ próprios (RDC 978, arts. 178 e 186).</p></div>
-        <button class="btn btn-primary btn-sm" onclick="cqUnidadeForm(null)">${CQ_ICO.plus} Nova unidade</button></div>
-      <table class="ot-list-table cq-table">
-        <thead><tr><th class="ot-list-th">Sigla</th><th class="ot-list-th">Nome</th><th class="ot-list-th">CNES</th><th class="ot-list-th">RT</th><th class="ot-list-th">Membros</th><th class="ot-list-th">Situação</th></tr></thead>
-        <tbody>${unidades.length ? unidades.map(un => `<tr class="ot-list-row" onclick="cqUnidadeForm('${un.id}')">
-          <td><b>${_cqEsc(un.sigla)}</b></td><td>${_cqEsc(un.nome)}</td><td>${_cqEsc(un.cnes || '—')}</td>
-          <td>${_cqEsc(_cqNomeUsuario(un.rtUserId) || '—')}</td><td>${Object.keys(un.membros || {}).length}</td>
-          <td>${un.ativa === false ? '<span class="cq-badge cq-st-semalvo">Inativa</span>' : '<span class="cq-badge cq-st-aceito">Ativa</span>'}${un.validacao ? ' <span class="cq-badge cq-st-pendente">Validação</span>' : ''}</td>
-        </tr>`).join('') : '<tr><td colspan="6" class="cq-td-vazio">Nenhuma unidade cadastrada.</td></tr>'}</tbody>
-      </table>
-    </section>
+  // Sub-abas: Unidades · Estação e etiquetas · Catálogos · Validação · Dados e planilhas
+  const valAtual = validacoes.find(v => v.versao === CQ_VERSAO);
+  const validado = valAtual?.resultado === 'aprovado';
+  const nCat = ['causas', 'acoes', 'fontesETa'].reduce((n, k) => n + _cqArr(cat[k]).length, 0);
+  const abas = [
+    ['unidades', CQ_ICO.unidade, 'Unidades', unidades.length ? `<span class="cq-step-qtd">${unidades.length}</span>` : ''],
+    ['estacao', CQ_ICO.ativo, 'Estação e etiquetas', _cqEstacao() ? '' : '<span class="cq-cfg-ponto" title="Estação sem nome"></span>'],
+    ['catalogos', CQ_ICO.cadastro, 'Catálogos', nCat ? `<span class="cq-step-qtd">${nCat}</span>` : ''],
+    ['validacao', CQ_ICO.shield, 'Validação', validado ? '' : '<span class="cq-cfg-ponto" title="Versão sem validação aprovada"></span>'],
+    ['dados', CQ_ICO.banco, 'Dados e planilhas', ''],
+  ];
+  if (!abas.some(a => a[0] === _cqCfgAba)) _cqCfgAba = 'unidades';
+  const head = (ico, titulo, desc, acoes = '') => `<div class="cq-cfg-sec-head"><div class="cq-cfg-sec-tit"><span class="cq-cfg-sec-ico">${ico}</span><div><h3>${titulo}</h3>${desc ? `<p>${desc}</p>` : ''}</div></div>${acoes ? `<div class="cq-cfg-btns">${acoes}</div>` : ''}</div>`;
+  const seta = '<svg class="cq-cfg-tile-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 6 15 12 9 18"/></svg>';
+  const tile = (ico, titulo, desc, acao, cls = '') => `<button type="button" class="cq-cfg-tile ${cls}" onclick="${acao}"><span class="cq-cfg-tile-ico">${ico}</span><span class="cq-cfg-tile-txt"><b>${titulo}</b><small>${desc}</small></span>${seta}</button>`;
 
-    <section class="cq-cfg-sec">
-      <div class="cq-cfg-sec-head"><div><h3>Esta estação de trabalho</h3><p>Nome do computador/local gravado em cada registro (RDC 978, art. 105, II).</p></div></div>
-      <div class="cq-cfg-add"><input type="text" class="field-input" id="cq-cfg-estacao" maxlength="40" value="${_cqEsc(_cqEstacao())}" placeholder="Ex.: BIOQ-01">
-        <button class="btn btn-outline btn-sm" onclick="cqSalvarEstacaoCfg()">${CQ_ICO.check} Salvar</button></div>
+  let conteudo = '';
+  if (_cqCfgAba === 'unidades') {
+    const uAtiva = _cqUnidadeAtivaId();
+    const card = un => {
+      const nAn = _cqDaUnidade('analitos', un.id).length, nTe = _cqTestesDaUnidade(un.id).length;
+      const nMem = Object.keys(un.membros || {}).length;
+      return `<button type="button" class="cq-un-card${un.ativa === false ? ' inativa' : ''}" onclick="cqUnidadeForm('${un.id}')">
+        <div class="cq-un-card-top"><span class="cq-un-sigla">${_cqEsc(un.sigla)}</span>
+          <span class="cq-un-badges">${un.id === uAtiva ? '<span class="cq-badge cq-un-atual">Selecionada</span>' : ''}${un.validacao ? '<span class="cq-badge cq-st-pendente">Validação</span>' : ''}${un.ativa === false ? '<span class="cq-badge cq-st-semalvo">Inativa</span>' : '<span class="cq-badge cq-st-aceito">Ativa</span>'}</span></div>
+        <div class="cq-un-nome" title="${_cqEsc(un.nome)}">${_cqEsc(un.nome)}</div>
+        <div class="cq-un-meta">
+          <span title="Responsável técnico">${CQ_ICO.shield}${_cqEsc(_cqNomeUsuario(un.rtUserId) || 'Sem RT')}</span>
+          <span>${CQ_ICO.usuarios}${nMem} membro${nMem === 1 ? '' : 's'}</span>
+          ${un.cnes ? `<span>CNES ${_cqEsc(un.cnes)}</span>` : ''}
+        </div>
+        <div class="cq-un-rodape"><span><b>${nAn}</b> analito${nAn === 1 ? '' : 's'}</span><span><b>${nTe}</b> teste${nTe === 1 ? '' : 's'} ativo${nTe === 1 ? '' : 's'}</span>${seta}</div>
+      </button>`;
+    };
+    conteudo = `<section class="cq-cfg-sec">
+      ${head(CQ_ICO.unidade, 'Unidades', 'Cada unidade que executa exames tem CIQ e CEQ próprios (RDC 978, arts. 178 e 186). Clique para editar dados, membros, equipamentos e política de liberação.',
+        `<button class="btn btn-primary btn-sm" onclick="cqUnidadeForm(null)">${CQ_ICO.plus} Nova unidade</button>`)}
+      <div class="cq-un-grid">${unidades.map(card).join('')}
+        <button type="button" class="cq-un-card cq-un-novo" onclick="cqUnidadeForm(null)">${CQ_ICO.plus}<span>Nova unidade</span></button></div>
+    </section>`;
+  } else if (_cqCfgAba === 'estacao') {
+    const est = _cqEstacao();
+    const ec = typeof _cqEtqCfg === 'function' ? _cqEtqCfg() : null;
+    conteudo = `<section class="cq-cfg-sec">
+      ${head(CQ_ICO.ativo, 'Esta estação de trabalho', 'Nome do computador/local gravado em cada registro (RDC 978, art. 105, II). Gravado apenas neste navegador.')}
+      <div class="cq-cfg-estacao">
+        <div class="cq-cfg-add"><input type="text" class="field-input" id="cq-cfg-estacao" maxlength="40" value="${_cqEsc(est)}" placeholder="Ex.: BIOQ-01, Bancada hematologia" onkeydown="if(event.key==='Enter')cqSalvarEstacaoCfg()">
+          <button class="btn btn-primary btn-sm" onclick="cqSalvarEstacaoCfg()">${CQ_ICO.check} Salvar</button></div>
+        ${est ? `<div class="cq-cfg-ok">${CQ_ICO.check} Registros feitos aqui saem como <b>${_cqEsc(est)}</b>.</div>`
+          : `<div class="cq-cfg-aviso">${CQ_ICO.alerta} Estação sem nome: os registros saem como “não informada”.</div>`}
+      </div>
     </section>
-
-    <section class="cq-cfg-sec">
-      <div class="cq-cfg-sec-head"><div><h3>Catálogos</h3><p>Listas usadas nas não conformidades e nas especificações da qualidade.</p></div></div>
+    ${ec ? `<section class="cq-cfg-sec">
+      ${head(CQ_ICO.print, 'Etiquetas de preparo', 'Etiquetadora: uma etiqueta por página, no tamanho definido (use o mesmo tamanho de papel no driver da impressora). Folha A4: etiquetas em grade com linhas de corte. Vale só para esta estação.',
+        `<button class="btn btn-primary btn-sm" onclick="cqEtqSalvarCfgForm()">${CQ_ICO.check} Salvar</button>`)}
+      <div class="cq-etq-cfg-wrap">${_cqEtqCamposHTML('cq-etqc', ec)}<div class="cq-etq-prev" id="cq-etqc-prev">${_cqEtqPrevHTML(_cqEtqExemplo(), ec)}</div></div>
+    </section>` : ''}`;
+  } else if (_cqCfgAba === 'catalogos') {
+    conteudo = `<section class="cq-cfg-sec">
+      ${head(CQ_ICO.cadastro, 'Catálogos', 'Listas oferecidas nas não conformidades e nas especificações da qualidade. Remover um item não altera os registros que já o usaram.')}
       <div class="cq-cfg-cats">
         ${catBloco('causas', 'Causas de rejeição', 'Usadas na investigação das corridas rejeitadas.')}
         ${catBloco('acoes', 'Ações corretivas', 'Ações registradas nas não conformidades.')}
         ${catBloco('fontesETa', 'Fontes de erro total permitido', 'Modelo científico das especificações da qualidade (PALC 11.4).')}
       </div>
-    </section>
-
-    <section class="cq-cfg-sec">
-      <div class="cq-cfg-sec-head"><div><h3>Validação do módulo</h3><p>Versão em uso: <b>${CQ_VERSAO}</b>. Registre a validação antes de usar em rotina (RDC 978, art. 106).</p></div>
-        <button class="btn btn-outline btn-sm" onclick="cqValidacaoForm()">${CQ_ICO.plus} Registrar validação</button></div>
-      ${validacoes.length ? `<table class="ot-list-table cq-table"><thead><tr><th class="ot-list-th">Data</th><th class="ot-list-th">Versão</th><th class="ot-list-th">Escopo / protocolo</th><th class="ot-list-th">Resultado</th><th class="ot-list-th">Assinado por</th></tr></thead>
-        <tbody>${validacoes.map(v => `<tr><td>${_cqFmtData(v.data)}</td><td>${_cqEsc(v.versao)}</td><td style="max-width:320px;">${_cqEsc(v.escopo)}</td>
+    </section>`;
+  } else if (_cqCfgAba === 'validacao') {
+    const banner = validado
+      ? `<div class="cq-cfg-banner ok">${CQ_ICO.shield}<div><b>Versão ${_cqEsc(CQ_VERSAO)} validada</b><small>${_cqFmtData(valAtual.data)} · assinado por ${_cqEsc(valAtual.assinatura?.porNome || '—')}${valAtual.escopo ? ` · ${_cqEsc(valAtual.escopo)}` : ''}</small></div></div>`
+      : `<div class="cq-cfg-banner pend">${CQ_ICO.alerta}<div><b>Versão ${_cqEsc(CQ_VERSAO)} ${valAtual ? 'reprovada na validação' : 'sem validação registrada'}</b><small>Registre a validação antes de usar o módulo em rotina (RDC 978, art. 106).</small></div>
+          <button class="btn btn-primary btn-sm" onclick="cqValidacaoForm()">${CQ_ICO.plus} Registrar validação</button></div>`;
+    conteudo = `<section class="cq-cfg-sec">
+      ${head(CQ_ICO.shield, 'Validação do módulo', `Versão em uso: <b>${_cqEsc(CQ_VERSAO)}</b>. Cada nova versão deve ser validada antes do uso em rotina (RDC 978, art. 106).`,
+        validado ? `<button class="btn btn-outline btn-sm" onclick="cqValidacaoForm()">${CQ_ICO.plus} Registrar validação</button>` : '')}
+      ${banner}
+      <div class="cq-sec-titulo" style="margin-top:18px;">Histórico de validações</div>
+      ${validacoes.length ? `<div class="oc-table-scroll"><table class="ot-list-table cq-table"><thead><tr><th class="ot-list-th">Data</th><th class="ot-list-th">Versão</th><th class="ot-list-th">Escopo / protocolo</th><th class="ot-list-th">Resultado</th><th class="ot-list-th">Assinado por</th></tr></thead>
+        <tbody>${validacoes.map(v => `<tr><td>${_cqFmtData(v.data)}</td><td><b>${_cqEsc(v.versao)}</b>${v.versao === CQ_VERSAO ? ' <span class="cq-badge cq-un-atual">em uso</span>' : ''}</td><td style="max-width:360px;">${_cqEsc(v.escopo)}</td>
           <td>${v.resultado === 'aprovado' ? '<span class="cq-badge cq-st-aceito">Aprovado</span>' : '<span class="cq-badge cq-st-rejeitado">Reprovado</span>'}</td>
-          <td>${_cqEsc(v.assinatura?.porNome || '—')}<div class="cq-muted">${_cqFmtDH(v.assinatura?.em)}</div></td></tr>`).join('')}</tbody></table>`
-        : `<div class="cq-alerta-box">${CQ_ICO.alerta} Nenhuma validação registrada para a versão ${CQ_VERSAO}.</div>`}
+          <td>${_cqEsc(v.assinatura?.porNome || '—')}<div class="cq-muted">${_cqFmtDH(v.assinatura?.em)}</div></td></tr>`).join('')}</tbody></table></div>`
+        : '<div class="cq-nota">Nenhuma validação registrada.</div>'}
+    </section>`;
+  } else {
+    const temExemplo = typeof cqExemploCriar === 'function' && _cqExemploExiste();
+    conteudo = `<section class="cq-cfg-sec">
+      ${head(CQ_ICO.lista, 'Planilhas (Excel)', 'Na importação, registros existentes são ignorados e resultados viram corridas avaliadas pelas regras de cada teste.')}
+      <div class="cq-cfg-tiles">
+        ${tile(CQ_ICO.lista, 'Baixar modelo', 'Planilha em branco com as abas e colunas aceitas na importação.', 'cqPlanilhaModelo()')}
+        ${tile(CQ_ICO.print, 'Exportar', 'Cadastros, alvos, corridas, resultados e não conformidades.', 'cqPlanilhaExportarForm()')}
+        ${tile(CQ_ICO.plus, 'Importar planilha', 'Cadastros e resultados históricos, com prévia antes de gravar.', 'cqPlanilhaImportarEscolher()', 'destaque')}
+      </div>
     </section>
-
-    <section class="cq-cfg-sec">
-      <div class="cq-cfg-sec-head"><div><h3>Planilhas (Excel)</h3><p>Exporte cadastros, alvos, corridas, resultados e não conformidades, ou importe cadastros e resultados históricos. Na importação, registros existentes são ignorados e resultados viram corridas avaliadas pelas regras de cada teste.</p></div>
-        <div class="cq-cfg-btns"><button class="btn btn-outline btn-sm" onclick="cqPlanilhaModelo()">${CQ_ICO.lista} Baixar modelo</button>
-          <button class="btn btn-outline btn-sm" onclick="cqPlanilhaExportarForm()">${CQ_ICO.print} Exportar</button>
-          <button class="btn btn-primary btn-sm" onclick="cqPlanilhaImportarEscolher()">${CQ_ICO.plus} Importar planilha</button></div></div>
-    </section>
-
     ${_cqIsAdmin() ? `<section class="cq-cfg-sec">
-      <div class="cq-cfg-sec-head"><div><h3>Manutenção</h3><p>Recalcula os índices (pendências, últimas corridas e NCs abertas) da unidade ativa a partir dos registros.</p></div>
-        <button class="btn btn-outline btn-sm" onclick="cqReconstruirIndices()">${CQ_ICO.undo} Reconstruir índices</button></div>
-    </section>
-    <section class="cq-cfg-sec">
-      <div class="cq-cfg-sec-head"><div><h3>Dados de exemplo</h3><p>Cria a unidade fictícia <b>EXEMP</b> com cadastros, alvos, cerca de 45 dias de corridas (aceites, alertas, rejeições com repetição) e não conformidades, para demonstrar o funcionamento completo do módulo. Remova-os antes de usar o CQ em rotina.</p></div>
-        ${typeof cqExemploCriar !== 'function' ? '' : _cqExemploExiste()
-          ? `<button class="btn btn-outline btn-sm cq-btn-perigo" onclick="cqExemploRemover()">${CQ_ICO.undo} Remover dados de exemplo</button>`
-          : `<button class="btn btn-outline btn-sm" onclick="cqExemploCriar()">${CQ_ICO.plus} Criar dados de exemplo</button>`}</div>
+      ${head(CQ_ICO.banco, 'Manutenção', 'Ferramentas de administrador.')}
+      <div class="cq-cfg-tiles">
+        ${tile(CQ_ICO.undo, 'Reconstruir índices', 'Recalcula pendências, últimas corridas e NCs abertas da unidade selecionada a partir dos registros.', 'cqReconstruirIndices()')}
+        ${typeof cqExemploCriar !== 'function' ? '' : temExemplo
+          ? tile(CQ_ICO.undo, 'Remover dados de exemplo', 'Apaga a unidade fictícia EXEMP e tudo o que foi criado para ela. Faça isso antes de usar o CQ em rotina.', 'cqExemploRemover()', 'perigo')
+          : tile(CQ_ICO.beaker, 'Criar dados de exemplo', 'Unidade fictícia EXEMP com cadastros, alvos, cerca de 45 dias de corridas e não conformidades, para demonstração.', 'cqExemploCriar()')}
+      </div>
     </section>
     <section class="cq-cfg-sec cq-cfg-perigo">
-      <div class="cq-cfg-sec-head"><div><h3>Apagar dados do Controle de Qualidade</h3><p>Remove do banco todos os cadastros, alvos, corridas, resultados, não conformidades, índices e numerações do CQ, de todas as unidades. Uma cópia em <code>.json</code> é baixada antes da exclusão. Os registros do CQ devem ser retidos pelo prazo regulatório (RDC 978/2025) — use somente para descartar dados de teste.</p></div>
-        <button class="btn btn-outline btn-sm cq-btn-perigo" onclick="cqApagarTudo()">${CQ_ICO.alerta} Apagar dados do CQ</button></div>
-    </section>` : ''}
+      ${head(CQ_ICO.alerta, 'Zona de perigo', 'Remove do banco todos os cadastros, alvos, corridas, resultados, não conformidades, índices e numerações do CQ, de todas as unidades. Uma cópia em <code>.json</code> é baixada antes. Os registros do CQ devem ser retidos pelo prazo regulatório (RDC 978/2025): use somente para descartar dados de teste.',
+        `<button class="btn btn-outline btn-sm cq-btn-perigo" onclick="cqApagarTudo()">${CQ_ICO.alerta} Apagar dados do CQ</button>`)}
+    </section>` : ''}`;
+  }
+
+  body.innerHTML = `
+  <div class="cq-cfg">
+    <div class="ot-modal-tabs cq-subtabs cq-cfg-abas">${abas.map(([k, ico, l, extra]) => `<button class="ot-modal-tab-btn${k === _cqCfgAba ? ' active' : ''}" onclick="cqCfgAba('${k}')">${ico}${l}${extra}</button>`).join('')}</div>
+    ${conteudo}
   </div>`;
 }
+
+let _cqCfgAba = 'unidades';
+function cqCfgAba(k) { _cqCfgAba = k; cqRenderConfig(); }
 
 function cqSalvarEstacaoCfg() {
   const v = _cqVal('cq-cfg-estacao');
