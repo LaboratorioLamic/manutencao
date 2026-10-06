@@ -1521,7 +1521,7 @@ function _cqPreparosHistoricoHTML(i) {
       <div class="cq-prep-data"><b>${_cqFmtData(p.data)}</b><small class="${venc ? 'cq-txt-vermelho' : ''}" title="Validade do preparado">val. ${_cqFmtData(p.validade)}</small></div>
       <div class="cq-prep-info"><span title="${_cqEsc(quem)}">${_cqEsc(quem)}</span><small title="${_cqEsc(sub)}">${_cqEsc(sub)}</small></div>
       ${_cqPrepSituacaoBtn(i, p, 'lote')}
-      <span class="cq-prep-item-acoes"><button type="button" class="cq-icobtn" title="Imprimir etiqueta" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print}</button>${_cqPrepBtnExcluir(i, p, 'lote')}</span>
+      <span class="cq-prep-item-acoes"><button type="button" class="cq-icobtn" title="Imprimir etiqueta" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print}</button><button type="button" class="cq-icobtn" title="Baixar etiqueta em PNG" onclick="cqEtqBaixar('${i.id}','${p.id}')">${CQ_ICO.baixar}</button>${_cqPrepBtnExcluir(i, p, 'lote')}</span>
     </div>`;
   };
   const ativos = ps.filter(p => !p.finalizado), fins = ps.filter(p => p.finalizado);
@@ -1687,7 +1687,8 @@ function _cqEtiquetaHTML(d, cfg, folha) {
   const giro = rot ? `position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(${rot}deg);` : '';
   return `<div class="etq" style="box-sizing:border-box;position:relative;width:${fw}mm;height:${fh}mm;overflow:hidden;background:#fff;${folha ? 'border:0.2mm dashed #999;' : ''}">${_cqEtqConteudoHTML(d, cfg.largura, cfg.altura, giro)}</div>`;
 }
-function _cqEtqConteudoHTML(d, W, H, giro) {
+// Layout da etiqueta (mm): margem, escala das letras e quantas linhas cabem
+function _cqEtqLayout(d, W, H) {
   const pad = Math.max(1, Math.min(W, H) * 0.05);
   const iw = W - 2 * pad, ih = H - 2 * pad;
   const sw = iw / 47;                        // escala pela largura (base: 50 mm)
@@ -1700,6 +1701,10 @@ function _cqEtqConteudoHTML(d, W, H, giro) {
     esc = Math.min(sw, ih / alturaBase(n), 2.2);
     if (esc >= Math.min(sw, 1) * 0.9 && esc >= 0.7) break;
   }
+  return { pad, esc, nv };
+}
+function _cqEtqConteudoHTML(d, W, H, giro) {
+  const { pad, esc, nv } = _cqEtqLayout(d, W, H);
   const mm = v => `${(v * esc).toFixed(2)}mm`;
   const e = _cqEsc;
   const lin = html => `<div style="font-size:${mm(2.7)};line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${html}</div>`;
@@ -1794,6 +1799,95 @@ function _cqEtqImprimir(d, cfg, copias) {
   return true;
 }
 
+// ── Etiqueta em PNG (300 dpi), desenhada no canvas com o mesmo layout da impressão ──
+function _cqEtqCanvas(d, cfg, dpi = 300) {
+  const pxmm = dpi / 25.4;
+  const [fw, fh] = _cqEtqFisico(cfg);
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(fw * pxmm);
+  cv.height = Math.round(fh * pxmm);
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.translate(cv.width / 2, cv.height / 2);
+  ctx.rotate((cfg.rot || 0) * Math.PI / 180);
+  const W = cfg.largura * pxmm, H = cfg.altura * pxmm;
+  ctx.translate(-W / 2, -H / 2);
+  const { pad, esc, nv } = _cqEtqLayout(d, cfg.largura, cfg.altura);
+  const P = pad * pxmm, iw = W - 2 * P;
+  const fonte = (peso, mm) => `${peso} ${(mm * esc * pxmm).toFixed(2)}px Arial, Helvetica, sans-serif`;
+  ctx.fillStyle = '#000';
+  ctx.textBaseline = 'top';
+  // Corta com reticências o texto que não cabe na largura
+  const caber = (txt, larg) => {
+    if (ctx.measureText(txt).width <= larg) return txt;
+    let t = txt;
+    while (t.length > 1 && ctx.measureText(t + '…').width > larg) t = t.slice(0, -1);
+    return t.trimEnd() + '…';
+  };
+  // Título: quebra por palavras em até nv.tit linhas
+  ctx.font = fonte(700, 3.4);
+  const linhasTit = [];
+  let atual = '';
+  String(d.produto || '').split(/\s+/).filter(Boolean).forEach(p => {
+    const t = atual ? `${atual} ${p}` : p;
+    if (ctx.measureText(t).width <= iw || !atual) atual = t; else { linhasTit.push(atual); atual = p; }
+  });
+  if (atual) linhasTit.push(atual);
+  const tit = linhasTit.slice(0, nv.tit);
+  if (linhasTit.length > nv.tit) tit[tit.length - 1] = caber(`${tit[tit.length - 1]} ${linhasTit.slice(nv.tit).join(' ')}`, iw);
+  // Linhas de informação: trechos [texto, negrito]
+  const segs = {
+    lote: [['Lote ', 0], [d.lote, 1], [d.qtd ? ` · ${d.qtd}` : '', 0]],
+    datas: [[`Prep ${d.prep} · Val `, 0], [d.val, 1]],
+    resp: d.resp ? [[`Resp: ${d.resp}`, 0]] : null,
+    val: [['Val ', 0], [d.val, 1], [` · L ${d.lote}`, 0]],
+  };
+  const blocos = [
+    ...tit.map(t => ({ h: 3.4 * 1.15, fn: y => { ctx.font = fonte(700, 3.4); ctx.fillText(caber(t, iw), P, y); } })),
+    ...(d.codigo ? [{ h: 4.2 * 1.15, fn: y => { ctx.font = fonte(800, 4.2); ctx.fillText(caber(d.codigo, iw), P, y); } }] : []),
+    ...nv.linhas.map(k => segs[k]).filter(Boolean).map(sg => ({ h: 2.7 * 1.18, fn: y => {
+      const larg = () => sg.reduce((n, [t, b]) => { ctx.font = fonte(b ? 700 : 400, 2.7); return n + ctx.measureText(t).width; }, 0);
+      const f = Math.min(1, iw / (larg() || 1));      // linha longa: encolhe para caber
+      let x = P;
+      sg.forEach(([t, b]) => { ctx.font = fonte(b ? 700 : 400, 2.7 * f); ctx.fillText(t, x, y); x += ctx.measureText(t).width; });
+    } })),
+  ];
+  const gap = 0.35 * esc * pxmm;
+  const total = blocos.reduce((n, b) => n + b.h * esc * pxmm, 0) + gap * (blocos.length - 1);
+  let y = (H - total) / 2;
+  blocos.forEach(b => { b.fn(y + (b.h - (b.h / 1.16)) * esc * pxmm / 2); y += b.h * esc * pxmm + gap; });
+  return cv;
+}
+function _cqEtqBaixarPNG(d, cfg) {
+  try {
+    const cv = _cqEtqCanvas(d, cfg);
+    const nome = `etiqueta-${String(d.codigo || d.lote || 'preparo').replace(/[^\w.-]+/g, '_')}.png`;
+    cv.toBlob(blob => {
+      if (!blob) { showToast('Não foi possível gerar a imagem.', 'error'); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = nome;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      showToast(`Etiqueta salva em ${nome}.`, 'success');
+    }, 'image/png');
+  } catch (err) {
+    console.error('[cq-cadastros.js] _cqEtqBaixarPNG:', err);
+    showToast('Não foi possível gerar a imagem.', 'error');
+  }
+}
+// Botão da janela de impressão (usa o ajuste atual) e das listas de preparos (usa o da estação)
+function cqEtqBaixarPrompt() { if (_cqEtqDadosAtual) _cqEtqBaixarPNG(_cqEtqDadosAtual, _cqEtqLer('cq-etqp')); }
+function cqEtqBaixar(id, prepId) {
+  const i = cqState.config.insumos[id];
+  const pr = i ? _cqPreparo(i, prepId) : null;
+  if (!pr) return;
+  _cqEtqBaixarPNG(_cqEtqDados(i, pr), _cqEtqCfg());
+}
+
 // Janela de impressão: prévia, cópias (placas/tubos… sugerem uma por unidade) e ajuste rápido
 function cqImprimirRotulo(id, prepId) {
   const i = cqState.config.insumos[id];
@@ -1807,7 +1901,8 @@ function cqImprimirRotulo(id, prepId) {
   const contavel = !!unid && pr.quantidade >= 1 && pr.quantidade <= 300;
   _cqPrompt({
     titulo: 'Imprimir etiqueta', subtitulo: `${i.nome} · ${pr.codigo || 'lote ' + i.lote}`, confirmar: 'Imprimir',
-    corpo: `<div class="cq-etq-prev" id="cq-etqp-prev">${_cqEtqPrevHTML(d, cfg)}</div>
+    corpo: `<div class="cq-etq-prev-wrap"><div class="cq-etq-prev" id="cq-etqp-prev">${_cqEtqPrevHTML(d, cfg)}</div>
+        <button type="button" class="cq-etq-baixar" title="Baixar etiqueta em PNG (300 dpi)" onclick="cqEtqBaixarPrompt()">${CQ_ICO.baixar} PNG</button></div>
       <div class="cq-etq-lin">
         <div class="form-field"><label class="field-label">Cópias</label>
           <input type="number" id="cq-etqp-copias" class="field-input" min="1" max="300" step="1" value="${contavel ? Math.round(pr.quantidade) : 1}" onkeydown="if(event.key==='Enter')cqPromptConfirmar()"></div>
@@ -2091,6 +2186,7 @@ function _cqPrepAbaLista() {
       <td class="oc-num" style="text-align:center;">${nC || '<span class="cq-muted">0</span>'}</td>
       <td class="cq-prep-acoes" onclick="event.stopPropagation()">
         <button type="button" class="cq-icobtn" title="Imprimir etiqueta" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print}</button>
+        <button type="button" class="cq-icobtn" title="Baixar etiqueta em PNG" onclick="cqEtqBaixar('${i.id}','${p.id}')">${CQ_ICO.baixar}</button>
         ${_cqPrepBtnExcluir(i, p, 'aba')}
         ${podeSit && !p.finalizado && !p.legado ? `<button type="button" class="cq-icobtn cq-prep-fim" title="Finalizar (consumido ou descartado)" onclick="cqPreparoSituacao('${i.id}','${p.id}','aba',{finalizar:true})">${icoFim}</button>` : ''}
       </td></tr>`;
