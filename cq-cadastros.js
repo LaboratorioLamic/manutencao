@@ -1654,7 +1654,8 @@ let _cqEtqDadosAtual = null;
 
 function _cqEtqNorm(c) {
   const num = (v, min, max, d) => { const n = Number(String(v ?? '').replace(',', '.')); return n >= min && n <= max ? Math.round(n * 10) / 10 : d; };
-  return { modo: c?.modo === 'folha' ? 'folha' : 'etiquetadora', largura: num(c?.largura, 20, 150, 50), altura: num(c?.altura, 10, 100, 30) };
+  const rot = Number(c?.rot);
+  return { modo: c?.modo === 'folha' ? 'folha' : 'etiquetadora', largura: num(c?.largura, 20, 150, 50), altura: num(c?.altura, 10, 100, 30), rot: [90, 180, 270].includes(rot) ? rot : 0 };
 }
 function _cqEtqCfg() {
   let c = null;
@@ -1662,8 +1663,13 @@ function _cqEtqCfg() {
   return _cqEtqNorm(c);
 }
 function _cqEtqSalvarCfg(c) { try { localStorage.setItem('cq-etiqueta', JSON.stringify(_cqEtqNorm(c))); return true; } catch (e) { return false; } }
-function _cqEtqPorFolha(c) { return Math.max(0, Math.floor((194 + 2) / (c.largura + 2))) * Math.max(0, Math.floor((281 + 2) / (c.altura + 2))); }
-function _cqEtqResumo(c) { return `${c.modo === 'folha' ? 'Folha A4' : 'Etiquetadora'} · ${String(c.largura).replace('.', ',')} × ${String(c.altura).replace('.', ',')} mm${c.modo === 'folha' ? ` · ${_cqEtqPorFolha(c)} por folha` : ''}`; }
+// Tamanho físico impresso: em 90°/270° a etiqueta gira junto com o texto (largura e altura trocam)
+function _cqEtqFisico(c) { return c.rot === 90 || c.rot === 270 ? [c.altura, c.largura] : [c.largura, c.altura]; }
+function _cqEtqPorFolha(c) { const [w, h] = _cqEtqFisico(c); return Math.max(0, Math.floor((194 + 2) / (w + 2))) * Math.max(0, Math.floor((281 + 2) / (h + 2))); }
+function _cqEtqResumo(c) {
+  const [w, h] = _cqEtqFisico(c), f = v => String(v).replace('.', ',');
+  return `${c.modo === 'folha' ? 'Folha A4' : 'Etiquetadora'} · ${f(w)} × ${f(h)} mm${c.rot ? ` · ${c.rot}°` : ''}${c.modo === 'folha' ? ` · ${_cqEtqPorFolha(c)} por folha` : ''}`;
+}
 
 function _cqEtqDados(i, pr) {
   const fd = s => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(2, 4)}` : '—');
@@ -1673,9 +1679,15 @@ function _cqEtqDados(i, pr) {
 }
 function _cqEtqExemplo() { return { produto: 'Ágar Mueller Hinton', codigo: 'MH-2611-P06', lote: 'MH-2611', qtd: '500 mL', prep: '06/10/26', val: '03/11/26', resp: 'Maria Souza' }; }
 
-// Etiqueta com estilos inline em mm (mesma aparência na prévia e na impressão)
+// Etiqueta com estilos inline em mm (mesma aparência na prévia e na impressão). O conteúdo é montado
+// em largura × altura e gira 0/90/180/270° junto com a etiqueta (em 90°/270° a página fica altura × largura).
 function _cqEtiquetaHTML(d, cfg, folha) {
-  const W = cfg.largura, H = cfg.altura;
+  const rot = cfg.rot || 0;
+  const [fw, fh] = _cqEtqFisico(cfg);
+  const giro = rot ? `position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate(${rot}deg);` : '';
+  return `<div class="etq" style="box-sizing:border-box;position:relative;width:${fw}mm;height:${fh}mm;overflow:hidden;background:#fff;${folha ? 'border:0.2mm dashed #999;' : ''}">${_cqEtqConteudoHTML(d, cfg.largura, cfg.altura, giro)}</div>`;
+}
+function _cqEtqConteudoHTML(d, W, H, giro) {
   const pad = Math.max(1, Math.min(W, H) * 0.05);
   const iw = W - 2 * pad, ih = H - 2 * pad;
   const sw = iw / 47;                        // escala pela largura (base: 50 mm)
@@ -1697,7 +1709,7 @@ function _cqEtiquetaHTML(d, cfg, folha) {
     resp: d.resp ? lin(`Resp: ${e(d.resp)}`) : '',
     val: lin(`Val <b>${e(d.val)}</b> · L ${e(d.lote)}`),
   };
-  return `<div class="etq" style="box-sizing:border-box;width:${W}mm;height:${H}mm;padding:${pad.toFixed(2)}mm;overflow:hidden;display:flex;flex-direction:column;justify-content:center;gap:${mm(0.35)};font-family:Arial,Helvetica,sans-serif;color:#000;background:#fff;text-align:left;${folha ? 'border:0.2mm dashed #999;' : ''}">
+  return `<div style="box-sizing:border-box;width:${W}mm;height:${H}mm;padding:${pad.toFixed(2)}mm;overflow:hidden;display:flex;flex-direction:column;justify-content:center;gap:${mm(0.35)};font-family:Arial,Helvetica,sans-serif;color:#000;text-align:left;${giro}">
     <div style="font-size:${mm(3.4)};font-weight:700;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${nv.tit};word-break:break-word;">${e(d.produto)}</div>
     ${d.codigo ? `<div style="font-size:${mm(4.2)};font-weight:800;line-height:1.15;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e(d.codigo)}</div>` : ''}
     ${nv.linhas.map(k => L[k]).join('')}
@@ -1705,7 +1717,8 @@ function _cqEtiquetaHTML(d, cfg, folha) {
 }
 // Prévia ampliada (cabe em ~280 px)
 function _cqEtqPrevHTML(d, cfg) {
-  const z = Math.min(1.6, 280 / (cfg.largura * 3.7795));
+  const [fw, fh] = _cqEtqFisico(cfg);
+  const z = Math.min(1.6, 280 / (fw * 3.7795), 230 / (fh * 3.7795));
   return `<div class="cq-etq-papel" style="zoom:${z.toFixed(3)};">${_cqEtiquetaHTML(d, cfg, false)}</div><div class="cq-etq-dim">${_cqEsc(_cqEtqResumo(cfg))}</div>`;
 }
 
@@ -1724,9 +1737,18 @@ function _cqEtqCamposHTML(px, cfg) {
         <input type="number" id="${px}-a" class="field-input" min="10" max="100" step="1" value="${cfg.altura}" title="Altura (mm), 10 a 100" oninput="cqEtqMudou('${px}')">
         <span>mm</span>
       </div></div>
+    <input type="hidden" id="${px}-rot" value="${cfg.rot}">
+    <div class="form-field"><label class="field-label">Orientação</label>
+      <div class="cq-seg cq-etq-rot" id="${px}-rotseg">${[0, 90, 180, 270].map(r => `<button type="button" data-k="${r}" class="${cfg.rot === r ? 'active' : ''}" title="Girar a etiqueta ${r}°" onclick="cqEtqRot('${px}',${r})"><span class="cq-etq-rot-a" style="transform:rotate(${r}deg)">A</span>${r}°</button>`).join('')}</div></div>
   </div>`;
 }
-function _cqEtqLer(px) { return _cqEtqNorm({ modo: _cqVal(px + '-modo'), largura: _cqVal(px + '-l'), altura: _cqVal(px + '-a') }); }
+function _cqEtqLer(px) { return _cqEtqNorm({ modo: _cqVal(px + '-modo'), largura: _cqVal(px + '-l'), altura: _cqVal(px + '-a'), rot: _cqVal(px + '-rot') }); }
+function cqEtqRot(px, r) {
+  const h = document.getElementById(px + '-rot');
+  if (h) h.value = r;
+  document.querySelectorAll(`#${px}-rotseg button`).forEach(b => b.classList.toggle('active', Number(b.dataset.k) === r));
+  cqEtqMudou(px);
+}
 function cqEtqModo(px, k) {
   const h = document.getElementById(px + '-modo');
   if (h) h.value = k;
@@ -1761,7 +1783,7 @@ function _cqEtqImprimir(d, cfg, copias) {
   const folha = cfg.modo === 'folha';
   const css = folha
     ? '@page{size:A4;margin:8mm}html,body{margin:0}body{display:flex;flex-wrap:wrap;gap:2mm;align-content:flex-start}.etq{break-inside:avoid;page-break-inside:avoid}'
-    : `@page{size:${cfg.largura}mm ${cfg.altura}mm;margin:0}html,body{margin:0;padding:0}.etq{break-after:page;page-break-after:always}.etq:last-child{break-after:auto;page-break-after:auto}`;
+    : `@page{size:${_cqEtqFisico(cfg).join('mm ')}mm;margin:0}html,body{margin:0;padding:0}.etq{break-after:page;page-break-after:always}.etq:last-child{break-after:auto;page-break-after:auto}`;
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiqueta ${_cqEsc(d.codigo || d.lote)}</title>
     <style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact}${css}</style></head>
     <body>${_cqEtiquetaHTML(d, cfg, folha).repeat(copias)}<script>window.onload=()=>window.print()<\/script></body></html>`;

@@ -787,3 +787,7 @@ button.cq-g-lote:hover { border-color: var(--cyan); color: var(--cyan); backgrou
 .cq-cfg-cat { display: flex; flex-direction: column; }
 .cq-cfg-cat .cq-cfg-add { margin-top: auto; }
 .cq-cfg-tiles { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+
+/* Orientação do texto da etiqueta */
+.cq-etq-rot button { display: inline-flex; align-items: center; gap: 6px; }
+.cq-etq-rot-a { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 4px; border: 1px solid currentColor; font-size: 10px; font-weight: 800; line-height: 1; }
