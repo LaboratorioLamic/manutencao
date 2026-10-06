@@ -359,7 +359,7 @@
       <div class="topbar-actions">
         <!-- Filtro de setores (sempre visível) -->
         <button id="sector-filter-badge" class="sector-badge" style="display:none;margin-right:100px;"
-          onclick="openTopbarSectorFilter()" title="Filtrar por setor">
+          onclick="openTopbarSectorFilter()" title="Filtrar por unidade e setor">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
             style="width:13px;height:13px;flex-shrink:0;">
             <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
@@ -435,6 +435,16 @@
                 <button id="btn-editar-tipo-rotina" class="btn btn-outline btn-icon" onclick="openTipoModal()" title="Gerenciar Tipos">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 </button>
+              </div>
+
+              <div id="filter-unidade-rotina" class="autocomplete-wrapper" style="min-width:130px;display:none;">
+                <input id="filter-unidade-rotina-input" class="field-select" type="text" placeholder="Unidade (Todas)" autocomplete="off"
+                  oninput="rotinaUnidadeFilter()"
+                  onfocus="rotinaUnidadeFilter()"
+                  onblur="setTimeout(rotinaUnidadeClose,180)"
+                  style="width:100%;cursor:text;">
+                <input type="hidden" id="filter-unidade-rotina-val" value="">
+                <div class="autocomplete-dropdown" id="filter-unidade-rotina-drop"></div>
               </div>
 
               <div id="filter-setor-rotina" class="autocomplete-wrapper" style="min-width:150px;">
@@ -543,6 +553,13 @@
                       <option value="">Todos</option>
                     </select>
                   </div>
+                  <div class="agenda-filter-field" id="tarefas-filter-field-unidade" style="display:none;">
+                    <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">UNIDADE</label>
+                    <div class="agenda-autocomplete-wrap" id="wrap-tarefas-filter-unidade">
+                      <input type="text" id="tarefas-filter-unidade" class="agenda-autocomplete-input" placeholder="Todas" autocomplete="off" oninput="tabFiltroAutocomplete('tarefas','unidade')" onfocus="tabFiltroAutocomplete('tarefas','unidade')" onblur="tabFiltroAutocompleteBlur('tarefas','unidade')" onkeydown="tabFiltroAutocompleteKey(event,'tarefas','unidade')">
+                      <div class="agenda-autocomplete-list" id="tarefas-autocomplete-unidade"></div>
+                    </div>
+                  </div>
                   <div class="agenda-filter-field">
                     <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">SETOR</label>
                     <div class="agenda-autocomplete-wrap" id="wrap-tarefas-filter-setor">
@@ -620,6 +637,13 @@
                     <select id="agenda-filter-tipo" class="field-select" style="width:150px;padding:6px 30px 6px 10px;font-size:12px;" onchange="renderAgendaCalendario()">
                       <option value="">Todos</option>
                     </select>
+                  </div>
+                  <div class="agenda-filter-field" id="agenda-filter-field-unidade" style="display:none;">
+                    <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">Unidade</label>
+                    <div class="agenda-autocomplete-wrap" id="wrap-agenda-filter-unidade">
+                      <input type="text" id="agenda-filter-unidade" class="agenda-autocomplete-input" placeholder="Todas" autocomplete="off" oninput="agendaAutocomplete('unidade')" onfocus="agendaAutocomplete('unidade')" onblur="agendaAutocompleteBlur('unidade')" onkeydown="agendaAutocompleteKey(event,'unidade')">
+                      <div class="agenda-autocomplete-list" id="agenda-autocomplete-unidade"></div>
+                    </div>
                   </div>
                   <div class="agenda-filter-field">
                     <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">Setor</label>
@@ -723,6 +747,13 @@
                       <option value="">Todos</option>
                     </select>
                   </div>
+                  <div class="agenda-filter-field" id="atividades-filter-field-unidade" style="display:none;">
+                    <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">UNIDADE</label>
+                    <div class="agenda-autocomplete-wrap" id="wrap-atividades-filter-unidade">
+                      <input type="text" id="atividades-filter-unidade" class="agenda-autocomplete-input" placeholder="Todas" autocomplete="off" oninput="tabFiltroAutocomplete('atividades','unidade')" onfocus="tabFiltroAutocomplete('atividades','unidade')" onblur="tabFiltroAutocompleteBlur('atividades','unidade')" onkeydown="tabFiltroAutocompleteKey(event,'atividades','unidade')">
+                      <div class="agenda-autocomplete-list" id="atividades-autocomplete-unidade"></div>
+                    </div>
+                  </div>
                   <div class="agenda-filter-field">
                     <label class="field-label" style="margin:0;font-size:11px;white-space:nowrap;">SETOR</label>
                     <div class="agenda-autocomplete-wrap" id="wrap-atividades-filter-setor">
@@ -794,6 +825,10 @@
           <div class="rotina-nav-item" id="cnav-grupos" onclick="switchConfigTab('grupos')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="7" r="3"/><path d="M3 20c0-3.3 2.7-6 6-6"/><circle cx="17" cy="7" r="3"/><path d="M21 20c0-3.3-2.7-6-6-6"/><path d="M9 20h6"/></svg>
             Grupos de Usuários
+          </div>
+          <div class="rotina-nav-item" id="cnav-org" onclick="switchConfigTab('org')" style="display:none;">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><path d="M6.5 10v4.5a1 1 0 001 1H14"/></svg>
+            Unidades e setores
           </div>
           <div class="rotina-nav-item" id="cnav-empresas" onclick="switchConfigTab('empresas')">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -905,6 +940,17 @@
                 </tbody>
               </table>
             </div>
+          </div>
+
+          <!-- PAINEL: UNIDADES E SETORES (org.js) -->
+          <div id="cpanel-org" class="rotina-panel">
+            <div class="panel-header">
+              <div class="panel-header-left">
+                <h2>Unidades e setores</h2>
+                <p>Cada setor pertence a uma unidade. Usados em Ativos, Rotinas, OT, Ocorrências, permissões e no Controle de Qualidade</p>
+              </div>
+            </div>
+            <div id="org-gerenciador-cfg" class="cfg-card"></div>
           </div>
 
           <!-- PAINEL: EMPRESAS -->
@@ -1086,6 +1132,18 @@
                   style="width:200px;height:36px;font-size:13px;">
               </div>
             </div>
+            <div class="sector-search-wrap" id="unit-search-wrap" style="position:relative;display:none;">
+              <input id="main-unit-filter-input" type="text" class="field-input sector-search-input"
+                placeholder="Unidade (Todas)" autocomplete="off"
+                oninput="unitSearchFilter(this.value)"
+                onfocus="unitSearchOpen()"
+                onkeydown="unitSearchKey(event)"
+                style="min-width:150px;height:36px;font-size:13px;padding-right:28px;">
+              <span class="sector-search-caret" onclick="unitSearchToggle()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <div id="unit-search-dropdown" class="sector-search-dropdown" style="display:none;"></div>
+            </div>
             <div class="sector-search-wrap" id="sector-search-wrap" style="position:relative;">
               <input id="main-sector-filter-input" type="text" class="field-input sector-search-input"
                 placeholder="Setor (Todos)" autocomplete="off"
@@ -1098,7 +1156,7 @@
               </span>
               <div id="sector-search-dropdown" class="sector-search-dropdown" style="display:none;"></div>
             </div>
-            <button id="btn-editar-setor-toolbar" class="btn btn-outline btn-icon" onclick="openSetorModal()" title="Novo Setor">
+            <button id="btn-editar-setor-toolbar" class="btn btn-outline btn-icon" onclick="openSetorModal()" title="Unidades e setores">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
             <div class="sector-search-wrap" id="category-search-wrap" style="position:relative;">
@@ -2377,7 +2435,7 @@
         </div>
         <div class="form-row">
           <div class="form-field">
-            <label class="field-label">Setor <span class="required">*</span></label>
+            <label class="field-label">Unidade · Setor <span class="required">*</span></label>
             <div class="input-with-btn">
               <div class="sector-search-wrap" id="form-setor-wrap" style="position:relative;flex:1;">
                 <input id="ativo-setor-input" type="text" class="field-input sector-search-input"
@@ -2392,7 +2450,7 @@
                 <div id="form-setor-dropdown" class="sector-search-dropdown" style="display:none;"></div>
                 <input type="hidden" id="ativo-setor">
               </div>
-              <button id="btn-editar-setor-form" class="btn btn-outline btn-icon" onclick="openSetorModal()" title="Gerenciar Setores"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+              <button id="btn-editar-setor-form" class="btn btn-outline btn-icon" onclick="openSetorModal()" title="Unidades e setores"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
             </div>
           </div>
           <div class="form-field">
@@ -2507,25 +2565,37 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
         </div>
         <div>
-          <div class="modal-title" id="setor-modal-title">Gerenciar Setores</div>
-          <div class="modal-subtitle">Adicione ou edite setores</div>
+          <div class="modal-title" id="setor-modal-title">Unidades e setores</div>
+          <div class="modal-subtitle" id="setor-modal-sub">Cadastre as unidades e os setores de cada uma</div>
         </div>
       </div>
-      <button class="modal-close" onclick="closeModal('modal-setor')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+      <button class="modal-close" onclick="orgFecharGerenciador()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
     </div>
-    <div class="modal-body">
-      <div class="form-field">
-        <label class="field-label">Setores cadastrados</label>
-        <div id="setor-list" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;"></div>
-      </div>
-      <div class="form-field" style="margin-bottom:0;">
-        <label class="field-label">Nome do Setor</label>
-        <input type="text" id="input-novo-setor" class="field-input" placeholder="Ex: Laboratório">
-      </div>
-    </div>
+    <div class="modal-body" id="org-gerenciador"></div>
     <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('modal-setor')">Cancelar</button>
-      <button class="btn btn-primary" id="setor-save-btn" onclick="salvarSetor()">Adicionar</button>
+      <button class="btn btn-outline" onclick="orgFecharGerenciador()">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Janela da unidade: setores em chips (org.js) -->
+<div class="modal-overlay" id="modal-org-unidade" onclick="if(event.target===this)orgFecharUnidade()">
+  <div class="modal org-det-modal">
+    <div class="modal-header">
+      <div class="modal-header-left">
+        <div class="modal-header-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-4h6v4"/></svg>
+        </div>
+        <div>
+          <div class="modal-title" id="org-det-titulo">Unidade</div>
+          <div class="modal-subtitle" id="org-det-sub">Setores da unidade</div>
+        </div>
+      </div>
+      <button class="modal-close" onclick="orgFecharUnidade()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
+    </div>
+    <div class="modal-body" id="org-detalhe"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="orgFecharUnidade()">Fechar</button>
     </div>
   </div>
 </div>
@@ -2670,8 +2740,8 @@
           </svg>
         </div>
         <div>
-          <div class="modal-title">Selecionar Setores</div>
-          <div class="modal-subtitle" id="sector-modal-subtitle">Selecione ao menos 1 setor</div>
+          <div class="modal-title">Selecionar unidades e setores</div>
+          <div class="modal-subtitle" id="sector-modal-subtitle">Marque a unidade inteira ou setores específicos</div>
         </div>
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
@@ -3187,6 +3257,7 @@
 <script src="key.js"></script>
 <script src="upload.js"></script>
 <script src="script.js"></script>
+<script src="org.js"></script>
 <script src="arquivo.js"></script>
 <script src="agenda.js"></script>
 <script src="OT.js"></script>

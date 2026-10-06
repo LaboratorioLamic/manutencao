@@ -379,7 +379,7 @@
   }
 
   // ── CONFIG SUBTABS ──
-  const CONFIG_TABS_ORDER = ['usuario','grupos','empresas','ocorrencias','cq','backup'];
+  const CONFIG_TABS_ORDER = ['usuario','grupos','org','empresas','ocorrencias','cq','backup'];
 
   function _switchConfigTabFirst() {
     const first = CONFIG_TABS_ORDER.find(t => {
@@ -401,6 +401,7 @@
     if (tab === 'empresas') { if (typeof empRenderTable    === 'function') empRenderTable(); }
     if (tab === 'ocorrencias') { if (typeof ocRenderConfigCatalogos === 'function') ocRenderConfigCatalogos(); }
     if (tab === 'cq')       { if (typeof cqRenderConfig    === 'function') cqRenderConfig(); }
+    if (tab === 'org')      { if (typeof orgRenderGerenciador === 'function') orgRenderGerenciador(); }
   }
 
   // ── NOTIFICAÇÕES ──
@@ -448,7 +449,7 @@
     }
     const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
     const fCat   = (typeof categorySearchGetValue === 'function') ? categorySearchGetValue() : 'todas';
-    if (fSetor !== 'todos' && ativo.setor !== fSetor) return false;
+    if (!_orgAtivoPassa(ativo, _unitSearchVal, fSetor)) return false;
     if (fCat !== 'todas' && ativo.categoria !== fCat) return false;
     if (typeof _tipoSearchVal !== 'undefined' && _tipoSearchVal !== 'todos' && (ativo.tipo || 'Equipamento') !== _tipoSearchVal) return false;
     return true;
@@ -464,12 +465,13 @@
 
     const fTipo   = document.getElementById('filter-tipo')?.value || '';
     const fSetor  = document.getElementById('filter-setor-rotina-val')?.value || '';
+    const fUnidade = document.getElementById('filter-unidade-rotina-val')?.value || '';
     const fCat    = document.getElementById('filter-cat-rotina-val')?.value || '';
     const fAtivoIdx = state._ativoFiltroIdx ?? null;
 
     if (fAtivoIdx !== null && fAtivoIdx !== undefined && t.equipamentoIdx !== fAtivoIdx) return false;
     if (fTipo && rotina.tipo !== fTipo) return false;
-    if (fSetor && ativo.setor !== fSetor) return false;
+    if (!_orgAtivoPassa(ativo, fUnidade, fSetor)) return false;
     if (fCat && ativo.categoria !== fCat) return false;
 
     const rStatus = rotina.status || 'Ativo';
@@ -1217,7 +1219,7 @@
       .map((a, idx) => ({ idx, a }))
       .filter(({ a }) => a && (`${a.nome} ${a.codigo}`).toLowerCase().includes(q))
       .sort((x, y) => {
-        const sa = (x.a.setor || '').toLowerCase(), sb = (y.a.setor || '').toLowerCase();
+        const sa = _orgChaveOrdemAtivo(x.a), sb = _orgChaveOrdemAtivo(y.a);
         if (sa !== sb) return sa < sb ? -1 : 1;
         const ca = (x.a.codigo || '').toLowerCase(), cb = (y.a.codigo || '').toLowerCase();
         return ca < cb ? -1 : ca > cb ? 1 : 0;
@@ -1233,7 +1235,7 @@
       .map((a, idx) => ({ idx, a }))
       .filter(({ a }) => a)
       .sort((x, y) => {
-        const sa = (x.a.setor || '').toLowerCase(), sb = (y.a.setor || '').toLowerCase();
+        const sa = _orgChaveOrdemAtivo(x.a), sb = _orgChaveOrdemAtivo(y.a);
         if (sa !== sb) return sa < sb ? -1 : 1;
         const ca = (x.a.codigo || '').toLowerCase(), cb = (y.a.codigo || '').toLowerCase();
         return ca < cb ? -1 : ca > cb ? 1 : 0;
@@ -1271,7 +1273,7 @@
     if (!r) return;
     const ativo  = state.ativos[r.equipamentoIdx];
     document.getElementById('tinfo-tipo').textContent  = r.tipo;
-    document.getElementById('tinfo-setor').textContent = ativo?.setor || '—';
+    document.getElementById('tinfo-setor').textContent = _orgRotuloAtivo(ativo) || '—';
     document.getElementById('tinfo-cat').textContent   = ativo?.categoria || '—';
 
     infoBox.style.display = '';
@@ -1302,6 +1304,14 @@
     const keys = new Set([...Object.keys(anterior || {}), ...Object.keys(atual || {})]);
     for (const k of keys) {
       if (_DIFF_IGNORE.has(k)) continue;
+      // Setor com unidade: registrado pelo setorId ("NTO · Hematologia"), sem duplicar o nome
+      if (k === 'setor' && (anterior?.setorId || atual?.setorId)) continue;
+      if (k === 'setorId') {
+        const rA = anterior?.setorId ? _orgRotuloSetor(anterior.setorId) : (anterior?.setor || '');
+        const rB = atual?.setorId ? _orgRotuloSetor(atual.setorId) : (atual?.setor || '');
+        if (rA !== rB) diffs.push({ campo: 'Unidade · Setor', antes: rA || '—', depois: rB || '—' });
+        continue;
+      }
       const vA = JSON.stringify(anterior?.[k] ?? null);
       const vB = JSON.stringify(atual?.[k]     ?? null);
       if (vA === vB) continue;
@@ -1727,6 +1737,8 @@
     const fRotinaId  = state._rotinaFiltroTarefasId ?? null;
     const fSetor     = document.getElementById('filter-setor-rotina-val')?.value || '';
     const fTabSetor  = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('tarefas','setor') : '';
+    const fTabUnidade = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('tarefas','unidade') : '';
+    const fUnidade   = document.getElementById('filter-unidade-rotina-val')?.value || '';
     const fTabCat    = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('tarefas','cat')   : '';
     const fTabTipo   = typeof _getTabFiltroTipo === 'function' ? _getTabFiltroTipo('tarefas')       : '';
     const _sess = typeof currentSession !== 'undefined' ? currentSession : null;
@@ -1735,8 +1747,8 @@
       const ativo = state.ativos[t.equipamentoIdx];
       if (!ativo) return false;
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
-      if (fSetor && ativo.setor !== fSetor) return false;
-      if (fTabSetor && ativo.setor !== fTabSetor) return false;
+      if (!_orgAtivoPassa(ativo, fUnidade, fSetor)) return false;
+      if (!_orgAtivoPassa(ativo, fTabUnidade, fTabSetor)) return false;
       if (fTabCat   && ativo.categoria !== fTabCat) return false;
       if (fTabTipo) {
         const rotina = state.rotinas.find(r => r.id === t.rotinaId);
@@ -1923,7 +1935,7 @@
         <div class="rotina-view-grid">
           <div class="detail-card"><div class="detail-label">Frequência</div><div class="detail-value">${freqLabel}</div></div>
           <div class="detail-card"><div class="detail-label">Repetição</div><div class="detail-value">${t.frequencia === 'Sempre' ? '—' : t.repetir === 'Por' ? (t.vezes || '?') + ' vez(es)' : (t.repetir || 'Sempre')}</div></div>
-          <div class="detail-card"><div class="detail-label">Setor</div><div class="detail-value">${ativo?.setor || '—'}</div></div>
+          <div class="detail-card"><div class="detail-label">Setor</div><div class="detail-value">${_orgEsc(_orgRotuloAtivo(ativo)) || '—'}</div></div>
           <div class="detail-card"><div class="detail-label">Categoria</div><div class="detail-value">${ativo?.categoria || '—'}</div></div>
         </div>
       </div>
@@ -2874,7 +2886,7 @@
             <div style="font-weight:700;font-size:15px;color:var(--text-primary);">${ativo?.nome || '—'}</div>
             <div style="font-size:13px;color:var(--text-muted);margin-top:6px;">Código: ${ativo?.codigo || '—'}</div>
             <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
-              <span class="chip chip-gray" style="font-size:11px;">Setor: ${ativo?.setor || '—'}</span>
+              <span class="chip chip-gray" style="font-size:11px;">Setor: ${_orgEsc(_orgRotuloAtivo(ativo)) || '—'}</span>
               <span class="chip chip-gray" style="font-size:11px;">Categoria: ${ativo?.categoria || '—'}</span>
             </div>
           </div>
@@ -2971,6 +2983,8 @@
     const fRotinaId  = state._rotinaFiltroAtividadesId ?? null;
     const fSetor     = document.getElementById('filter-setor-rotina-val')?.value || '';
     const fTabSetor  = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('atividades','setor') : '';
+    const fTabUnidade = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('atividades','unidade') : '';
+    const fUnidade   = document.getElementById('filter-unidade-rotina-val')?.value || '';
     const fTabCat    = typeof _getTabFiltroVal === 'function' ? _getTabFiltroVal('atividades','cat')   : '';
     const fTabTipo   = typeof _getTabFiltroTipo === 'function' ? _getTabFiltroTipo('atividades')       : '';
     const canEdit   = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
@@ -2982,8 +2996,8 @@
       const ativo = state.ativos[t.equipamentoIdx];
       if (!ativo) return false;
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
-      if (fSetor && ativo.setor !== fSetor) return false;
-      if (fTabSetor && ativo.setor !== fTabSetor) return false;
+      if (!_orgAtivoPassa(ativo, fUnidade, fSetor)) return false;
+      if (!_orgAtivoPassa(ativo, fTabUnidade, fTabSetor)) return false;
       if (fTabCat   && ativo.categoria !== fTabCat) return false;
       if (fTabTipo) {
         const rotina = state.rotinas.find(r => r.id === t.rotinaId);
@@ -3020,8 +3034,8 @@
           ka = (ta ? state.ativos[ta.equipamentoIdx]?.nome : null)?.toLowerCase() || '';
           kb = (tb ? state.ativos[tb.equipamentoIdx]?.nome : null)?.toLowerCase() || '';
         } else if (sCol === 'setor') {
-          ka = (ta ? state.ativos[ta.equipamentoIdx]?.setor : null)?.toLowerCase() || '';
-          kb = (tb ? state.ativos[tb.equipamentoIdx]?.setor : null)?.toLowerCase() || '';
+          ka = ta ? _orgChaveOrdemAtivo(state.ativos[ta.equipamentoIdx]) : '';
+          kb = tb ? _orgChaveOrdemAtivo(state.ativos[tb.equipamentoIdx]) : '';
         } else if (sCol === 'categoria') {
           ka = (ta ? state.ativos[ta.equipamentoIdx]?.categoria : null)?.toLowerCase() || '';
           kb = (tb ? state.ativos[tb.equipamentoIdx]?.categoria : null)?.toLowerCase() || '';
@@ -3064,7 +3078,7 @@
           <div style="font-weight:500;">${ativo?.nome || '—'}</div>
           <div style="font-size:11px;color:var(--text-muted);font-family:'DM Mono',monospace;">${ativo?.codigo || ''}</div>
         </td>
-        <td><span class="chip chip-gray">${ativo?.setor || '—'}</span></td>
+        <td><span class="chip chip-gray">${_orgEsc(_orgRotuloAtivo(ativo)) || '—'}</span></td>
         <td><span class="chip chip-gray">${ativo?.categoria || '—'}</span></td>
         <td style="font-size:12px;color:var(--text-muted);">${formatDate(p.dataPublicacao)}</td>
         <td style="font-size:12.5px;">${p.publicadoPorNome || '<span style="color:var(--text-muted)">—</span>'}</td>
@@ -3241,6 +3255,7 @@
     if (!tbody) return;
     const fTipo   = document.getElementById('filter-tipo')?.value || '';
     const fSetor  = document.getElementById('filter-setor-rotina-val')?.value || '';
+    const fUnidade = document.getElementById('filter-unidade-rotina-val')?.value || '';
     const fCat    = document.getElementById('filter-cat-rotina-val')?.value || '';
     const fAtivoIdx = state._ativoFiltroIdx ?? null;
 
@@ -3251,7 +3266,7 @@
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(ativo)) return false;
       if (fAtivoIdx !== null && r.equipamentoIdx !== fAtivoIdx) return false;
       if (fTipo && r.tipo !== fTipo) return false;
-      if (fSetor && ativo.setor !== fSetor) return false;
+      if (!_orgAtivoPassa(ativo, fUnidade, fSetor)) return false;
       if (fCat && ativo.categoria !== fCat) return false;
       const rStatus = r.status || 'Ativo';
       if (_rotinaStatusFilter === 'ativo' && rStatus !== 'Ativo') return false;
@@ -3264,7 +3279,7 @@
       if (rSCol === 'nome')       { ka = a.nome?.toLowerCase() || '';          kb = b.nome?.toLowerCase() || ''; }
       else if (rSCol === 'equipamento') { ka = ativoA?.nome?.toLowerCase() || ''; kb = ativoB?.nome?.toLowerCase() || ''; }
       else if (rSCol === 'tipo')  { ka = a.tipo?.toLowerCase() || '';           kb = b.tipo?.toLowerCase() || ''; }
-      else if (rSCol === 'setor') { ka = ativoA?.setor?.toLowerCase() || '';    kb = ativoB?.setor?.toLowerCase() || ''; }
+      else if (rSCol === 'setor') { ka = _orgChaveOrdemAtivo(ativoA);    kb = _orgChaveOrdemAtivo(ativoB); }
       else if (rSCol === 'categoria') { ka = ativoA?.categoria?.toLowerCase() || ''; kb = ativoB?.categoria?.toLowerCase() || ''; }
       else { ka = kb = ''; }
       const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
@@ -3316,7 +3331,7 @@
           <div style="font-size:11px;color:var(--text-muted);font-family:'DM Mono',monospace;">${ativo?.codigo || ''}</div>
         </td>
         <td><span class="chip ${clChip}">${r.tipo}</span></td>
-        <td><span class="chip chip-gray">${ativo?.setor || '—'}</span></td>
+        <td><span class="chip chip-gray">${_orgEsc(_orgRotuloAtivo(ativo)) || '—'}</span></td>
         <td><span class="chip chip-gray">${ativo?.categoria || '—'}</span></td>
         <td>${nItems > 0
           ? `<span class="chip chip-green"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:11px;height:11px;"><polyline points="9 11 12 14 22 4"/></svg>${nItems} item${nItems>1?'s':''}</span>`
@@ -3355,8 +3370,10 @@
     }
     // Ocultar filtros de setor/categoria quando um ativo está selecionado
     const setorEl = document.getElementById('filter-setor-rotina');
+    const unEl    = document.getElementById('filter-unidade-rotina');
     const catEl   = document.getElementById('filter-cat-rotina');
     if (setorEl) setorEl.style.display = ativo ? 'none' : '';
+    if (unEl)    unEl.style.display    = (ativo || !_orgMigrado()) ? 'none' : '';
     if (catEl)   catEl.style.display   = ativo ? 'none' : '';
     _rotinasPage = 0;
     renderRotinasTable();
@@ -3598,18 +3615,21 @@
     const fSetorRotina = (_ativoSelectorCtx === 'rotinas')
       ? (document.getElementById('filter-setor-rotina-val')?.value || '')
       : '';
+    const fUnidadeRotina = (_ativoSelectorCtx === 'rotinas')
+      ? (document.getElementById('filter-unidade-rotina-val')?.value || '')
+      : '';
     const found = state.ativos
       .map((a, i) => ({ a, i }))
       .filter(({ a }) => {
         // Respeita filtro da topbar (permissões + seleção de setor da topbar)
         if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(a)) return false;
         // Respeita setor selecionado no dropdown do módulo
-        if (fSetorRotina && a.setor !== fSetorRotina) return false;
-        return !q || a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q) || a.setor.toLowerCase().includes(q);
+        if (!_orgAtivoPassa(a, fUnidadeRotina, fSetorRotina)) return false;
+        return !q || (a.nome || '').toLowerCase().includes(q) || (a.codigo || '').toLowerCase().includes(q) || _orgRotuloAtivo(a).toLowerCase().includes(q);
       })
       .sort((x, y) => {
-        const sa = (x.a.setor || '').toLowerCase();
-        const sb = (y.a.setor || '').toLowerCase();
+        const sa = _orgChaveOrdemAtivo(x.a);
+        const sb = _orgChaveOrdemAtivo(y.a);
         if (sa !== sb) return sa < sb ? -1 : 1;
         const ca = (x.a.codigo || '').toLowerCase();
         const cb = (y.a.codigo || '').toLowerCase();
@@ -3630,7 +3650,7 @@
         </div>
         <div>
           <div class="ativo-search-card-name">${a.nome}</div>
-          <div class="ativo-search-card-meta">${a.codigo} &bull; ${a.setor} &bull; ${a.categoria}</div>
+          <div class="ativo-search-card-meta">${a.codigo} &bull; ${_orgEsc(_orgRotuloAtivo(a))} &bull; ${a.categoria}</div>
         </div>
       </div>`).join('');
   }
@@ -3800,7 +3820,7 @@
         a.statusUso !== 'em_desuso' &&
         (a.nome.toLowerCase().includes(q) || a.codigo.toLowerCase().includes(q)))
       .sort((x, y) => {
-        const sa = (x.a.setor || '').toLowerCase(), sb = (y.a.setor || '').toLowerCase();
+        const sa = _orgChaveOrdemAtivo(x.a), sb = _orgChaveOrdemAtivo(y.a);
         if (sa !== sb) return sa < sb ? -1 : 1;
         const ca = (x.a.codigo || '').toLowerCase(), cb = (y.a.codigo || '').toLowerCase();
         return ca < cb ? -1 : ca > cb ? 1 : 0;
@@ -3815,7 +3835,7 @@
           </div>
           <div>
             <div class="autocomplete-opt-name">${a.nome}</div>
-            <div class="autocomplete-opt-meta">${a.codigo} &bull; ${a.setor} &bull; ${a.categoria}</div>
+            <div class="autocomplete-opt-meta">${a.codigo} &bull; ${_orgEsc(_orgRotuloAtivo(a))} &bull; ${a.categoria}</div>
           </div>
         </div>`).join('');
     }
@@ -3839,7 +3859,7 @@
     const s = document.getElementById('rotina-setor-display');
     const c = document.getElementById('rotina-cat-display');
     if (ativo) {
-      s.innerHTML = `<span class="read-field-badge">${ativo.setor}</span>`;
+      s.innerHTML = `<span class="read-field-badge">${_orgEsc(_orgRotuloAtivo(ativo))}</span>`;
       c.innerHTML = `<span class="read-field-badge">${ativo.categoria}</span>`;
     } else {
       s.innerHTML = `<span class="read-field-placeholder">— automático —</span>`;
@@ -4063,7 +4083,7 @@
       <div class="rotina-view-grid">
         <div class="detail-card"><div class="detail-label">Equipamento</div><div class="detail-value">${ativo?.nome||'—'}</div></div>
         <div class="detail-card"><div class="detail-label">Código</div><div class="detail-value" style="font-family:'DM Mono',monospace;">${ativo?.codigo||'—'}</div></div>
-        <div class="detail-card"><div class="detail-label">Setor</div><div class="detail-value">${ativo?.setor||'—'}</div></div>
+        <div class="detail-card"><div class="detail-label">Setor</div><div class="detail-value">${_orgEsc(_orgRotuloAtivo(ativo)) || '—'}</div></div>
         <div class="detail-card"><div class="detail-label">Categoria</div><div class="detail-value">${ativo?.categoria||'—'}</div></div>
       </div>
       ${r.checklist?.length > 0 ? `
@@ -4303,14 +4323,24 @@
   }
 
   // ── FILTROS DA ABA ROTINA ──
+  // Valores: ids de setor/unidade (org.js); o campo mostra o rótulo
   let _rotinaSetorOpts = [];
   let _rotinaCatOpts = [];
 
   function atualizarFiltrosRotina() {
-    const raw = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
-    _rotinaSetorOpts = [...raw].sort((a, b) => a.localeCompare(b, 'pt'));
+    _rotinaSetorOpts = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : [];
     _rotinaCatOpts = [...state.categorias].sort((a, b) => a.localeCompare(b, 'pt'));
+    const unEl = document.getElementById('filter-unidade-rotina');
+    if (unEl && state._ativoFiltroIdx == null) unEl.style.display = _orgMigrado() ? '' : 'none';
+    // Setor fora da unidade escolhida (ou que saiu da topbar) volta para "Todos"
+    const hid = document.getElementById('filter-setor-rotina-val');
+    if (hid?.value && (!_rotinaSetorOpts.includes(hid.value) || !_orgSetorNaUnidade(hid.value, document.getElementById('filter-unidade-rotina-val')?.value || ''))) {
+      hid.value = '';
+      const inp = document.getElementById('filter-setor-rotina-input'); if (inp) inp.value = '';
+    }
   }
+
+  function _rotinaSetorRotulo(id) { return id ? _orgRotuloSetor(id, { semUnidade: !!document.getElementById('filter-unidade-rotina-val')?.value }) : ''; }
 
   function rotinaSetorFilter() {
     const input = document.getElementById('filter-setor-rotina-input');
@@ -4322,10 +4352,12 @@
       const hidden = document.getElementById('filter-setor-rotina-val');
       if (hidden && hidden.value !== '') { hidden.value = ''; renderRotinasTable(); updateNotifBadge(); }
     }
-    const matches = q ? _rotinaSetorOpts.filter(s => s.toLowerCase().includes(q)) : _rotinaSetorOpts;
+    const fUn = document.getElementById('filter-unidade-rotina-val')?.value || '';
+    const opts = _orgOpcoesSetores(_rotinaSetorOpts, fUn);
+    const matches = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
     drop.innerHTML = [
       `<div class="autocomplete-opt" onmousedown="rotinaSetorSelect('')"><em style="color:var(--text-muted)">Todos os setores</em></div>`,
-      ...matches.map(s => `<div class="autocomplete-opt" onmousedown="rotinaSetorSelect('${s.replace(/'/g,"\\'")}')"><div class="autocomplete-opt-name">${s}</div></div>`)
+      ...matches.map(o => `<div class="autocomplete-opt" onmousedown="rotinaSetorSelect('${_orgJsAttr(o.value)}')"><div class="autocomplete-opt-name">${_orgEsc(o.label)}</div></div>`)
     ].join('');
     drop.classList.add('open');
   }
@@ -4334,10 +4366,10 @@
     const input = document.getElementById('filter-setor-rotina-input');
     const hidden = document.getElementById('filter-setor-rotina-val');
     const drop = document.getElementById('filter-setor-rotina-drop');
-    if (input) input.value = val;
+    if (input) input.value = _rotinaSetorRotulo(val);
     if (hidden) hidden.value = val;
     if (drop) drop.classList.remove('open');
-    renderRotinasTable(); updateNotifBadge();
+    renderRotinasTable(); renderTarefasTable(); renderAtividadesTable(); updateNotifBadge();
   }
 
   function rotinaSetorClose() {
@@ -4346,7 +4378,47 @@
     // restaura texto ao valor selecionado se digitou algo inválido
     const input = document.getElementById('filter-setor-rotina-input');
     const hidden = document.getElementById('filter-setor-rotina-val');
-    if (input && hidden) input.value = hidden.value;
+    if (input && hidden) input.value = _rotinaSetorRotulo(hidden.value);
+  }
+
+  function rotinaUnidadeFilter() {
+    const input = document.getElementById('filter-unidade-rotina-input');
+    const drop = document.getElementById('filter-unidade-rotina-drop');
+    if (!input || !drop) return;
+    const q = input.value.trim().toLowerCase();
+    if (!q) {
+      const hidden = document.getElementById('filter-unidade-rotina-val');
+      if (hidden && hidden.value !== '') { rotinaUnidadeSelect(''); drop.classList.add('open'); }
+    }
+    const opts = _orgUnidadesDosSetores(_rotinaSetorOpts);
+    const matches = q ? opts.filter(o => (o.label + ' ' + o.sub).toLowerCase().includes(q)) : opts;
+    drop.innerHTML = [
+      `<div class="autocomplete-opt" onmousedown="rotinaUnidadeSelect('')"><em style="color:var(--text-muted)">Todas as unidades</em></div>`,
+      ...matches.map(o => `<div class="autocomplete-opt" onmousedown="rotinaUnidadeSelect('${_orgJsAttr(o.value)}')"><div class="autocomplete-opt-name">${_orgEsc(o.label)}${o.sub ? ` <small style="color:var(--text-muted)">${_orgEsc(o.sub)}</small>` : ''}</div></div>`)
+    ].join('');
+    drop.classList.add('open');
+  }
+
+  function _rotinaUnidadeRotulo(id) { return id === '__sem__' ? 'Sem unidade' : (id ? _orgSiglaUnidade(id) : ''); }
+
+  function rotinaUnidadeSelect(val) {
+    const input = document.getElementById('filter-unidade-rotina-input');
+    const hidden = document.getElementById('filter-unidade-rotina-val');
+    const drop = document.getElementById('filter-unidade-rotina-drop');
+    if (input) input.value = _rotinaUnidadeRotulo(val);
+    if (hidden) hidden.value = val;
+    if (drop) drop.classList.remove('open');
+    atualizarFiltrosRotina();
+    rotinaSetorClose();
+    renderRotinasTable(); renderTarefasTable(); renderAtividadesTable(); updateNotifBadge();
+  }
+
+  function rotinaUnidadeClose() {
+    const drop = document.getElementById('filter-unidade-rotina-drop');
+    if (drop) drop.classList.remove('open');
+    const input = document.getElementById('filter-unidade-rotina-input');
+    const hidden = document.getElementById('filter-unidade-rotina-val');
+    if (input && hidden) input.value = _rotinaUnidadeRotulo(hidden.value);
   }
 
   function rotinaCatFilter() {
@@ -4463,14 +4535,9 @@
   }
 
   let ativoEdicaoIndex = null;
-  let setorEdicaoIndex = -1;
   let categoriaEdicaoIndex = -1;
 
-  function openSetorModal(index = -1) {
-    setorEdicaoIndex = index;
-    renderSetorModal();
-    openModal('modal-setor');
-  }
+  // openSetorModal: ver org.js (Unidades e setores)
 
   function openCategoriaModal(index = -1) {
     categoriaEdicaoIndex = index;
@@ -4498,11 +4565,11 @@
       const ativo = state.ativos[index];
       document.getElementById('ativo-nome').value = ativo.nome;
       document.getElementById('ativo-codigo').value = ativo.codigo;
-      document.getElementById('ativo-setor').value = ativo.setor;
+      document.getElementById('ativo-setor').value = _orgSetorDoAtivo(ativo) ? _orgSetorIdDoAtivo(ativo) : '';
       document.getElementById('ativo-categoria').value = ativo.categoria;
       const tipo = ativo.tipo || 'Equipamento';
       document.getElementById('ativo-tipo').value = tipo;
-      const si2 = document.getElementById('ativo-setor-input'); if (si2) si2.value = ativo.setor || '';
+      const si2 = document.getElementById('ativo-setor-input'); if (si2) si2.value = _orgSetorDoAtivo(ativo) ? _orgRotuloAtivo(ativo) : '';
       const ci2 = document.getElementById('ativo-categoria-input'); if (ci2) ci2.value = ativo.categoria || '';
       document.getElementById('ativo-marca').value = ativo.marca !== '-' ? ativo.marca : '';
       document.getElementById('ativo-modelo').value = ativo.modelo !== '-' ? ativo.modelo : '';
@@ -4525,7 +4592,7 @@
     _ativoAtivPage = 0;
     const ativo = state.ativos[index];
     document.getElementById('visualizar-title').textContent = ativo.nome;
-    document.getElementById('visualizar-subtitle').textContent = `${ativo.setor} · ${ativo.categoria}`;
+    document.getElementById('visualizar-subtitle').textContent = `${_orgRotuloAtivo(ativo)} · ${ativo.categoria}`;
 
     document.getElementById('visualizar-body').innerHTML = `
       <div class="view-hero">
@@ -4536,7 +4603,7 @@
         </div>
         <div class="view-badges">
           ${ativo.tipo && ativo.tipo !== 'Equipamento' ? `<span class="view-badge" style="background:rgba(99,102,241,0.1);color:#6366f1;border-color:rgba(99,102,241,0.3);">${ativo.tipo}</span>` : ''}
-          <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${ativo.setor}</span>
+          <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${_orgEsc(_orgRotuloAtivo(ativo))}</span>
           <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>${ativo.categoria}</span>
           ${ativo.statusUso === 'em_pausa'
             ? `<span class="view-badge" style="background:rgba(244,162,97,0.12);color:#b45309;border-color:#f4a261;">
@@ -4936,24 +5003,6 @@
     openAtivoModal(ativoEdicaoIndex);
   }
 
-  function renderSetorModal() {
-    const container = document.getElementById('setor-list');
-    const sorted = state.setores.map((s, i) => ({ s, i })).sort((a, b) => a.s.localeCompare(b.s, 'pt'));
-    container.innerHTML = sorted.length === 0
-      ? `<div style="grid-column:1/-1;text-align:center;padding:12px 0;color:var(--text-muted);font-size:13px;">Nenhum setor cadastrado.</div>`
-      : sorted.map(({ s: setor, i: index }) => `
-      <div class="setor-chip${setorEdicaoIndex === index ? ' editing' : ''}">
-        <span class="setor-chip-name" title="${setor}">${setor}</span>
-        <span class="setor-chip-actions">
-          <button onclick="openSetorModal(${index})" title="Editar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 113 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>
-          <button onclick="removerSetor(${index})" title="Excluir"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
-        </span>
-      </div>
-    `).join('');
-    document.getElementById('input-novo-setor').value = setorEdicaoIndex >= 0 ? state.setores[setorEdicaoIndex] : '';
-    document.getElementById('setor-save-btn').textContent = setorEdicaoIndex >= 0 ? 'Salvar' : 'Adicionar';
-  }
-
   function renderCategoriaModal() {
     const container = document.getElementById('categoria-list');
     const sorted = state.categorias.map((c, i) => ({ c, i })).sort((a, b) => a.c.localeCompare(b.c, 'pt'));
@@ -4972,17 +5021,6 @@
     document.getElementById('categoria-save-btn').textContent = categoriaEdicaoIndex >= 0 ? 'Salvar' : 'Adicionar';
   }
 
-  function removerSetor(index) {
-    const nome = state.setores[index];
-    const emUso = state.ativos.some(a => a.setor === nome);
-    if (emUso) { showToast('Não é possível excluir: há ativos cadastrados neste setor.', 'error'); return; }
-    state.setores.splice(index, 1);
-    saveState();
-    atualizarSelects();
-    setorEdicaoIndex = -1;
-    renderSetorModal();
-  }
-
   function removerCategoria(index) {
     const nome = state.categorias[index];
     const emUso = state.ativos.some(a => a.categoria === nome);
@@ -4995,38 +5033,14 @@
   }
 
   function atualizarSelects() {
-    const raw = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : state.setores;
-    const setores = [...raw].sort((a, b) => a.localeCompare(b, 'pt'));
+    const setores = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : [];
     sectorSearchSetOptions(setores);
-    formSetorSetOptions(setores);
+    formSetorSetOptions(setores.filter(id => _orgSetor(id)?.ativo !== false));
     const cats = [...state.categorias].sort((a, b) => a.localeCompare(b, 'pt'));
     formCategoriaSetOptions(cats);
     atualizarFiltrosRotina();
     populateTipoSelect();
     updateAtivosFiltroBtn();
-  }
-
-  function salvarSetor() {
-    const val = document.getElementById('input-novo-setor').value.trim();
-    if (!val) return;
-    if (setorEdicaoIndex >= 0) {
-      const oldVal = state.setores[setorEdicaoIndex];
-      if (oldVal && oldVal !== val) {
-        state.ativos.forEach(a => { if (a.setor === oldVal) a.setor = val; });
-      }
-      state.setores[setorEdicaoIndex] = val;
-    } else if (!state.setores.includes(val)) {
-      state.setores.push(val);
-    }
-    saveState();
-    atualizarSelects();
-    document.getElementById('input-novo-setor').value = '';
-    const wasEditing = setorEdicaoIndex >= 0;
-    setorEdicaoIndex = -1;
-    renderSetorModal();
-    if (wasEditing) closeModal('modal-setor');
-    document.getElementById('input-novo-setor')?.focus();
-    showToast('Setor salvo!', 'success');
   }
 
   function salvarCategoria() {
@@ -5058,7 +5072,8 @@
     if (!isNew && !_can('ativos.editar')) { showToast('Sem permissão para editar ativos.', 'error'); return; }
     const nome = document.getElementById('ativo-nome').value.trim();
     const codigo = document.getElementById('ativo-codigo').value.trim();
-    const setor = document.getElementById('ativo-setor').value;
+    const setorRec = _orgSetor(document.getElementById('ativo-setor').value);
+    const setor = setorRec ? setorRec.nome : '';
     const categoria = document.getElementById('ativo-categoria').value;
     
     if(!nome || !codigo || !setor || !categoria) {
@@ -5085,6 +5100,8 @@
     const ativo = {
       id: ativoExistente?.id || uid(),
       nome, codigo, setor, categoria, tipo,
+      // Depois da organização em unidades o vínculo é pelo id (o nome fica para exibição)
+      setorId: setorRec && !setorRec.virtual ? setorRec.id : undefined,
       marca: tipo === 'Equipamento' ? (document.getElementById('ativo-marca').value.trim() || "-") : "-",
       modelo: tipo === 'Equipamento' ? (document.getElementById('ativo-modelo').value.trim() || "-") : "-",
       serie: tipo === 'Equipamento' ? (document.getElementById('ativo-serie').value.trim() || "-") : "-",
@@ -5287,14 +5304,32 @@
 
   const ATIVO_TIPOS = ['Equipamento', 'Infraestrutura', 'Procedimento', 'Diversos'];
 
+  // Valores do filtro de setor: ids (org.js); o campo mostra o rótulo
   function sectorSearchSetOptions(setores) {
     _sectorSearchOpts = setores;
     // Mantém valor atual se ainda existe, senão reseta
     if (_sectorSearchVal !== 'todos' && !setores.includes(_sectorSearchVal)) {
       _sectorSearchVal = 'todos';
-      const inp = document.getElementById('main-sector-filter-input');
-      if (inp) inp.value = '';
     }
+    if (_unitSearchVal !== 'todas' && !_orgUnidadesDosSetores(setores).some(o => o.value === _unitSearchVal)) {
+      _unitSearchVal = 'todas';
+    }
+    _sectorSearchSyncInputs();
+  }
+
+  function _sectorSearchRotulo(val) {
+    return val === 'todos' ? '' : _orgRotuloSetor(val, { semUnidade: _unitSearchVal !== 'todas' });
+  }
+  function _unitSearchRotulo(val) {
+    return val === 'todas' ? '' : (val === '__sem__' ? 'Sem unidade' : _orgSiglaUnidade(val));
+  }
+  function _sectorSearchSyncInputs() {
+    const inp = document.getElementById('main-sector-filter-input');
+    if (inp && document.activeElement !== inp) inp.value = _sectorSearchRotulo(_sectorSearchVal);
+    const uinp = document.getElementById('main-unit-filter-input');
+    if (uinp && document.activeElement !== uinp) uinp.value = _unitSearchRotulo(_unitSearchVal);
+    const uwrap = document.getElementById('unit-search-wrap');
+    if (uwrap) uwrap.style.display = _orgMigrado() ? '' : 'none';
   }
 
   function sectorSearchGetValue() {
@@ -5303,8 +5338,7 @@
 
   function sectorSearchSetValue(val) {
     _sectorSearchVal = val;
-    const inp = document.getElementById('main-sector-filter-input');
-    if (inp) inp.value = val === 'todos' ? '' : val;
+    _sectorSearchSyncInputs();
   }
 
   let _sectorSearchClickBound = false;
@@ -5316,6 +5350,7 @@
     if (!_sectorSearchClickBound) {
       document.addEventListener('mousedown', (e) => {
         if (!e.target.closest('#sector-search-wrap')) _sectorSearchClose();
+        if (!e.target.closest('#unit-search-wrap')) _unitSearchClose();
       });
       _sectorSearchClickBound = true;
     }
@@ -5343,42 +5378,47 @@
     if (e.key === 'Escape') { _sectorSearchClose(); e.target.blur(); }
     if (e.key === 'Enter') {
       const first = document.querySelector('#sector-search-dropdown .sector-dd-item');
-      if (first) first.click();
+      if (first) first.dispatchEvent(new MouseEvent('mousedown'));
     }
   }
 
-  function _getSectorOptsFromAtivos() {
+  // Ativos visíveis no subtab, na topbar e na categoria escolhida
+  function _ativosVisiveisParaFiltro(ignorarUnidade) {
     const fCat = _categorySearchVal;
-    const visible = state.ativos.filter(a => {
+    return state.ativos.filter(a => {
       if (_ativosSubtab === 'em_desuso') { if (a.statusUso !== 'em_desuso') return false; }
       else { if (a.statusUso === 'em_desuso') return false; }
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(a)) return false;
       if (fCat !== 'todas' && a.categoria !== fCat) return false;
+      if (!ignorarUnidade && !_orgAtivoPassa(a, _unitSearchVal, '')) return false;
       return true;
     });
-    const setores = [...new Set(visible.map(a => a.setor).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
+  }
+
+  function _getSectorOptsFromAtivos() {
+    const setores = new Set(_ativosVisiveisParaFiltro(false).map(a => _orgSetorIdDoAtivo(a)).filter(Boolean));
     // mantém apenas os que estão em _sectorSearchOpts (respeita filtro de topbar)
-    return _sectorSearchOpts.filter(s => setores.includes(s));
+    return _sectorSearchOpts.filter(s => setores.has(s));
   }
 
   function _sectorSearchRenderDropdown(q) {
     const dd = document.getElementById('sector-search-dropdown');
     if (!dd) return;
     const opts = [{ val: 'todos', label: 'Todos os setores' },
-      ..._getSectorOptsFromAtivos().map(s => ({ val: s, label: s }))];
+      ..._orgOpcoesSetores(_getSectorOptsFromAtivos(), _unitSearchVal === 'todas' ? '' : _unitSearchVal).map(o => ({ val: o.value, label: o.label }))];
     const filtered = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
     dd.innerHTML = filtered.length === 0
       ? `<div class="sector-dd-empty">Nenhum setor encontrado</div>`
       : filtered.map(o => `<div class="sector-dd-item${_sectorSearchVal === o.val ? ' active' : ''}"
-          onmousedown="sectorSearchSelect('${o.val.replace(/'/g,"\\'")}',event)">${o.label}</div>`).join('');
+          onmousedown="sectorSearchSelect('${_orgJsAttr(o.val)}',event)">${_orgEsc(o.label)}</div>`).join('');
   }
 
   function sectorSearchSelect(val, event) {
     if (event) event.preventDefault();
     _sectorSearchVal = val;
-    const inp = document.getElementById('main-sector-filter-input');
-    if (inp) inp.value = val === 'todos' ? '' : val;
     _sectorSearchClose();
+    document.getElementById('main-sector-filter-input')?.blur();
+    _sectorSearchSyncInputs();
     // Reseta filtro de categoria se não existir nas novas opções
     if (_categorySearchVal !== 'todas') {
       const newCats = _getCategoryOptsFromAtivos();
@@ -5397,6 +5437,77 @@
     if (dd) dd.style.display = 'none';
   }
 
+  // ── UNIT SEARCH (filtro de unidade na aba Ativos, em par com o de setor) ──
+  let _unitSearchVal = 'todas';
+
+  function unitSearchOpen() {
+    _unitSearchRenderDropdown('');
+    const dd = document.getElementById('unit-search-dropdown');
+    if (dd) dd.style.display = '';
+    if (!_sectorSearchClickBound) sectorSearchOpen(), _sectorSearchClose();
+  }
+
+  function unitSearchToggle() {
+    const dd = document.getElementById('unit-search-dropdown');
+    if (!dd) return;
+    if (dd.style.display === 'none' || !dd.style.display) {
+      document.getElementById('main-unit-filter-input')?.focus();
+      unitSearchOpen();
+    } else {
+      _unitSearchClose();
+    }
+  }
+
+  function unitSearchFilter(q) {
+    if (!q.trim() && _unitSearchVal !== 'todas') unitSearchSelect('todas', null);
+    _unitSearchRenderDropdown(q.toLowerCase());
+    const dd = document.getElementById('unit-search-dropdown');
+    if (dd) dd.style.display = '';
+  }
+
+  function unitSearchKey(e) {
+    if (e.key === 'Escape') { _unitSearchClose(); e.target.blur(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#unit-search-dropdown .sector-dd-item');
+      if (first) first.dispatchEvent(new MouseEvent('mousedown'));
+    }
+  }
+
+  function _unitSearchRenderDropdown(q) {
+    const dd = document.getElementById('unit-search-dropdown');
+    if (!dd) return;
+    const setores = new Set(_ativosVisiveisParaFiltro(true).map(a => _orgSetorIdDoAtivo(a)).filter(Boolean));
+    const opts = [{ val: 'todas', label: 'Todas as unidades', sub: '' },
+      ..._orgUnidadesDosSetores(_sectorSearchOpts.filter(s => setores.has(s))).map(o => ({ val: o.value, label: o.label, sub: o.sub }))];
+    const filtered = q ? opts.filter(o => (o.label + ' ' + o.sub).toLowerCase().includes(q)) : opts;
+    dd.innerHTML = filtered.length === 0
+      ? `<div class="sector-dd-empty">Nenhuma unidade encontrada</div>`
+      : filtered.map(o => `<div class="sector-dd-item${_unitSearchVal === o.val ? ' active' : ''}"
+          onmousedown="unitSearchSelect('${_orgJsAttr(o.val)}',event)">${_orgEsc(o.label)}${o.sub ? ` <small style="color:var(--text-muted)">${_orgEsc(o.sub)}</small>` : ''}</div>`).join('');
+  }
+
+  function unitSearchSelect(val, event) {
+    if (event) event.preventDefault();
+    _unitSearchVal = val;
+    // Setor escolhido fora da nova unidade volta para "Todos"
+    if (_sectorSearchVal !== 'todos' && !_orgSetorNaUnidade(_sectorSearchVal, val === 'todas' ? '' : val)) _sectorSearchVal = 'todos';
+    _unitSearchClose();
+    document.getElementById('main-unit-filter-input')?.blur();
+    _sectorSearchSyncInputs();
+    if (_categorySearchVal !== 'todas' && !_getCategoryOptsFromAtivos().includes(_categorySearchVal)) {
+      _categorySearchVal = 'todas';
+      const cinp = document.getElementById('main-category-filter-input');
+      if (cinp) cinp.value = '';
+    }
+    renderCards();
+    if (typeof updateNotifBadge === 'function') updateNotifBadge();
+  }
+
+  function _unitSearchClose() {
+    const dd = document.getElementById('unit-search-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+
   // ── CATEGORY SEARCH (filtro digitável de categoria na aba Ativos) ──
   let _categorySearchClickBound = false;
 
@@ -5408,7 +5519,7 @@
       if (_ativosSubtab === 'em_desuso') { if (a.statusUso !== 'em_desuso') return false; }
       else { if (a.statusUso === 'em_desuso') return false; }
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(a)) return false;
-      if (fSetor !== 'todos' && a.setor !== fSetor) return false;
+      if (!_orgAtivoPassa(a, _unitSearchVal, fSetor)) return false;
       return true;
     });
     const cats = [...new Set(visible.map(a => a.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
@@ -5597,17 +5708,23 @@
     const dd = document.getElementById('form-setor-dropdown');
     if (!dd) return;
     const curVal = document.getElementById('ativo-setor').value;
-    const filtered = q ? _formSetorOpts.filter(s => s.toLowerCase().includes(q)) : _formSetorOpts;
+    const opts = _orgOpcoesSetores(_formSetorOpts, '');
+    const filtered = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
+    let grupo = null;
     dd.innerHTML = filtered.length === 0
       ? `<div class="sector-dd-empty">Nenhum setor encontrado</div>`
-      : filtered.map(s => `<div class="sector-dd-item${curVal === s ? ' active' : ''}"
-          onmousedown="formSetorSelect('${s.replace(/'/g,"\\'")}',event)">${s}</div>`).join('');
+      : filtered.map(o => {
+          const head = _orgMigrado() && o.unidade !== grupo ? `<div class="sector-dd-group">${_orgEsc(o.unidade || 'Sem unidade')}</div>` : '';
+          grupo = o.unidade;
+          return head + `<div class="sector-dd-item${curVal === o.value ? ' active' : ''}"
+          onmousedown="formSetorSelect('${_orgJsAttr(o.value)}',event)">${_orgEsc(_orgMigrado() ? _orgRotuloSetor(o.value, { semUnidade: true }) : o.label)}</div>`;
+        }).join('');
   }
 
   function formSetorSelect(val, event) {
     if (event) event.preventDefault();
     document.getElementById('ativo-setor').value = val;
-    document.getElementById('ativo-setor-input').value = val;
+    document.getElementById('ativo-setor-input').value = _orgRotuloSetor(val);
     _formSetorClose();
   }
 
@@ -5729,6 +5846,7 @@
     }).map(a => a.tipo || 'Equipamento'))];
     const tipoWrap = document.getElementById('tipo-filter-wrap');
     if (tipoWrap) tipoWrap.style.display = tiposUsados.length > 1 ? '' : 'none';
+    _sectorSearchSyncInputs();
 
     const filtrados = state.ativos
       .map((item, index) => ({ item, index }))
@@ -5740,7 +5858,7 @@
           if (item.statusUso === 'em_desuso') return false;
         }
         if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(item)) return false;
-        const matchSetor = fSetor === 'todos' || item.setor === fSetor;
+        const matchSetor = _orgAtivoPassa(item, _unitSearchVal, fSetor);
         const matchCat = fCat === 'todas' || item.categoria === fCat;
         const matchTipo = _tipoSearchVal === 'todos' || (item.tipo || 'Equipamento') === _tipoSearchVal;
         if (!matchSetor || !matchCat || !matchTipo) return false;
@@ -5751,8 +5869,8 @@
         return true;
       })
       .sort((x, y) => {
-        const sa = (x.item.setor || '').toLowerCase();
-        const sb = (y.item.setor || '').toLowerCase();
+        const sa = _orgChaveOrdemAtivo(x.item);
+        const sb = _orgChaveOrdemAtivo(y.item);
         if (sa !== sb) return sa < sb ? -1 : 1;
         const ca = (x.item.codigo || '').toLowerCase();
         const cb = (y.item.codigo || '').toLowerCase();
@@ -5810,7 +5928,7 @@
         </div>` : a.nota ? `<div class="asset-body"><div class="asset-row" style="flex-direction:column;align-items:flex-start;gap:2px;"><span class="asset-label">Observações</span><span class="asset-val" style="font-weight:400;color:var(--text-secondary);font-size:12px;white-space:pre-line;max-height:52px;overflow:hidden;">${a.nota}</span></div></div>` : `<div class="asset-body" style="min-height:32px;"></div>`}
         <div class="asset-badges">
           ${a.tipo && a.tipo !== 'Equipamento' ? `<span class="badge" style="background:rgba(99,102,241,0.1);color:#6366f1;border-color:rgba(99,102,241,0.3);">${a.tipo}</span>` : ''}
-          <span class="badge">${a.setor}</span>
+          <span class="badge">${_orgEsc(_orgRotuloAtivo(a))}</span>
           <span class="badge">${a.categoria}</span>
         </div>
       </div>`;
@@ -5835,7 +5953,8 @@
     const nTarefas   = state.tarefas.length;
     const nPubs      = state.publicacoes.length;
     const nPubsArq   = typeof arqTotalArquivadas === 'function' ? arqTotalArquivadas() : 0;
-    const nSetores   = state.setores.length;
+    const nSetores   = _orgSetores().length;
+    const nUnidades  = _orgUnidades().length;
     const nCats      = state.categorias.length;
     const raw        = JSON.stringify(state) || '';
     const sizeKb     = (new Blob([raw]).size / 1024).toFixed(1);
@@ -5844,6 +5963,7 @@
       ['Rotinas', nRotinas],
       ['Tarefas', nTarefas],
       ['Publicações', nPubsArq ? `${nPubs} + ${nPubsArq} arquivadas` : nPubs],
+      ...(_orgMigrado() ? [['Unidades', nUnidades]] : []),
       ['Setores', nSetores],
       ['Categorias', nCats],
       ['Tamanho do banco', sizeKb + ' KB'],
@@ -5863,6 +5983,8 @@
       const arquivo = await arqExportarDados();
       if (arquivo) exportData.arquivoPublicacoes = arquivo;
     }
+    // Unidades e setores (nó próprio, compartilhado com o CQ)
+    if (typeof _orgParaBackup === 'function') exportData.organizacao = _orgParaBackup();
     if (typeof authState !== 'undefined') {
       exportData.auth = {
         users:             authState.users,
@@ -5963,9 +6085,11 @@
           return;
         }
         // Separa dados de auth dos dados de sistema
-        const { auth: authBackup, arquivoPublicacoes, ...stateData } = parsed;
+        const { auth: authBackup, arquivoPublicacoes, organizacao, ...stateData } = parsed;
         state = stateData;
         saveState();
+        // Backups antigos não têm o nó de unidades: mantém o atual (ativos sem setorId resolvem pelo nome)
+        if (organizacao && typeof ORG_KEY !== 'undefined') window.dbSave(ORG_KEY, organizacao);
         if (arquivoPublicacoes && typeof arqRestaurarDados === 'function') arqRestaurarDados(arquivoPublicacoes);
 
         // Restaura dados de auth (se presentes no backup)

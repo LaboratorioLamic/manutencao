@@ -156,14 +156,137 @@ function authCanViewTab(tabId) {
   return perm === undefined ? true : !!perm;
 }
 
+// Ids de setor (org.js) liberados ao grupo do usuário logado; null = todos
 function authGetVisibleSetores() {
   if (!currentSession) return null;
   if (currentSession.isAdmin) return null;
   const g = authState.groups.find(g => g.id === currentSession.grupoId);
-  if (g && Array.isArray(g.setoresPermitidos) && g.setoresPermitidos.length > 0) {
-    return g.setoresPermitidos;
+  return _authGrupoSetorIds(g);
+}
+
+// ── SETORES × UNIDADES ───────────────────────────────────────
+// Permissões e filtros trabalham com ids de setor (org.js). Setores cadastrados em unidades
+// ficam em setorIdsPermitidos / setorIds; itens da lista antiga ainda sem unidade continuam
+// gravados pelo nome (setoresPermitidos / setores) e, quando ganham destino, o nome passa a
+// apontar para o setor novo (vínculo em org.js) — sem precisar regravar as permissões.
+function _authOrg() { return typeof _orgSetores === 'function'; }
+function _authMigrado() { return _authOrg() && _orgMigrado(); }   // há unidades cadastradas
+function _authEsc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+// Ids de setor a partir dos campos gravados (ids novos + nomes antigos)
+function _authIdsGravados(ids, nomes) {
+  const out = new Set(Array.isArray(ids) ? ids.filter(Boolean) : []);
+  (Array.isArray(nomes) ? nomes : []).forEach(n => out.add(_orgIdDeNomeLegado(n) || 'n:' + n));
+  return [...out];
+}
+// Separa ids reais (gravados como id) e nomes antigos sem destino (gravados como nome)
+function _authSepararIds(ids) {
+  const reais = [], nomes = [];
+  ids.forEach(id => { if (String(id).startsWith('n:')) nomes.push(String(id).slice(2)); else reais.push(id); });
+  return { reais, nomes };
+}
+// Setores liberados ao grupo: por unidade (inclui setores futuros) + setores avulsos. null = todos
+function _authGrupoSetorIds(g) {
+  if (!g || !_authOrg()) return null;
+  const un = Array.isArray(g.unidadeIdsPermitidas) ? g.unidadeIdsPermitidas : [];
+  const ids = _authIdsGravados(g.setorIdsPermitidos, g.setoresPermitidos);
+  if (!un.length && !ids.length) return null;
+  return [...new Set([...ids, ..._orgSetoresDasUnidades(un)])];
+}
+function _authGravarGrupoSetores(g, setorIds, unidadeIds) {
+  const { reais, nomes } = _authSepararIds(setorIds);
+  g.setorIdsPermitidos = reais;
+  g.setoresPermitidos = nomes;
+  g.unidadeIdsPermitidas = (unidadeIds || []).slice();
+}
+// Restrição individual do usuário (subconjunto do grupo); [] = todos do grupo
+function _authUserSetorIds(u) {
+  if (!u || !_authOrg()) return [];
+  return _authIdsGravados(u.setorIds, u.setores);
+}
+function _authGravarUserSetores(u, ids) {
+  const { reais, nomes } = _authSepararIds(ids);
+  u.setorIds = reais;
+  u.setores = nomes;
+}
+function _authSessaoUserSetorIds() {
+  const u = currentSession ? authState.users.find(x => x.id === currentSession.userId) : null;
+  return _authUserSetorIds(u);
+}
+function _authTodosSetorIds() { return _authOrg() ? _orgSetores(undefined, { todos: true }).map(s => s.id) : []; }
+
+// Resumo legível de uma seleção de setores ("NTO", "NTO · 2/5 setores", "2 unidades"…)
+function _authResumoSetores(sel, available) {
+  if (!available.length || sel.length >= available.length) return 'Todos os setores';
+  if (sel.length === 1) return _orgRotuloSetor(sel[0]);
+  const porUn = {};
+  available.forEach(id => { const u = _orgUnidadeIdDoSetor(id) || ''; (porUn[u] = porUn[u] || { tot: 0, sel: 0 }).tot++; });
+  sel.forEach(id => { const u = _orgUnidadeIdDoSetor(id) || ''; if (porUn[u]) porUn[u].sel++; });
+  const comSel = Object.entries(porUn).filter(([, v]) => v.sel > 0);
+  if (comSel.length === 1 && comSel[0][0]) {
+    const [u, v] = comSel[0];
+    return v.sel === v.tot ? _orgSiglaUnidade(u) : `${_orgSiglaUnidade(u)} · ${v.sel}/${v.tot} setores`;
   }
-  return null;
+  if (comSel.length > 1 && comSel.every(([u, v]) => u && v.sel === v.tot)) return `${comSel.length} unidades`;
+  return `${sel.length}/${available.length} setores`;
+}
+
+// Lista de seleção agrupada por unidade: marcar a unidade marca todos os setores dela.
+// `aposMudar` é o nome da função chamada depois de qualquer alteração.
+function _authArvoreSetoresHTML(ids, selecionados, aposMudar) {
+  const grupos = new Map();
+  ids.forEach(id => { const u = _orgUnidadeIdDoSetor(id) || ''; if (!grupos.has(u)) grupos.set(u, []); grupos.get(u).push(id); });
+  const ordem = [...grupos.keys()].sort((a, b) => a === '' ? 1 : b === '' ? -1 : _orgSiglaUnidade(a).localeCompare(_orgSiglaUnidade(b), 'pt-BR'));
+  const sel = new Set(selecionados);
+  const nome = id => _orgRotuloSetor(id, { semUnidade: true });
+  const chip = (id, u) => {
+    const checked = sel.has(id);
+    return `<label class="sector-check-card${checked ? ' checked' : ''}">
+        <input type="checkbox" value="${_authEsc(id)}" data-unidade="${_authEsc(u)}" ${checked ? 'checked' : ''} onchange="_authSetorMudou(this,'${aposMudar}')">
+        <span class="sector-check-card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;"><polyline points="20 6 9 17 4 12"/></svg>
+        </span>
+        <span class="sector-check-card-label">${_authEsc(nome(id))}</span>
+      </label>`;
+  };
+  if (ordem.length === 1 && ordem[0] === '' && !_authMigrado()) {
+    return grupos.get('').sort((a, b) => nome(a).localeCompare(nome(b), 'pt-BR')).map(id => chip(id, '')).join('');
+  }
+  return ordem.map(u => {
+    const lista = grupos.get(u).sort((a, b) => nome(a).localeCompare(nome(b), 'pt-BR'));
+    const un = _orgUnidade(u);
+    return `<label class="sector-unit-head">
+        <input type="checkbox" class="sector-unit-check" data-unidade="${_authEsc(u)}" onchange="_authUnidadeMudou(this,'${aposMudar}')">
+        <b>${_authEsc(un ? un.sigla : 'Sem unidade')}</b>${un ? ` <span>${_authEsc(un.nome)}</span>` : ''}
+        <small>${lista.length} setor${lista.length !== 1 ? 'es' : ''}</small>
+      </label>` + lista.map(id => chip(id, u)).join('');
+  }).join('');
+}
+function _authSetorMudou(cb, aposMudar) {
+  cb.closest('.sector-check-card')?.classList.toggle('checked', cb.checked);
+  if (typeof window[aposMudar] === 'function') window[aposMudar]();
+}
+function _authUnidadeMudou(cb, aposMudar) {
+  const lista = cb.closest('.sector-grid');
+  lista?.querySelectorAll(`input[type=checkbox][data-unidade="${CSS.escape(cb.dataset.unidade)}"]:not(.sector-unit-check)`).forEach(c => {
+    c.checked = cb.checked;
+    c.closest('.sector-check-card')?.classList.toggle('checked', cb.checked);
+  });
+  if (typeof window[aposMudar] === 'function') window[aposMudar]();
+}
+// Atualiza o estado (marcado/parcial) das caixas de unidade de uma lista
+function _authSincronizarUnidades(listaId) {
+  const lista = document.getElementById(listaId);
+  lista?.querySelectorAll('.sector-unit-check').forEach(u => {
+    const filhos = [...lista.querySelectorAll(`input[type=checkbox][data-unidade="${CSS.escape(u.dataset.unidade)}"]:not(.sector-unit-check)`)];
+    const n = filhos.filter(c => c.checked).length;
+    u.checked = filhos.length > 0 && n === filhos.length;
+    u.indeterminate = n > 0 && n < filhos.length;
+  });
+}
+function _authCaixasSetor(listaId) {
+  return [...document.querySelectorAll(`#${listaId} input[type=checkbox]:not(.sector-unit-check)`)];
 }
 
 // ── OPERAÇÕES ────────────────────────────────────────────────
@@ -428,7 +551,7 @@ function _unlockApp() {
 
 // Setores disponíveis para o usuário (considerando restrição de grupo)
 function _getAvailableSetores() {
-  const all = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
+  const all = _authTodosSetorIds();
   const groupAllowed = authGetVisibleSetores();
   return groupAllowed ? all.filter(s => groupAllowed.includes(s)) : all;
 }
@@ -439,8 +562,8 @@ let _topbarSetorFilter = null;
 // Inicializa o filtro da topbar considerando o override por usuário
 function _initTopbarSectorFilter() {
   const available = _getAvailableSetores(); // setores do grupo
-  const userPref  = currentSession?.setores; // override individual configurado pelo admin
-  if (Array.isArray(userPref) && userPref.length > 0) {
+  const userPref  = _authSessaoUserSetorIds(); // override individual configurado pelo admin
+  if (userPref.length > 0) {
     // Aplica exatamente os setores do override (interseção com grupo por segurança)
     const intersection = available.filter(s => userPref.includes(s));
     // Se a interseção for vazia (setores do override não existem no grupo), usa todos do grupo
@@ -461,11 +584,11 @@ function _updateTopbarSectorBtn() {
   const available = _getSelectableSetores();
   const selected  = Array.isArray(_topbarSetorFilter) ? _topbarSetorFilter : available;
   if (available.length === 0 || selected.length >= available.length) {
-    txt.textContent = 'Todos os setores';
+    txt.textContent = _authMigrado() ? 'Todas as unidades' : 'Todos os setores';
     badge.style.background = '';
     badge.style.borderColor = '';
   } else {
-    txt.textContent = selected.length === 1 ? selected[0] : `${selected.length}/${available.length} setores`;
+    txt.textContent = _authResumoSetores(selected, available);
     badge.style.background = 'rgba(0,168,204,0.25)';
     badge.style.borderColor = 'var(--cyan)';
   }
@@ -475,8 +598,8 @@ function _updateTopbarSectorBtn() {
 // (interseção entre setores do grupo e override individual configurado pelo admin)
 function _getSelectableSetores() {
   const groupSetores = _getAvailableSetores();
-  const userPref = currentSession?.setores;
-  if (Array.isArray(userPref) && userPref.length > 0) {
+  const userPref = _authSessaoUserSetorIds();
+  if (userPref.length > 0) {
     return groupSetores.filter(s => userPref.includes(s));
   }
   return groupSetores;
@@ -503,21 +626,25 @@ function openTopbarSectorFilter() {
   }, available);
 }
 
-// Verifica se o usuário pode ver um ativo com base no filtro de setores ativo
+// Verifica se o usuário pode ver um ativo com base no filtro de unidades/setores ativo
 function _userCanSeeAtivo(ativo) {
   if (!ativo) return false;
+  return _userCanSeeSetor(typeof _orgSetorIdDoAtivo === 'function' ? _orgSetorIdDoAtivo(ativo) : '');
+}
+// Mesmo critério para um setor (id) — OT/ocorrência sem ativo
+function _userCanSeeSetor(setorId) {
   if (Array.isArray(_topbarSetorFilter)) {
     // Filtro inicializado: vazio = nenhum setor selecionado = não vê nada
-    return _topbarSetorFilter.length > 0 && _topbarSetorFilter.includes(ativo.setor);
+    return _topbarSetorFilter.length > 0 && _topbarSetorFilter.includes(setorId);
   }
   // Filtro ainda não inicializado: usa setores disponíveis do grupo
   const available = _getAvailableSetores();
-  return available.length === 0 || available.includes(ativo.setor);
+  return available.length === 0 || available.includes(setorId);
 }
 
-// Retorna os setores do state filtrados pelo filtro ativo da topbar
+// Ids dos setores visíveis pelo filtro ativo da topbar
 function _getFilteredSetores() {
-  const all = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
+  const all = _authTodosSetorIds();
   if (Array.isArray(_topbarSetorFilter)) {
     // Filtro inicializado: respeita exatamente a seleção (vazio = nenhum)
     return _topbarSetorFilter.length > 0 ? all.filter(s => _topbarSetorFilter.includes(s)) : [];
@@ -564,6 +691,7 @@ function applyPermissions() {
   vis('cnav-backup',  canBackup);
   vis('cnav-ocorrencias', authCanViewTab('ocorrencias'));
   vis('cnav-cq', can('cq.configurar'));
+  vis('cnav-org', can('ativos.editarSetor'));
 
   // Config nav principal — controlado por 'visualizarConfig'
   const canConfig = can('config.visualizarConfig');
@@ -692,34 +820,19 @@ function authDoRegister() {
 // ── MODAL GENÉRICO DE SETORES ─────────────────────────────────
 function _openSectorModal(currentSelected, callback, availableSetores) {
   _sectorModalCallback = callback;
-  const rawSetores = availableSetores ||
-    ((typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : []);
-  const setores = [...rawSetores].sort((a, b) => a.localeCompare(b, 'pt'));
+  const ids = availableSetores || _authTodosSetorIds();
   const list = document.getElementById('sector-modal-list');
   if (!list) return;
 
-  if (setores.length === 0) {
+  if (ids.length === 0) {
     list.innerHTML = `<div class="sector-empty">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
       </svg>
-      Nenhum setor cadastrado.<br>Cadastre setores no módulo Ativos primeiro.
+      Nenhum setor cadastrado.<br>Cadastre unidades e setores no módulo Ativos primeiro.
     </div>`;
   } else {
-    list.innerHTML = setores.map(s => {
-      const val = s.replace(/"/g, '&quot;');
-      const checked = currentSelected.includes(s);
-      return `<label class="sector-check-card${checked ? ' checked' : ''}">
-        <input type="checkbox" value="${val}" ${checked ? 'checked' : ''}
-          onchange="_onSectorCheckChange(this)">
-        <span class="sector-check-card-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-        </span>
-        <span class="sector-check-card-label">${s}</span>
-      </label>`;
-    }).join('');
+    list.innerHTML = _authArvoreSetoresHTML(ids, currentSelected, '_updateSectorModalState');
   }
   _updateSectorModalState();
   document.getElementById('modal-sector-select')?.classList.add('open');
@@ -732,9 +845,9 @@ function _onSectorCheckChange(cb) {
 }
 
 function _updateSectorModalState() {
-  const all     = document.querySelectorAll('#sector-modal-list input[type=checkbox]');
-  const checked = document.querySelectorAll('#sector-modal-list input[type=checkbox]:checked');
-  const n       = checked.length;
+  _authSincronizarUnidades('sector-modal-list');
+  const all     = _authCaixasSetor('sector-modal-list');
+  const n       = all.filter(c => c.checked).length;
   const total   = all.length;
 
   const countEl = document.getElementById('sector-modal-count');
@@ -757,8 +870,8 @@ function _updateSectorModalState() {
 }
 
 function toggleSelectAllSectors() {
-  const checkboxes = document.querySelectorAll('#sector-modal-list input[type=checkbox]');
-  const allChecked = Array.from(checkboxes).every(c => c.checked);
+  const checkboxes = _authCaixasSetor('sector-modal-list');
+  const allChecked = checkboxes.every(c => c.checked);
   checkboxes.forEach(c => {
     c.checked = !allChecked;
     const card = c.closest('.sector-check-card');
@@ -773,8 +886,7 @@ function closeSectorModal() {
 }
 
 function confirmSectorModal() {
-  const checked = document.querySelectorAll('#sector-modal-list input[type=checkbox]:checked');
-  const selected = Array.from(checked).map(c => c.value);
+  const selected = _authCaixasSetor('sector-modal-list').filter(c => c.checked).map(c => c.value);
   if (selected.length === 0) {
     if (typeof showToast === 'function') showToast('Selecione ao menos 1 setor.', 'error');
     return;
@@ -1275,7 +1387,7 @@ function openUserEditModal(id) {
       if (statusHint) statusHint.style.display = isSelf ? 'inline' : 'none';
     }
     _userEditIsAdmin = !!u.isAdmin;
-    _userEditSetoresTemp = Array.isArray(u.setores) ? [...u.setores] : [];
+    _userEditSetoresTemp = _authUserSetorIds(u);
   } else {
     ['user-edit-nome','user-edit-cpf','user-edit-cargo','user-edit-username',
      'user-edit-password','user-edit-confirm'].forEach(elId => {
@@ -1302,14 +1414,12 @@ function closeUserEditModal() {
 
 // Retorna os setores disponíveis para o grupo selecionado no modal de edição
 function _getUserEditAvailableSetores() {
-  const all = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
+  const all = _authTodosSetorIds();
   const grupoId = document.getElementById('user-edit-grupo')?.value || '';
   if (!grupoId) return all;
   const g = authState.groups.find(g => g.id === grupoId);
-  if (g && Array.isArray(g.setoresPermitidos) && g.setoresPermitidos.length > 0) {
-    return all.filter(s => g.setoresPermitidos.includes(s));
-  }
-  return all;
+  const permitidos = _authGrupoSetorIds(g);
+  return permitidos ? all.filter(s => permitidos.includes(s)) : all;
 }
 
 function _onUserEditGrupoChange() {
@@ -1343,7 +1453,7 @@ function _updateUserEditSetoresBtn() {
   if (n === 0 || n >= available.length) {
     lbl.textContent = available.length > 0 ? `Todos (${available.length})` : 'Todos do grupo';
   } else {
-    lbl.textContent = `${n} de ${available.length} setores`;
+    lbl.textContent = _authResumoSetores(_userEditSetoresTemp.filter(s => available.includes(s)), available);
   }
 }
 
@@ -1384,7 +1494,7 @@ function saveUserEdit() {
     if (idx < 0) return;
     const u = authState.users[idx];
     u.nomeCompleto = nome; u.cpf = cpf; u.cargo = cargo; u.username = username;
-    u.setores = _userEditSetoresTemp.slice();
+    _authGravarUserSetores(u, _userEditSetoresTemp);
     u.ativo = ativo;
     if (!u.isAdmin) {
       u.grupoId = grupoId || null;
@@ -1401,13 +1511,15 @@ function saveUserEdit() {
       _initTopbarSectorFilter(); // reinicializa filtro com novos setores
     }
   } else {
-    authState.users.push({
+    const novo = {
       id: _authUid(), nomeCompleto: nome, cpf, cargo, username,
       passwordHash: _hashPwd(pwd),
-      setores: _userEditSetoresTemp.slice(),
+      setores: [],
       grupoId: grupoId || null, isAdmin: _userEditIsAdmin, ativo,
       createdAt: new Date().toISOString()
-    });
+    };
+    _authGravarUserSetores(novo, _userEditSetoresTemp);
+    authState.users.push(novo);
   }
   _saveAuth();
   closeUserEditModal();
@@ -1510,7 +1622,7 @@ function renderGroupsTable() {
             <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/>
             <path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/>
           </svg>
-          Setores ${g.setoresPermitidos?.length > 0 ? '(' + g.setoresPermitidos.length + ')' : 'Todos'}
+          ${_authEsc(_authResumoGrupo(g))}
         </button>
         <button class="btn btn-outline btn-icon" onclick="openGroupEditModal('${g.id}')" title="Editar">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;">
@@ -1532,56 +1644,51 @@ function renderGroupsTable() {
 let _groupSectorEditId = null;
 let _groupSectorTemp = [];
 
+// Rótulo do botão de acesso do grupo
+function _authResumoGrupo(g) {
+  const un = (g.unidadeIdsPermitidas || []).length;
+  const st = _authIdsGravados(g.setorIdsPermitidos, g.setoresPermitidos).length;
+  if (!un && !st) return _authMigrado() ? 'Acesso: todas as unidades' : 'Setores: todos';
+  return 'Acesso: ' + [un ? `${un} unidade${un !== 1 ? 's' : ''}` : '', st ? `${st} setor${st !== 1 ? 'es' : ''}` : ''].filter(Boolean).join(' + ');
+}
+
 function openGroupSectorModal(groupId) {
   const g = authState.groups.find(g => g.id === groupId);
   if (!g) return;
   _groupSectorEditId = groupId;
-  _groupSectorTemp = [...(g.setoresPermitidos || [])];
 
-  const setores = (typeof state !== 'undefined' && Array.isArray(state.setores)) ? state.setores : [];
+  const ids = _authTodosSetorIds();
+  const permitidos = _authGrupoSetorIds(g);
+  _groupSectorTemp = permitidos ? permitidos.slice() : [];
   const list = document.getElementById('group-sector-list');
   if (!list) return;
 
-  if (setores.length === 0) {
+  if (ids.length === 0) {
     list.innerHTML = `<div class="data-table-empty" style="padding:24px;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/></svg>
       <strong>Nenhum setor cadastrado</strong>
     </div>`;
   } else {
-    list.innerHTML = setores.map(s => {
-      const checked = _groupSectorTemp.length === 0 || _groupSectorTemp.includes(s);
-      const val = s.replace(/"/g, '&quot;');
-      return `<label class="sector-check-card${checked ? ' checked' : ''}">
-        <input type="checkbox" value="${val}" ${checked ? 'checked' : ''} onchange="_onGroupSectorCheck(this)">
-        <span class="sector-check-card-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:11px;height:11px;">
-            <polyline points="20 6 9 17 4 12"/>
-          </svg>
-        </span>
-        <span class="sector-check-card-label">${s}</span>
-      </label>`;
-    }).join('');
+    list.innerHTML = _authArvoreSetoresHTML(ids, permitidos || ids, '_onGroupSectorCheck');
   }
 
   const titleEl = document.getElementById('group-sector-modal-title');
-  if (titleEl) titleEl.textContent = `Setores — ${g.nome}`;
+  if (titleEl) titleEl.textContent = `${_authMigrado() ? 'Unidades e setores' : 'Setores'} — ${g.nome}`;
+  _authSincronizarUnidades('group-sector-list');
   _updateGroupSectorCount();
   document.getElementById('modal-group-sector')?.classList.add('open');
 }
 
-function _onGroupSectorCheck(cb) {
-  if (cb) {
-    const card = cb.closest('.sector-check-card');
-    if (card) card.classList.toggle('checked', cb.checked);
-  }
-  const checkboxes = document.querySelectorAll('#group-sector-list input[type=checkbox]');
-  const allChecked = [...checkboxes].every(c => c.checked);
-  _groupSectorTemp = allChecked ? [] : [...checkboxes].filter(c => c.checked).map(c => c.value);
+function _onGroupSectorCheck() {
+  _authSincronizarUnidades('group-sector-list');
+  const checkboxes = _authCaixasSetor('group-sector-list');
+  const allChecked = checkboxes.every(c => c.checked);
+  _groupSectorTemp = allChecked ? [] : checkboxes.filter(c => c.checked).map(c => c.value);
   _updateGroupSectorCount();
 }
 
 function _updateGroupSectorCount() {
-  const checkboxes = [...document.querySelectorAll('#group-sector-list input[type=checkbox]')];
+  const checkboxes = _authCaixasSetor('group-sector-list');
   const n = checkboxes.filter(c => c.checked).length;
   const total = checkboxes.length;
   const countEl = document.getElementById('group-sector-count');
@@ -1602,8 +1709,8 @@ function _updateGroupSectorCount() {
 }
 
 function _toggleGroupSectorAll() {
-  const checkboxes = document.querySelectorAll('#group-sector-list input[type=checkbox]');
-  const allChecked = [...checkboxes].every(c => c.checked);
+  const checkboxes = _authCaixasSetor('group-sector-list');
+  const allChecked = checkboxes.every(c => c.checked);
   checkboxes.forEach(c => {
     c.checked = !allChecked;
     const card = c.closest('.sector-check-card');
@@ -1613,39 +1720,41 @@ function _toggleGroupSectorAll() {
 }
 
 function saveGroupSectorModal() {
-  const checkboxes = document.querySelectorAll('#group-sector-list input[type=checkbox]');
-  const all = [...checkboxes];
+  const all = _authCaixasSetor('group-sector-list');
   const checkedCount = all.filter(c => c.checked).length;
   if (checkedCount === 0) {
     if (typeof showToast === 'function') showToast('Selecione ao menos 1 setor.', 'error');
     return;
   }
   const allChecked = checkedCount === all.length;
-  const selected = allChecked ? [] : all.filter(c => c.checked).map(c => c.value);
+  // Unidade inteira marcada vira acesso por unidade (inclui setores criados depois nela)
+  const unidadeIds = [], setorIds = [];
+  if (!allChecked) {
+    const inteiras = new Set(_authMigrado()
+      ? [...document.querySelectorAll('#group-sector-list .sector-unit-check')].filter(u => u.checked && u.dataset.unidade).map(u => u.dataset.unidade)
+      : []);
+    unidadeIds.push(...inteiras);
+    all.filter(c => c.checked && !inteiras.has(c.dataset.unidade)).forEach(c => setorIds.push(c.value));
+  }
   const g = authState.groups.find(g => g.id === _groupSectorEditId);
   if (g) {
-    g.setoresPermitidos = selected;
+    _authGravarGrupoSetores(g, setorIds, unidadeIds);
+    const permitidos = _authGrupoSetorIds(g);
 
-    // Sincroniza user.setores: remove setores que o grupo não permite mais
-    authState.users
-      .filter(u => u.grupoId === _groupSectorEditId && Array.isArray(u.setores) && u.setores.length > 0)
-      .forEach(u => {
-        if (selected.length === 0) return; // grupo sem restrição: mantém tudo
-        u.setores = u.setores.filter(s => selected.includes(s));
-        // Atualiza sessão ativa se for o usuário logado
-        if (currentSession?.userId === u.id) {
-          currentSession.setores = u.setores;
-          localStorage.setItem('auth-session', JSON.stringify(currentSession));
-        }
+    // Restrição individual dos membros: remove setores que o grupo não permite mais
+    if (permitidos) {
+      authState.users.filter(u => u.grupoId === _groupSectorEditId).forEach(u => {
+        const atual = _authUserSetorIds(u);
+        if (atual.length) _authGravarUserSetores(u, atual.filter(s => permitidos.includes(s)));
       });
-
+    }
     _saveAuth();
   }
   document.getElementById('modal-group-sector')?.classList.remove('open');
   renderGroupsTable();
   // Se o grupo editado é o do usuário logado, reinicializa o filtro da topbar
   if (currentSession?.grupoId === _groupSectorEditId) _initTopbarSectorFilter();
-  if (typeof showToast === 'function') showToast('Setores do grupo atualizados.', 'success');
+  if (typeof showToast === 'function') showToast('Acesso do grupo atualizado.', 'success');
 }
 
 function closeGroupSectorModal() {

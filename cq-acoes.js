@@ -87,6 +87,9 @@ async function _cqNcCarregarLista(u) {
   }
   const el = document.getElementById('cq-nc-lista');
   if (!el) return;
+  // Filtro de setor do CQ: pelo setor do teste da NC
+  const fSetor = _cqSetorAtivoId(u);
+  if (fSetor) ncs = ncs.filter(nc => !nc.testeId || _cqTestePassaSetor(cqState.config.testes[nc.testeId], fSetor));
   ncs.sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''));
   el.innerHTML = `<div class="oc-table-scroll"><table class="ot-list-table cq-table">
     <thead><tr><th class="ot-list-th">Nº</th><th class="ot-list-th">Aberta em</th><th class="ot-list-th">Teste</th><th class="ot-list-th">Equipamento</th><th class="ot-list-th">Tipo</th><th class="ot-list-th">Violação</th><th class="ot-list-th">Situação</th><th class="ot-list-th">Pendência</th></tr></thead>

@@ -77,34 +77,40 @@
   }
 
   // ── HELPERS DE ACESSO AO ESTADO ──────────────────────────────
+  // Ids dos setores visíveis pelo filtro de unidades/setores da topbar (org.js)
   function _setores() {
-    return (typeof _getFilteredSetores === 'function')
-      ? _getFilteredSetores()
-      : (state?.setores || []);
+    return (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : [];
   }
 
   function _otSetor(ot) {
     if (ot.ativoIdx != null && typeof state !== 'undefined') {
       const a = state.ativos[ot.ativoIdx];
-      if (a?.setor) return a.setor;
+      if (a) { const id = _orgSetorIdDoAtivo(a); if (id) return id; }
     }
-    return ot.setor || '';
+    return _orgSetorIdDeRef(ot.setorId, ot.setor);
+  }
+
+  function _rotinaSetor(rotina) {
+    if (!rotina) return '';
+    if (rotina.equipamentoIdx != null && state?.ativos[rotina.equipamentoIdx]) return _orgSetorIdDoAtivo(state.ativos[rotina.equipamentoIdx]);
+    return _orgSetorIdDeRef(rotina.setorId, rotina.setor);
   }
 
   function _tarefaSetor(t) {
     if (t.equipamentoIdx != null && typeof state !== 'undefined') {
-      return state.ativos[t.equipamentoIdx]?.setor || '';
+      const a = state.ativos[t.equipamentoIdx];
+      return a ? _orgSetorIdDoAtivo(a) : '';
     }
-    const rotina = state?.rotinas?.find(r => r.id === t.rotinaId);
-    if (!rotina) return '';
-    if (rotina.setor) return rotina.setor;
-    if (rotina.equipamentoIdx != null) return state?.ativos[rotina.equipamentoIdx]?.setor || '';
-    return '';
+    return _rotinaSetor(state?.rotinas?.find(r => r.id === t.rotinaId));
   }
 
-  function _inSetor(setor) {
-    const s = _setores();
-    return !setor || s.includes(setor);
+  function _inSetor(setorId) {
+    return !setorId || _setores().includes(setorId);
+  }
+
+  // Rótulo "Unidade · Setor" do ativo, ou do registro (OT/rotina) quando não há ativo
+  function _rotuloSetorItem(a, rec) {
+    return a ? _orgRotuloAtivo(a) : _orgRotuloRef(rec?.setorId, rec?.setor);
   }
 
   function _inPeriod(dateStr) {
@@ -142,11 +148,8 @@
     }
 
     const ordensVis   = ordens.filter(o => _inSetor(_otSetor(o)) && (!_homeOnlyMine || !_uid || _isMine_ot(o)));
-    const ativosVis   = ativos.filter(a => _inSetor(a.setor));  // ativos: sem filtro por responsável
-    const rotinasVis  = rotinas.filter(r => {
-      const setor = r.setor || (r.equipamentoIdx != null ? ativos[r.equipamentoIdx]?.setor : '') || '';
-      return _inSetor(setor);
-    });
+    const ativosVis   = ativos.filter(a => _inSetor(_orgSetorIdDoAtivo(a)));  // ativos: sem filtro por responsável
+    const rotinasVis  = rotinas.filter(r => _inSetor(_rotinaSetor(r)));
     const tarefasVis  = tarefas.filter(t => _inSetor(_tarefaSetor(t)) && (!_homeOnlyMine || !_uid || _isMine_tarefa(t)));
     const tarefasIds  = new Set(tarefasVis.map(t => t.id));
     const pubsVis     = publicacoes.filter(p => tarefasIds.has(p.tarefaId) && (!_homeOnlyMine || !_uid || _isMine_pub(p)));
@@ -787,7 +790,7 @@
     // Para cada rotina, calcula a pior flag entre suas tarefas ativas
     const linhas = lista.map(r => {
       const a = r.equipamentoIdx != null ? state?.ativos[r.equipamentoIdx] : null;
-      const aInfo = a ? `${_esc(a.nome)}<small>${_esc(a.setor)}</small>` : _esc(r.setor || '—');
+      const aInfo = a ? `${_esc(a.nome)}<small>${_esc(_orgRotuloAtivo(a))}</small>` : _esc(_rotuloSetorItem(null, r) || '—');
       const tarefasR = tarefasVis.filter(t => t.rotinaId === r.id && t.status === 'Ativo');
       const numTarefas = tarefasVis.filter(t => t.rotinaId === r.id).length;
 
@@ -823,7 +826,7 @@
     });
 
     body.innerHTML = `<table class="hkm-table">
-      <thead><tr>${['Nome','Ativo / Setor','Tipo','Tarefas'].map(c => `<th>${c}</th>`).join('')}</tr></thead>
+      <thead><tr>${['Nome','Ativo / Unidade · Setor','Tipo','Tarefas'].map(c => `<th>${c}</th>`).join('')}</tr></thead>
       <tbody>
         ${linhas.map(l =>
           `<tr onclick="${l.fn}" class="hkm-clickable${l.rowClass ? ' ' + l.rowClass : ''}">
@@ -849,12 +852,12 @@
 
     const _otivoInfo = (ot) => {
       const a = ot.ativoIdx != null ? state?.ativos[ot.ativoIdx] : null;
-      return a ? `${_esc(a.nome)}<small>${_esc(a.setor)}</small>` : _esc(ot.setor || '—');
+      return a ? `${_esc(a.nome)}<small>${_esc(_orgRotuloAtivo(a))}</small>` : _esc(_rotuloSetorItem(null, ot) || '—');
     };
     const _tarefaAtivo = (t) => {
       const a = t.equipamentoIdx != null ? state?.ativos[t.equipamentoIdx] : null;
       const r = state?.rotinas?.find(x => x.id === t.rotinaId);
-      return a ? `${_esc(a.nome)}<small>${_esc(a.setor)}</small>` : _esc(r?.setor || '—');
+      return a ? `${_esc(a.nome)}<small>${_esc(_orgRotuloAtivo(a))}</small>` : _esc(_rotuloSetorItem(null, r) || '—');
     };
 
     // Wrapper: fecha o modal KPI antes de abrir o detalhe
@@ -863,7 +866,7 @@
     switch (tipo) {
 
       case 'otsAtraso':
-        return { titulo: 'OTs com Atraso', cols: ['Nº', 'Título', 'Ativo / Setor', 'Tipo', 'Prazo', 'Atraso'],
+        return { titulo: 'OTs com Atraso', cols: ['Nº', 'Título', 'Ativo / Unidade · Setor', 'Tipo', 'Prazo', 'Atraso'],
           rows: (k.otsAtrasoList || [])
             .sort((a, b) => (a.prazo || '').localeCompare(b.prazo || ''))
             .map(o => {
@@ -879,7 +882,7 @@
         };
 
       case 'otsServico':
-        return { titulo: 'OTs de Serviço Abertas', cols: ['Nº', 'Título', 'Ativo / Setor', 'Tipo', 'Status', 'Abertura'],
+        return { titulo: 'OTs de Serviço Abertas', cols: ['Nº', 'Título', 'Ativo / Unidade · Setor', 'Tipo', 'Status', 'Abertura'],
           rows: (k.otsServicoList || [])
             .sort((a, b) => (['critica','alta','media','baixa'].indexOf(a.severidade)) - (['critica','alta','media','baixa'].indexOf(b.severidade)))
             .map(o => ({
@@ -892,7 +895,7 @@
         };
 
       case 'otConcluidas':
-        return { titulo: 'OTs Concluídas no Período', cols: ['Nº', 'Título', 'Ativo / Setor', 'Tipo', 'Abertura'],
+        return { titulo: 'OTs Concluídas no Período', cols: ['Nº', 'Título', 'Ativo / Unidade · Setor', 'Tipo', 'Abertura'],
           rows: k.ordensVis.filter(o => o.status === 'concluida' && _inPeriod(o.criadoEm)).map(o => ({
             cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o),
                     _otTipoLabel(o.tipo), _fmtDate((o.criadoEm||'').split('T')[0])],
@@ -901,7 +904,7 @@
         };
 
       case 'otsFalha':
-        return { titulo: 'OTs com Falha de Ativo', cols: ['Nº', 'Título', 'Ativo / Setor', 'Tipo de Falha', 'Severidade', 'Status', 'Abertura'],
+        return { titulo: 'OTs com Falha de Ativo', cols: ['Nº', 'Título', 'Ativo / Unidade · Setor', 'Tipo de Falha', 'Severidade', 'Status', 'Abertura'],
           rows: (k.otsFalhaList || []).map(o => ({
             cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o),
                     _esc(o.tipoFalha||'—'),
@@ -913,7 +916,7 @@
         };
 
       case 'otCorretivas':
-        return { titulo: 'OTs Corretivas Abertas', cols: ['Nº', 'Título', 'Ativo / Setor', 'Severidade', 'Status'],
+        return { titulo: 'OTs Corretivas Abertas', cols: ['Nº', 'Título', 'Ativo / Unidade · Setor', 'Severidade', 'Status'],
           rows: k.ordensVis.filter(o => o.tipo === 'corretiva' && !['concluida','cancelada'].includes(o.status))
             .sort((a, b) => (['critica','alta','media','baixa'].indexOf(a.severidade)) - (['critica','alta','media','baixa'].indexOf(b.severidade)))
             .map(o => ({
@@ -926,7 +929,7 @@
 
       case 'tarefasConcluidas':
         // Usa a lista já filtrada por setor+período do calcKPIs (mesmo conjunto que o contador do card)
-        return { titulo: 'Tarefas Concluídas no Período', cols: ['Tarefa', 'Ativo / Setor', 'Concluída em', 'Por'],
+        return { titulo: 'Tarefas Concluídas no Período', cols: ['Tarefa', 'Ativo / Unidade · Setor', 'Concluída em', 'Por'],
           rows: (k.execsPeriodoList || []).map(p => {
             const t = state?.tarefas?.find(x => x.id === p.tarefaId);
             const r = t ? state?.rotinas?.find(x => x.id === t.rotinaId) : null;
@@ -939,7 +942,7 @@
         };
 
       case 'tarefasAtrasadas':
-        return { titulo: 'Tarefas com Atraso', cols: ['Tarefa', 'Ativo / Setor', 'Vencimento', 'Atraso'],
+        return { titulo: 'Tarefas com Atraso', cols: ['Tarefa', 'Ativo / Unidade · Setor', 'Vencimento', 'Atraso'],
           rows: k.tarefasAtrasadasList.map(t => {
             const due  = new Date(t.proximaData + 'T00:00:00');
             const dias = Math.ceil((hoje - due) / 86400000);
@@ -954,10 +957,10 @@
         };
 
       case 'rotinasAtivas':
-        return { titulo: 'Rotinas Ativas', cols: ['Nome', 'Ativo / Setor', 'Tipo', 'Tarefas'],
+        return { titulo: 'Rotinas Ativas', cols: ['Nome', 'Ativo / Unidade · Setor', 'Tipo', 'Tarefas'],
           rows: (k.rotinasAtivasList || []).map(r => {
             const a = r.equipamentoIdx != null ? state?.ativos[r.equipamentoIdx] : null;
-            const aInfo = a ? `${_esc(a.nome)}<small>${_esc(a.setor)}</small>` : _esc(r.setor || '—');
+            const aInfo = a ? `${_esc(a.nome)}<small>${_esc(_orgRotuloAtivo(a))}</small>` : _esc(_rotuloSetorItem(null, r) || '—');
             const numTarefas = (k.tarefasVisList || []).filter(t => t.rotinaId === r.id).length;
             return {
               cells: [_esc(r.nome), aInfo, _esc(r.tipo), String(numTarefas)],
@@ -1054,7 +1057,7 @@
       const a      = t?.equipamentoIdx != null ? state?.ativos[t.equipamentoIdx] : null;
       const nome   = _esc(t?.titulo || r?.nome || '—');
       const ativo  = a ? _esc(a.nome) : '—';
-      const setor  = _esc(a?.setor || r?.setor || '—');
+      const setor  = _esc(_rotuloSetorItem(a, r) || '—');
       const data   = _fmtDateTime(p.dataPublicacao || '');
       const por    = _esc(p.publicadoPorNome || '—');
       const fn     = `viewPublicacao('${p.id}')`;
@@ -1268,7 +1271,7 @@
       tarefaItems.push({
         id:     t.id,
         titulo: t.titulo || rotina?.nome || 'Tarefa',
-        meta:   ativo ? `${ativo.nome} · ${ativo.setor}` : (rotina?.setor || '—'),
+        meta:   ativo ? `${ativo.nome} · ${_orgRotuloAtivo(ativo)}` : (_rotuloSetorItem(null, rotina) || '—'),
         badge:  `${dias}d atraso`,
         bCls:   'notif-badge-red',
         dot:    '#e63946',
@@ -1285,7 +1288,7 @@
       tarefaItems.push({
         id:     t.id,
         titulo: t.titulo || rotina?.nome || 'Tarefa',
-        meta:   ativo ? `${ativo.nome} · ${ativo.setor}` : (rotina?.setor || '—'),
+        meta:   ativo ? `${ativo.nome} · ${_orgRotuloAtivo(ativo)}` : (_rotuloSetorItem(null, rotina) || '—'),
         badge:  dias === 0 ? 'Hoje' : `${dias}d restante${dias !== 1 ? 's' : ''}`,
         bCls:   dias === 0 ? 'notif-badge-red' : 'notif-badge-amber',
         dot:    dias === 0 ? '#e63946' : '#f4a261',
@@ -1338,7 +1341,7 @@
           id:         ot.id,
           num:        ot.numero || ot.id,
           titulo:     ot.titulo || ot.num,
-          meta:       ativo ? `${ativo.nome} · ${ativo.setor}` : (ot.setor || '—'),
+          meta:       ativo ? `${ativo.nome} · ${_orgRotuloAtivo(ativo)}` : (_rotuloSetorItem(null, ot) || '—'),
           badge:      sc.label,
           bCls:       sc.cls,
           dot:        sevCfg[ot.severidade]?.dot || '#718096',
@@ -1687,7 +1690,7 @@
         </div>
       </div>
       <div class="hkm-ac-meta">
-        ${a.setor ? `<span class="hkm-ac-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${_esc(a.setor)}</span>` : ''}
+        ${a.setor ? `<span class="hkm-ac-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${_esc(_orgRotuloAtivo(a))}</span>` : ''}
         ${a.categoria ? `<span class="hkm-ac-tag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>${_esc(a.categoria)}</span>` : ''}
       </div>
       <div class="hkm-ac-details">

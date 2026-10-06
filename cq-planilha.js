@@ -15,23 +15,24 @@ const CQ_PL_HORA_PADRAO = '08:00';
 
 const CQ_PL_COLS = {
   'Unidades': ['Sigla', 'Nome', 'CNES', 'Fuso horário', 'Ativa'],
+  'Setores': ['Unidade', 'Setor', 'Ativo'],
   'Analitos': ['Código', 'Nome', 'Tipo', 'Unidade de medida', 'Casas decimais', 'Especialidade', 'ETa', 'Tipo do ETa', 'Fonte do ETa', 'Referência do ETa',
     'Resultados possíveis', 'Tolerância (categorias)', 'Equipamentos', 'Sistemas sem equipamento', 'Ativo', 'Unidades'],
   'Materiais': ['Nome', 'Fabricante', 'Tipo', 'Fornecedor', 'Registro ANVISA', 'Código de referência', 'Matriz', 'Estabilidade após abertura (dias)', 'Armazenamento', 'Níveis',
     'Equipamentos / sistemas', 'Analitos', 'Ativo', 'Unidades'],
   'Lotes de controle': ['Material', 'Fabricante', 'Lote', 'Validade', 'Níveis', 'Situação', 'Link da bula', 'Observações', 'Unidades'],
   'Insumos': ['Tipo', 'Produto', 'Lote', 'Validade', 'Fabricante', 'Registro ANVISA', 'Situação', 'Equipamentos / sistemas', 'Analitos', 'Unidades'],
-  'Testes': ['Unidade', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Níveis', 'Material',
+  'Testes': ['Unidade', 'Setor', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Níveis', 'Material',
     'Lote N1', 'Lote N2', 'Lote N3', 'Conjunto de regras', 'Regras', 'Frequência', 'Vezes ao dia', 'Início de uso',
     'N1 rótulo', 'N1 material', 'N1 esperado', 'N2 rótulo', 'N2 material', 'N2 esperado', 'N3 rótulo', 'N3 material', 'N3 esperado',
     'Insumo controlado', 'Produto do insumo', 'Exigir lote do insumo', 'Ativo'],
-  'Alvos': ['Unidade', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Lote', 'Nível', 'Média', 'DP', 'CV (%)',
+  'Alvos': ['Unidade', 'Setor', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Lote', 'Nível', 'Média', 'DP', 'CV (%)',
     'Origem', 'Vigente desde', 'N pontos', 'Justificativa'],
-  'Resultados': ['Unidade', 'Data/hora', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Nível', 'Valor', 'Resultado',
+  'Resultados': ['Unidade', 'Setor', 'Data/hora', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Nível', 'Valor', 'Resultado',
     'Lote do controle', 'Lote do reagente / insumo', 'Lote do calibrador', 'Decisão', 'Comentário da decisão', 'Operador',
     'Nº da corrida', 'Esperado', 'Média', 'DP', 'z', 'Situação', 'Regras violadas', 'Lançado por', 'Lançado em', 'Invalidado'],
-  'Corridas': ['Unidade', 'Nº', 'Data/hora', 'Equipamento / sistema', 'Situação', 'Operador', 'Lançado por', 'Lançado em', 'Estação', 'Testes', 'Observação'],
-  'Não conformidades': ['Unidade', 'Número', 'Situação', 'Tipo', 'Teste', 'Corrida', 'Data da corrida', 'Violações', 'Causa', 'Investigação', 'Ações',
+  'Corridas': ['Unidade', 'Setor', 'Nº', 'Data/hora', 'Equipamento / sistema', 'Situação', 'Operador', 'Lançado por', 'Lançado em', 'Estação', 'Testes', 'Observação'],
+  'Não conformidades': ['Unidade', 'Setor', 'Número', 'Situação', 'Tipo', 'Teste', 'Corrida', 'Data da corrida', 'Violações', 'Causa', 'Investigação', 'Ações',
     'Impacto em pacientes', 'Conclusão', 'Aberta em', 'Aberta por'],
 };
 // Abas lidas na importação (as demais são só de consulta)
@@ -45,6 +46,7 @@ const CQ_PL_INSTRUCOES = [
   ['Registros que já existem no sistema são ignorados (não são alterados). Para alterar um cadastro use o formulário do sistema.'],
   ['A importação é tudo ou nada: se houver qualquer erro, nada é gravado e a lista de erros é exibida.'],
   ['Unidades não são importadas: cadastre-as em Configurações › Controle de Qualidade e use a sigla na coluna Unidade.'],
+  ['Testes › Setor: nome do setor dentro da unidade (Ativos › Unidades e setores). Vazio: o setor do equipamento. Nas demais abas a coluna Setor é apenas consulta.'],
   ['Analitos, Materiais, Lotes de controle e Insumos › Unidades: siglas das unidades que usam o cadastro, separadas por ";". Vazio: unidades dos testes importados que o usam ou, sem uso, a unidade ativa.'],
   ['Cadastro existente com outra unidade na coluna Unidades (ou usado por teste/resultado de outra unidade) recebe a associação a essa unidade.'],
   [''],
@@ -268,8 +270,9 @@ async function _cqPlExportarDados({ unidades, de, ate }) {
   const mat = id => cfg.materiais[id];
   const lote = id => cfg.lotesControle[id];
   const ins = id => cfg.insumos[id];
+  const setorNome = id => id ? (_orgSetor(id)?.nome || '') : '';
   const refTeste = t => ({
-    'Unidade': un(t.unidadeId), 'Analito': an(t.analitoId)?.nome || '', 'Unidade de medida': an(t.analitoId)?.unidadeMedida || '',
+    'Unidade': un(t.unidadeId), 'Setor': setorNome(_cqSetorDoTeste(t)), 'Analito': an(t.analitoId)?.nome || '', 'Unidade de medida': an(t.analitoId)?.unidadeMedida || '',
     'Equipamento / sistema': _cqEquipTeste(t), 'Código do equipamento': t.ativoId ? (_cqPlAtivo(t.ativoId)?.codigo || t.ativoSnap?.codigo || '') : '', 'Método': t.metodo || '',
   });
   const ordenar = (arr, f) => arr.sort((a, b) => f(a).localeCompare(f(b)));
@@ -277,6 +280,7 @@ async function _cqPlExportarDados({ unidades, de, ate }) {
 
   d['Unidades'] = ordenar(Object.values(cfg.unidades).filter(u => unidades.includes(u.id)), u => u.sigla || '')
     .map(u => ({ 'Sigla': u.sigla, 'Nome': u.nome, 'CNES': u.cnes || '', 'Fuso horário': u.fuso || '', 'Ativa': _cqPlSN(u.ativa) }));
+  d['Setores'] = unidades.flatMap(u => _cqSetoresDaUnidade(u).map(s => ({ 'Unidade': un(u), 'Setor': s.nome, 'Ativo': _cqPlSN(s.ativo) })));
   // Cadastros das unidades exportadas (os antigos sem unidade entram sempre)
   const noEscopo = r => !_cqUnidadesRec(r).length || _cqUnidadesRec(r).some(u => unidades.includes(u));
   const siglas = r => _cqUnidadesRec(r).map(un).join('; ');
@@ -339,7 +343,7 @@ async function _cqPlExportarDados({ unidades, de, ate }) {
     porMes.forEach(({ m, corr, res }) => {
       Object.entries(corr).sort(([a], [b]) => a.localeCompare(b)).forEach(([ck, c]) => {
         if (!c || typeof c !== 'object') return;
-        d['Corridas'].push({ 'Unidade': un(u), 'Nº': c.numero || '', 'Data/hora': _cqPlFmtDH(c.dataHora), 'Equipamento / sistema': c.ativoSnap?.nome || c.sistemaAnalitico || '',
+        d['Corridas'].push({ 'Unidade': un(u), 'Setor': [...new Set(_cqSetoresDeRegistro(c).filter(Boolean))].map(setorNome).join('; '), 'Nº': c.numero || '', 'Data/hora': _cqPlFmtDH(c.dataHora), 'Equipamento / sistema': c.ativoSnap?.nome || c.sistemaAnalitico || '',
           'Situação': CQ_CORRIDA_STATUS[c.status]?.label || c.status || '', 'Operador': c.operadorNome || '', 'Lançado por': c.lancadoPorNome || '', 'Lançado em': _cqPlFmtDH(c.lancadoEm),
           'Estação': c.estacao || '', 'Testes': Object.keys(c.testes || {}).map(tid => cfg.testes[tid] ? _cqNomeTeste(cfg.testes[tid]) : tid).join('; '),
           'Observação': [c.importacao ? `Importada de ${c.importacao.arquivo}` : '', c.retroativo?.justificativa ? `Retroativo: ${c.retroativo.justificativa}` : '', c.repeticaoDe ? 'Repetição' : '', c.observacao || ''].filter(Boolean).join(' · ') });
@@ -365,7 +369,7 @@ async function _cqPlExportarDados({ unidades, de, ate }) {
       const ncs = (await window.dbGet(`${CQ_KEYS.acoes}/${u}/${ano}`)) || {};
       Object.values(ncs).filter(nc => nc && nc.mes >= de && nc.mes <= ate).sort((a, b) => (a.numero || '').localeCompare(b.numero || '')).forEach(nc => {
         const i = nc.impacto || {};
-        d['Não conformidades'].push({ 'Unidade': un(u), 'Número': nc.numero, 'Situação': CQ_NC_STATUS[nc.status]?.label || nc.status, 'Tipo': CQ_NC_TIPO[nc.tipo] || nc.tipo,
+        d['Não conformidades'].push({ 'Unidade': un(u), 'Setor': setorNome(_cqSetorDoTeste(cfg.testes[nc.testeId])), 'Número': nc.numero, 'Situação': CQ_NC_STATUS[nc.status]?.label || nc.status, 'Tipo': CQ_NC_TIPO[nc.tipo] || nc.tipo,
           'Teste': nc.testeNome || '', 'Corrida': nc.corridaNumero || '', 'Data da corrida': _cqPlFmtDH(nc.dataHoraCorrida), 'Violações': _cqArr(nc.violacoes).join('; '),
           'Causa': nc.causa || '', 'Investigação': nc.investigacao?.texto || '', 'Ações': Object.values(nc.acoes || {}).map(a => a.tipo + (a.descricao ? ` — ${a.descricao}` : '')).join('; '),
           'Impacto em pacientes': [i.reprocessadas ? `reprocessadas: ${CQ_SNNA[i.reprocessadas] || i.reprocessadas}` : '', i.laudosAfetados ? `laudos afetados: ${CQ_SNNA[i.laudosAfetados] || i.laudosAfetados}` : '', i.justificativa || ''].filter(Boolean).join(' · '),
@@ -694,10 +698,19 @@ async function _cqPlPlanejar(abas, { arquivo }) {
     if (!inicio) return erro(A, l.n, 'Início de uso inválido.');
     const freqTipo = _cqPlMapa(CQ_FREQ, l.g('Frequência'), qual ? 'por_lote' : 'por_corrida');
     if (!freqTipo) return erro(A, l.n, 'Frequência inválida.');
+    let setorId = '';
+    const setorTxt = _cqPlTxt(l.g('Setor'));
+    if (setorTxt) {
+      if (!_cqSetoresDaUnidade(u.id).length) return erro(A, l.n, `A unidade ${u.sigla} não tem setores cadastrados (Ativos › Unidades e setores).`);
+      const ss = _orgSetoresPorNome(setorTxt, u.id);
+      if (!ss.length) return erro(A, l.n, `Setor "${setorTxt}" não encontrado na unidade ${u.sigla}.`);
+      // Igual ao do equipamento: não grava (segue o equipamento)
+      if (!at || _orgSetorDoAtivo(at)?.id !== ss[0].id) setorId = ss[0].id;
+    }
     const rec = {
       id: _cqUid(), unidadeId: u.id, analitoId: a.id, ativoId: at ? at.id : null,
       ativoSnap: at ? { nome: at.nome || '', codigo: at.codigo || '', serie: at.serie || '', modelo: at.modelo || '' } : null,
-      sistemaAnalitico: at ? '' : equip, metodo: _cqPlTxt(l.g('Método')), inicioUso: inicio, niveis,
+      sistemaAnalitico: at ? '' : equip, metodo: _cqPlTxt(l.g('Método')), inicioUso: inicio, niveis, ...(setorId ? { setorId } : {}),
       frequencia: { tipo: freqTipo, vezesDia: Math.max(1, Number(_cqPlTxt(l.g('Vezes ao dia'))) || 1) }, ativo, versaoConfig: 1, etaOverride: null, lotesAtivos: {},
     };
     if (Object.values(W.testes).some(t => _cqPlChaveTeste(t) === _cqPlChaveTeste(rec))) { res(A).existentes++; return; }
@@ -1049,7 +1062,7 @@ async function _cqPlGravar(plano, motivo) {
       retroativo: { horas: Math.max(0, Math.round((agoraMs - Date.parse(`${c.dh}:00`)) / 3600000)), justificativa: `Importação de planilha: ${motivo}` },
       importacao: { arquivo: plano.arquivo, motivo, porId: ass.porId, porNome: ass.porNome, em: ass.em },
       flags: { posManutPrev: false, posManutCorr: false, reinicioEquip: false, verificacao: false, otRef: null },
-      repeticaoDe: null, testes, trilha: {},
+      repeticaoDe: null, setorIds: _cqSetoresDosTestes(Object.keys(testes)).filter(Boolean), testes, trilha: {},
     };
     if (c.observacao) hdr.observacao = c.observacao;
     hdr.status = _cqStatusCorrida(hdr);
@@ -1085,7 +1098,10 @@ async function _cqPlGravar(plano, motivo) {
   // Corridas importadas costumam ser de meses anteriores: a lista abre no mês mais recente importado da unidade ativa
   const uAtiva = _cqUnidadeAtivaId();
   const mesesAtiva = [...new Set(plano.corridas.filter(c => c.u === uAtiva).map(c => c.mes))].sort();
-  if (mesesAtiva.length && typeof _cqCorrFiltro !== 'undefined' && !mesesAtiva.includes(_cqCorrFiltro.mes)) _cqCorrFiltro.mes = mesesAtiva[mesesAtiva.length - 1];
+  if (mesesAtiva.length && typeof _cqCorrFiltro !== 'undefined') {
+    const ult = mesesAtiva[mesesAtiva.length - 1];
+    if (!_cqCorrFiltro.per || !_cqPerMeses(_cqCorrFiltro.per, 24).includes(ult)) _cqCorrFiltro.per = { modo: 'intervalo', de: ult, ate: ult };
+  }
   const nCad = CQ_COLECOES.reduce((s, c) => s + Object.keys(plano.novos[c] || {}).length, 0);
   let onde = '';
   if (plano.corridas.length) {

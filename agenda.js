@@ -44,8 +44,9 @@
     if (abrindo) _popularSelectsAgenda();
   };
 
-  // Armazena as opções disponíveis para autocomplete
-  const _agendaAutocompleteOptions = { setor: [], cat: [] };
+  // Armazena as opções disponíveis para autocomplete ({ value, label })
+  const _agendaAutocompleteOptions = { unidade: [], setor: [], cat: [] };
+  let _agendaSetorIds = [];
 
   function _popularSelectsAgenda() {
     const selTipo  = document.getElementById('agenda-filter-tipo');
@@ -55,8 +56,8 @@
       ? state.ativos.filter(a => _userCanSeeAtivo(a))
       : state.ativos;
     const tipos    = [...new Set(state.rotinas.map(r => r.tipo).filter(Boolean))].sort();
-    const setores  = [...new Set(ativosVisiveis.map(a => a.setor).filter(Boolean))].sort();
     const cats     = [...new Set(ativosVisiveis.map(a => a.categoria).filter(Boolean))].sort();
+    _agendaSetorIds = [...new Set(ativosVisiveis.map(a => _orgSetorIdDoAtivo(a)).filter(Boolean))];
 
     // Tipo continua como select
     const _rebuild = (sel, items, placeholder) => {
@@ -66,15 +67,25 @@
     };
     _rebuild(selTipo, tipos, 'Todos');
 
-    // Setor e categoria usam autocomplete
-    _agendaAutocompleteOptions.setor = setores;
-    _agendaAutocompleteOptions.cat   = cats;
+    // Unidade, setor e categoria usam autocomplete
+    _agendaAutocompleteOptions.unidade = _orgUnidadesDosSetores(_agendaSetorIds).map(o => ({ value: o.value, label: o.label, sub: o.sub }));
+    _agendaAutocompleteOptions.setor   = _orgOpcoesSetores(_agendaSetorIds, _agendaFilterVal.unidade);
+    _agendaAutocompleteOptions.cat     = cats.map(v => ({ value: v, label: v }));
+    const fUn = document.getElementById('agenda-filter-field-unidade');
+    if (fUn) fUn.style.display = _orgMigrado() ? '' : 'none';
   }
 
   // Valor selecionado atual dos campos autocomplete (não o texto digitado)
-  const _agendaFilterVal = { setor: '', cat: '' };
+  const _agendaFilterVal = { unidade: '', setor: '', cat: '' };
 
-  const _agendaTodosLabel = { setor: 'Todos', cat: 'Todas' };
+  const _agendaTodosLabel = { unidade: 'Todas', setor: 'Todos', cat: 'Todas' };
+
+  function _agendaRotulo(field, value) {
+    if (!value) return '';
+    if (field === 'unidade') return value === '__sem__' ? 'Sem unidade' : _orgSiglaUnidade(value);
+    if (field === 'setor') return _orgRotuloSetor(value, { semUnidade: !!_agendaFilterVal.unidade });
+    return value;
+  }
 
   window.agendaAutocomplete = function(field) {
     const input = document.getElementById('agenda-filter-' + field);
@@ -85,11 +96,12 @@
     // Campo vazio → limpa filtro imediatamente
     if (!q && _agendaFilterVal[field]) {
       _agendaFilterVal[field] = '';
+      if (field === 'unidade') _agendaAutocompleteOptions.setor = _orgOpcoesSetores(_agendaSetorIds, '');
       renderAgendaCalendario();
     }
 
     const opts = _agendaAutocompleteOptions[field] || [];
-    const filtered = q ? opts.filter(o => o.toLowerCase().includes(q)) : opts;
+    const filtered = q ? opts.filter(o => (o.label + ' ' + (o.sub || '')).toLowerCase().includes(q)) : opts;
     const todosLabel = _agendaTodosLabel[field];
     const isTodos = _agendaFilterVal[field] === '';
 
@@ -97,9 +109,9 @@
       ${todosLabel}
     </div>`;
 
-    const optItems = filtered.map(v =>
-      `<div class="agenda-autocomplete-item${v === _agendaFilterVal[field] ? ' selected' : ''}" data-value="${v}" onmousedown="agendaAutocompleteSelect('${field}','${v.replace(/'/g,"\\'")}')">
-        ${v}
+    const optItems = filtered.map(o =>
+      `<div class="agenda-autocomplete-item${o.value === _agendaFilterVal[field] ? ' selected' : ''}" data-value="${_orgEsc(o.value)}" onmousedown="agendaAutocompleteSelect('${field}','${_orgJsAttr(o.value)}')">
+        ${_orgEsc(o.label)}${o.sub ? ` <small style="color:var(--text-muted)">${_orgEsc(o.sub)}</small>` : ''}
       </div>`
     ).join('');
 
@@ -112,7 +124,14 @@
     const list  = document.getElementById('agenda-autocomplete-' + field);
     if (!input || !list) return;
     _agendaFilterVal[field] = value;
-    input.value = value;
+    if (field === 'unidade') {
+      // Setor fora da unidade escolhida volta para "Todos"
+      if (_agendaFilterVal.setor && !_orgSetorNaUnidade(_agendaFilterVal.setor, value)) _agendaFilterVal.setor = '';
+      _agendaAutocompleteOptions.setor = _orgOpcoesSetores(_agendaSetorIds, value);
+      const si = document.getElementById('agenda-filter-setor');
+      if (si) si.value = _agendaRotulo('setor', _agendaFilterVal.setor);
+    }
+    input.value = _agendaRotulo(field, value);
     list.classList.remove('open');
     renderAgendaCalendario();
   };
@@ -122,8 +141,9 @@
     const input = document.getElementById('agenda-filter-' + field);
     if (list) list.classList.remove('open');
     // Se o texto não bate com o valor selecionado, reverte
-    if (input && input.value !== _agendaFilterVal[field]) {
-      input.value = _agendaFilterVal[field];
+    const rot = _agendaRotulo(field, _agendaFilterVal[field]);
+    if (input && input.value !== rot) {
+      input.value = rot;
     }
   };
 
@@ -158,13 +178,15 @@
   // ══════════════════════════════════════════
 
   const _tabFiltroVal = {
-    tarefas:    { setor: '', cat: '' },
-    atividades: { setor: '', cat: '' }
+    tarefas:    { unidade: '', setor: '', cat: '' },
+    atividades: { unidade: '', setor: '', cat: '' }
   };
+  // Opções { value, label } de cada campo
   const _tabFiltroOpts = {
-    tarefas:    { setor: [], cat: [] },
-    atividades: { setor: [], cat: [] }
+    tarefas:    { unidade: [], setor: [], cat: [] },
+    atividades: { unidade: [], setor: [], cat: [] }
   };
+  const _tabSetorIds = { tarefas: [], atividades: [] };
 
   function _popularSelectsTab(tab) {
     const selTipo = document.getElementById(tab + '-filter-tipo');
@@ -174,15 +196,25 @@
       ? state.ativos.filter(a => _userCanSeeAtivo(a))
       : state.ativos;
     const tipos   = [...new Set(state.rotinas.map(r => r.tipo).filter(Boolean))].sort();
-    const setores = [...new Set(ativosVisiveis.map(a => a.setor).filter(Boolean))].sort();
     const cats    = [...new Set(ativosVisiveis.map(a => a.categoria).filter(Boolean))].sort();
+    _tabSetorIds[tab] = [...new Set(ativosVisiveis.map(a => _orgSetorIdDoAtivo(a)).filter(Boolean))];
 
     const cur = selTipo.value;
     selTipo.innerHTML = `<option value="">Todos</option>` +
       tipos.map(v => `<option value="${v}"${v === cur ? ' selected' : ''}>${v}</option>`).join('');
 
-    _tabFiltroOpts[tab].setor = setores;
-    _tabFiltroOpts[tab].cat   = cats;
+    _tabFiltroOpts[tab].unidade = _orgUnidadesDosSetores(_tabSetorIds[tab]).map(o => ({ value: o.value, label: o.label, sub: o.sub }));
+    _tabFiltroOpts[tab].setor   = _orgOpcoesSetores(_tabSetorIds[tab], _tabFiltroVal[tab].unidade);
+    _tabFiltroOpts[tab].cat     = cats.map(v => ({ value: v, label: v }));
+    const fUn = document.getElementById(tab + '-filter-field-unidade');
+    if (fUn) fUn.style.display = _orgMigrado() ? '' : 'none';
+  }
+
+  function _tabRotulo(tab, field, value) {
+    if (!value) return '';
+    if (field === 'unidade') return value === '__sem__' ? 'Sem unidade' : _orgSiglaUnidade(value);
+    if (field === 'setor') return _orgRotuloSetor(value, { semUnidade: !!_tabFiltroVal[tab].unidade });
+    return value;
   }
 
   window.toggleTabFiltroInline = function (tab) {
@@ -203,21 +235,22 @@
 
     if (!q && _tabFiltroVal[tab][field]) {
       _tabFiltroVal[tab][field] = '';
+      if (field === 'unidade') _tabFiltroOpts[tab].setor = _orgOpcoesSetores(_tabSetorIds[tab], '');
       if (tab === 'tarefas') renderTarefasTable();
       else renderAtividadesTable();
     }
 
     const opts     = _tabFiltroOpts[tab][field] || [];
-    const filtered = q ? opts.filter(o => o.toLowerCase().includes(q)) : opts;
-    const todosLabel = field === 'cat' ? 'Todas' : 'Todos';
+    const filtered = q ? opts.filter(o => (o.label + ' ' + (o.sub || '')).toLowerCase().includes(q)) : opts;
+    const todosLabel = field === 'setor' ? 'Todos' : 'Todas';
     const isTodos  = _tabFiltroVal[tab][field] === '';
 
     const todosItem = `<div class="agenda-autocomplete-item${isTodos ? ' selected' : ''}" data-value="" onmousedown="tabFiltroAutocompleteSelect('${tab}','${field}','')">
       ${todosLabel}
     </div>`;
-    const optItems = filtered.map(v =>
-      `<div class="agenda-autocomplete-item${v === _tabFiltroVal[tab][field] ? ' selected' : ''}" data-value="${v}" onmousedown="tabFiltroAutocompleteSelect('${tab}','${field}','${v.replace(/'/g,"\\'")}')">
-        ${v}
+    const optItems = filtered.map(o =>
+      `<div class="agenda-autocomplete-item${o.value === _tabFiltroVal[tab][field] ? ' selected' : ''}" data-value="${_orgEsc(o.value)}" onmousedown="tabFiltroAutocompleteSelect('${tab}','${field}','${_orgJsAttr(o.value)}')">
+        ${_orgEsc(o.label)}${o.sub ? ` <small style="color:var(--text-muted)">${_orgEsc(o.sub)}</small>` : ''}
       </div>`
     ).join('');
 
@@ -230,7 +263,15 @@
     const list  = document.getElementById(tab + '-autocomplete-' + field);
     if (!input || !list) return;
     _tabFiltroVal[tab][field] = value;
-    input.value = value;
+    if (field === 'unidade') {
+      // Setor fora da unidade escolhida volta para "Todos"
+      const fv = _tabFiltroVal[tab];
+      if (fv.setor && !_orgSetorNaUnidade(fv.setor, value)) fv.setor = '';
+      _tabFiltroOpts[tab].setor = _orgOpcoesSetores(_tabSetorIds[tab], value);
+      const si = document.getElementById(tab + '-filter-setor');
+      if (si) si.value = _tabRotulo(tab, 'setor', fv.setor);
+    }
+    input.value = _tabRotulo(tab, field, value);
     list.classList.remove('open');
     if (tab === 'tarefas') renderTarefasTable();
     else renderAtividadesTable();
@@ -240,8 +281,9 @@
     const list  = document.getElementById(tab + '-autocomplete-' + field);
     const input = document.getElementById(tab + '-filter-' + field);
     if (list) list.classList.remove('open');
-    if (input && input.value !== _tabFiltroVal[tab][field]) {
-      input.value = _tabFiltroVal[tab][field];
+    const rot = _tabRotulo(tab, field, _tabFiltroVal[tab][field]);
+    if (input && input.value !== rot) {
+      input.value = rot;
     }
   };
 
@@ -498,6 +540,7 @@
 
     const fTipo  = document.getElementById('agenda-filter-tipo')?.value  || '';
     const fSetor = _agendaFilterVal.setor || '';
+    const fUnidade = _agendaFilterVal.unidade || '';
     const fCat   = _agendaFilterVal.cat   || '';
 
     const tarefasFiltradas = state.tarefas.filter(t => {
@@ -510,11 +553,11 @@
         const temGrupo   = sessao.grupoId && resp.grupos.includes(sessao.grupoId);
         if (!temUsuario && !temGrupo) return false;
       }
-      if (fTipo || fSetor || fCat) {
+      if (fTipo || fSetor || fUnidade || fCat) {
         const rotina = state.rotinas.find(r => r.id === t.rotinaId);
         const ativo  = state.ativos[t.equipamentoIdx];
         if (fTipo  && rotina?.tipo       !== fTipo)  return false;
-        if (fSetor && ativo?.setor       !== fSetor) return false;
+        if ((fSetor || fUnidade) && !_orgAtivoPassa(ativo, fUnidade, fSetor)) return false;
         if (fCat   && ativo?.categoria   !== fCat)   return false;
       }
       return true;

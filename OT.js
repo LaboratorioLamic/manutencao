@@ -449,10 +449,10 @@ function _otRenderFilterAtivoList(q) {
   const ativos = state.ativos.map((a, i) => ({ ...a, _idx: i }))
     .filter(a => {
       if (!idxComOTs.has(a._idx)) return false;
-      return !q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q);
+      return !q || `${a.nome} ${a.codigo} ${_orgRotuloAtivo(a)}`.toLowerCase().includes(q);
     })
     .sort((a, b) => {
-      const sa = (a.setor || '').toLowerCase(), sb = (b.setor || '').toLowerCase();
+      const sa = _orgChaveOrdemAtivo(a), sb = _orgChaveOrdemAtivo(b);
       if (sa !== sb) return sa < sb ? -1 : 1;
       const ca = (a.codigo || '').toLowerCase(), cb = (b.codigo || '').toLowerCase();
       return ca < cb ? -1 : ca > cb ? 1 : 0;
@@ -468,7 +468,7 @@ function _otRenderFilterAtivoList(q) {
       </div>
       <div>
         <div class="ativo-search-card-name">${_escHtml(a.nome)}</div>
-        <div class="ativo-search-card-meta">${a.codigo ? a.codigo + ' · ' : ''}${a.setor || ''}${idxComOTs.has(a._idx) ? ` · ${otsVisiveis.filter(o => otTemAtivo(o, a._idx)).length} OT(s)` : ''}</div>
+        <div class="ativo-search-card-meta">${a.codigo ? a.codigo + ' · ' : ''}${_escHtml(_orgRotuloAtivo(a))}${idxComOTs.has(a._idx) ? ` · ${otsVisiveis.filter(o => otTemAtivo(o, a._idx)).length} OT(s)` : ''}</div>
       </div>
     </div>`).join('');
 }
@@ -588,9 +588,9 @@ function _otGetFiltered() {
     const ativosOT = typeof state !== 'undefined' ? otAtivoIdxs(o).map(i => state.ativos[i]).filter(Boolean) : [];
     if (ativosOT.length) {
       if (typeof _userCanSeeAtivo === 'function' && !ativosOT.some(a => _userCanSeeAtivo(a))) return false;
-    } else if (o.setor) {
-      const fakeAtivo = { setor: o.setor };
-      if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(fakeAtivo)) return false;
+    } else if (o.setor || o.setorId) {
+      const setorId = _orgSetorIdDeRef(o.setorId, o.setor);
+      if (typeof _userCanSeeSetor === 'function' && !_userCanSeeSetor(setorId)) return false;
     }
     if (_otFilterAtivoIdx !== null && !otTemAtivo(o, _otFilterAtivoIdx)) return false;
     if (_otFilterMyOTs && sess) {
@@ -1544,7 +1544,7 @@ function _otRenderAtivoChip() {
   if (typeof state !== 'undefined') _otAtivoIdxs = _otAtivoIdxs.filter(i => state.ativos[i]);
   _otAtivoIdx = _otAtivoIdxs.length ? _otAtivoIdxs[0] : null;
   const setorEl = document.getElementById('ot-f-setor-display');
-  if (setorEl && _otAtivoIdx !== null) setorEl.textContent = state.ativos[_otAtivoIdx]?.setor || '';
+  if (setorEl && _otAtivoIdx !== null) setorEl.textContent = _orgRotuloAtivo(state.ativos[_otAtivoIdx]);
   const wrap = document.getElementById('ot-ativo-chip-wrap');
   if (!wrap) return;
   const chips = _otAtivoIdxs.map((idx, n) => {
@@ -1609,9 +1609,9 @@ function _otRenderAtivoSearchList(q) {
   if (!list || typeof state === 'undefined') return;
   const sel = new Set(_otAtivoIdxs);
   const ativos = state.ativos.map((a, i) => ({ ...a, _idx: i }))
-    .filter(a => (a.statusUso !== 'em_desuso' || sel.has(a._idx)) && (!q || `${a.nome} ${a.codigo} ${a.setor}`.toLowerCase().includes(q)))
+    .filter(a => (a.statusUso !== 'em_desuso' || sel.has(a._idx)) && (!q || `${a.nome} ${a.codigo} ${_orgRotuloAtivo(a)}`.toLowerCase().includes(q)))
     .sort((a, b) => {
-      const sa = (a.setor || '').toLowerCase(), sb = (b.setor || '').toLowerCase();
+      const sa = _orgChaveOrdemAtivo(a), sb = _orgChaveOrdemAtivo(b);
       if (sa !== sb) return sa < sb ? -1 : 1;
       const ca = (a.codigo || '').toLowerCase(), cb = (b.codigo || '').toLowerCase();
       return ca < cb ? -1 : ca > cb ? 1 : 0;
@@ -1630,7 +1630,7 @@ function _otRenderAtivoSearchList(q) {
       </div>
       <div>
         <div class="ativo-search-card-name">${_escHtml(a.nome)}</div>
-        <div class="ativo-search-card-meta">${a.codigo ? _escHtml(a.codigo) + ' · ' : ''}${_escHtml(a.setor || '')}</div>
+        <div class="ativo-search-card-meta">${a.codigo ? _escHtml(a.codigo) + ' · ' : ''}${_escHtml(_orgRotuloAtivo(a))}</div>
       </div>
     </div>`).join('');
 }
@@ -1854,8 +1854,9 @@ function otSaveForm() {
       ativoIds:   _ativoIdsForm,
       ocorrenciaIds: _otOcorrenciaIds.slice(),
       ocorrenciaId:  null, // substituído por ocorrenciaIds
-      setor:      (_otAtivoIdx !== null && typeof state !== 'undefined')
-                    ? (state.ativos[_otAtivoIdx]?.setor || '') : '',
+      // Setor/unidade do ativo principal no momento da abertura (histórico)
+      ...((_otAtivoIdx !== null && typeof state !== 'undefined')
+        ? _orgRefDoAtivo(state.ativos[_otAtivoIdx]) : { setor: '', setorId: '', unidadeId: '' }),
       solicitanteId:   sess?.userId       || null,
       solicitanteNome: sess?.nomeCompleto || sess?.username || '',
       responsavelIds:  respIds,
@@ -2022,7 +2023,7 @@ function _otRenderView(o) {
   </div>` : ''}
   <div class="detail-card">
     <div class="detail-label">Setor</div>
-    <div class="detail-value">${_escHtml(o.setor || (ativo?.setor) || '—')}</div>
+    <div class="detail-value">${_escHtml((o.setorId || o.setor) ? _orgRotuloRef(o.setorId, o.setor) : (_orgRotuloAtivo(ativo) || '—'))}</div>
   </div>
   <div class="detail-card">
     <div class="detail-label">Prazo</div>
@@ -3314,7 +3315,7 @@ function _otModalsHTML() {
     <div class="modal-body">
       <div class="ativo-search-input-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" class="field-input" id="ot-ativo-search-input" placeholder="Buscar por nome, código ou setor..."
+        <input type="text" class="field-input" id="ot-ativo-search-input" placeholder="Buscar por nome, código, unidade ou setor..."
           oninput="otAtivoSearchInput(this.value)">
       </div>
       <div id="ot-ativo-search-list" class="ativo-search-list"></div>
@@ -3346,7 +3347,7 @@ function _otModalsHTML() {
     <div class="modal-body">
       <div class="ativo-search-input-wrap">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        <input type="text" class="field-input" id="ot-filter-ativo-search-input" placeholder="Buscar por nome, código ou setor..."
+        <input type="text" class="field-input" id="ot-filter-ativo-search-input" placeholder="Buscar por nome, código, unidade ou setor..."
           oninput="otFilterAtivoSearchInput(this.value)">
       </div>
       <div id="ot-filter-ativo-search-list" class="ativo-search-list"></div>

@@ -313,11 +313,19 @@ function _ocNomesAtivos(oc, max = 3) {
   const nomes = oc.ativos.map(a => a.snapshot.nome || '—');
   return nomes.length > max ? `${nomes.slice(0, max).join(', ')} +${nomes.length - max}` : nomes.join(', ');
 }
+// "NTO · Hematologia" do snapshot (gravado na abertura) ou, em registros antigos, pelo cadastro atual
+function _ocRotuloSetor(s) {
+  if (!s) return '';
+  if (s.unidade && s.setor) return `${s.unidade} · ${s.setor}`;
+  return typeof _orgRotuloRef === 'function' ? _orgRotuloRef(s.setorId, s.setor) : (s.setor || '');
+}
 function _ocMetaAtivo(s) {
-  return [s.codigo, s.setor, s.marca && s.marca !== '-' ? s.marca : '', s.modelo && s.modelo !== '-' ? s.modelo : '', s.serie && s.serie !== '-' ? 'S/N ' + s.serie : ''].filter(Boolean).join(' · ');
+  return [s.codigo, _ocRotuloSetor(s), s.marca && s.marca !== '-' ? s.marca : '', s.modelo && s.modelo !== '-' ? s.modelo : '', s.serie && s.serie !== '-' ? 'S/N ' + s.serie : ''].filter(Boolean).join(' · ');
 }
 function _ocSnapshotAtivo(a) {
-  return a ? { nome: a.nome || '', codigo: a.codigo || '', setor: a.setor || '', categoria: a.categoria || '',
+  const ref = a && typeof _orgRefDoAtivo === 'function' ? _orgRefDoAtivo(a) : { setor: a?.setor || '', setorId: '', unidadeId: '' };
+  return a ? { nome: a.nome || '', codigo: a.codigo || '', setor: ref.setor, setorId: ref.setorId, unidadeId: ref.unidadeId,
+               unidade: ref.unidadeId && typeof _orgSiglaUnidade === 'function' ? _orgSiglaUnidade(ref.unidadeId) : '', categoria: a.categoria || '',
                tipo: a.tipo || '', marca: a.marca || '', modelo: a.modelo || '', serie: a.serie || '' } : {};
 }
 function _ocVal(id) { const el = document.getElementById(id); return el ? String(el.value ?? '').trim() : ''; }
@@ -623,7 +631,7 @@ function _ocFiltradas() {
     }
     if (f.minhas && !_ocEhMinha(oc)) return false;
     if (q) {
-      const ativosTxt = oc.ativos.map(a => `${a.snapshot.nome} ${a.snapshot.codigo} ${a.snapshot.setor}`).join(' ');
+      const ativosTxt = oc.ativos.map(a => `${a.snapshot.nome} ${a.snapshot.codigo} ${_ocRotuloSetor(a.snapshot)}`).join(' ');
       const txt = `${oc.numero} ${oc.titulo} ${oc.descricao} ${oc.subtipo} ${ativosTxt}`.toLowerCase();
       if (!txt.includes(q)) return false;
     }
@@ -696,7 +704,7 @@ function ocRender() {
         const vencido = prazo && prazo < hoje && _ocAberta(oc);
         const parado = _ocParadosPendentes(oc).length > 0 && _ocAberta(oc);
         const s0 = oc.ativos[0]?.snapshot || {};
-        const subAtivo = oc.ativos.length > 1 ? `${oc.ativos.length} ativos afetados` : [s0.codigo, s0.setor].filter(Boolean).join(' · ');
+        const subAtivo = oc.ativos.length > 1 ? `${oc.ativos.length} ativos afetados` : [s0.codigo, _ocRotuloSetor(s0)].filter(Boolean).join(' · ');
         return `<tr class="ot-list-row${_ocAberta(oc) ? '' : ' oc-row-final'}" onclick="ocOpenView('${oc.id}')">
           <td><span class="oc-num">${_ocEsc(oc.numero)}</span></td>
           <td style="font-size:12.5px;white-space:nowrap;">${_ocFmtDH(oc.dataHoraOcorrencia)}</td>
@@ -773,7 +781,7 @@ function ocOpenAtivoPicker(modo) {
   const foot = document.getElementById('oc-ativo-picker-foot');
   if (foot) foot.style.display = modo === 'form' ? '' : 'none';
   document.getElementById('oc-ativo-picker-sub').textContent = modo === 'form'
-    ? 'Marque todos os ativos afetados pelo evento' : 'Busque por nome, código, setor ou modelo';
+    ? 'Marque todos os ativos afetados pelo evento' : 'Busque por nome, código, unidade, setor ou modelo';
   ocAtivoPickerFiltrar('');
   otOpenModal('modal-oc-ativo-search');
   setTimeout(() => input?.focus(), 80);
@@ -786,8 +794,8 @@ function ocAtivoPickerFiltrar(q) {
   const travados = new Set(_ocFormAtivos.filter(a => a.persistido).map(a => a.ativoId));
   const ativos = state.ativos
     .filter(a => a && (typeof _userCanSeeAtivo !== 'function' || _userCanSeeAtivo(a)))
-    .filter(a => !q || `${a.nome} ${a.codigo} ${a.setor} ${a.marca} ${a.modelo} ${a.serie}`.toLowerCase().includes(q))
-    .sort((a, b) => (a.setor || '').localeCompare(b.setor || '') || (a.codigo || '').localeCompare(b.codigo || ''));
+    .filter(a => !q || `${a.nome} ${a.codigo} ${_orgRotuloAtivo(a)} ${a.marca} ${a.modelo} ${a.serie}`.toLowerCase().includes(q))
+    .sort((a, b) => _orgChaveOrdemAtivo(a).localeCompare(_orgChaveOrdemAtivo(b)) || (a.codigo || '').localeCompare(b.codigo || ''));
   const multi = _ocPickerModo === 'form';
   list.innerHTML = !ativos.length ? '<div class="autocomplete-empty">Nenhum ativo encontrado</div>' : ativos.slice(0, 60).map(a => {
     const sel = _ocPickerSel.has(a.id);
@@ -1087,7 +1095,7 @@ function _ocRenderHeader(oc) {
   const nParados = oc.ativos.filter(a => a.parado).length;
   const s0 = oc.ativos[0]?.snapshot || {};
   const ativoLinha = oc.ativos.length === 1
-    ? `${_ocEsc(s0.nome || '—')}${s0.codigo ? ` · ${_ocEsc(s0.codigo)}` : ''}${s0.setor ? ` · ${_ocEsc(s0.setor)}` : ''}`
+    ? `${_ocEsc(s0.nome || '—')}${s0.codigo ? ` · ${_ocEsc(s0.codigo)}` : ''}${s0.setor ? ` · ${_ocEsc(_ocRotuloSetor(s0))}` : ''}`
     : `${oc.ativos.length} ativos: ${_ocEsc(_ocNomesAtivos(oc, 4))}`;
   const etapas = [
     { lbl: 'Registro',  ok: !!oc.acaoImediata.texto },
@@ -2169,8 +2177,8 @@ function ocImprimir(id) {
   <div><div class="num">${e(oc.numero)}</div><div class="sub">Status: <span class="st">${OC_STATUS[oc.status]?.label}</span></div></div>
 </header>
 <h2>1. ${oc.ativos.length > 1 ? `Ativos envolvidos (${oc.ativos.length})` : 'Ativo envolvido'}</h2>
-<table><tr><th style="width:auto">Ativo</th><th style="width:12%">Código</th><th style="width:16%">Setor</th><th style="width:22%">Marca / Modelo / Nº de série</th><th style="width:20%">Situação</th></tr>
-${oc.ativos.map(a => { const s = a.snapshot; return `<tr><td>${e(s.nome)}</td><td>${e(s.codigo)}</td><td>${e(s.setor)}</td>
+<table><tr><th style="width:auto">Ativo</th><th style="width:12%">Código</th><th style="width:18%">Unidade · Setor</th><th style="width:22%">Marca / Modelo / Nº de série</th><th style="width:20%">Situação</th></tr>
+${oc.ativos.map(a => { const s = a.snapshot; return `<tr><td>${e(s.nome)}</td><td>${e(s.codigo)}</td><td>${e(_ocRotuloSetor(s))}</td>
 <td>${e([s.marca, s.modelo, s.serie].filter(x => x && x !== '-').join(' / '))}</td>
 <td>${a.parado ? `Parado desde ${_ocFmtDH(a.dataHoraParada)}${a.liberacao.liberado ? `<br>Liberado em ${_ocFmtDH(a.liberacao.em)}` : '<br><b>Aguardando liberação</b>'}` : 'Não parado'}</td></tr>`; }).join('')}</table>
 <h2>2. Descrição da ocorrência</h2>
@@ -2487,7 +2495,7 @@ function _ocModalsHTML() {
     <div class="modal-header">
       <div class="modal-header-left">
         <div class="modal-header-icon">${OC_ICO.ativo}</div>
-        <div><div class="modal-title">Selecionar ativos</div><div class="modal-subtitle" id="oc-ativo-picker-sub">Busque por nome, código, setor ou modelo</div></div>
+        <div><div class="modal-title">Selecionar ativos</div><div class="modal-subtitle" id="oc-ativo-picker-sub">Busque por nome, código, unidade, setor ou modelo</div></div>
       </div>
       <button class="modal-close" onclick="otCloseModal('modal-oc-ativo-search')">${OC_ICO.close}</button>
     </div>

@@ -5,7 +5,7 @@
 // lote marcadas; estatística do período por nível (PALC 11.7).
 // ═══════════════════════════════════════════════════════════════
 
-let _cqGraf = { testeId: '', periodo: '3', de: '', ate: '', modo: 'valor', niveis: null, dados: null, carregando: false };
+let _cqGraf = { testeId: '', per: null, modo: 'valor', niveis: null, dados: null, carregando: false };   // per: período do seletor de meses (padrão: últimos 3 meses)
 
 const CQ_COR_ESTADO = { A: '#2a9d8f', W: '#e9a23b', R: '#e63946', X: '#8a94a6', P: '#8a94a6' };
 const CQ_COR_NIVEL = ['#00a8cc', '#7b61ff', '#f4a261'];
@@ -18,11 +18,12 @@ function cqGraficoSelecionar(testeId) {
 
 function cqRenderGraficos(body) {
   const u = _cqUnidadeAtivaId();
-  const testes = _cqTestesDaUnidade(u, { incluirInativos: true }).sort((a, b) => _cqEquipTeste(a).localeCompare(_cqEquipTeste(b)) || _cqNomeTeste(a).localeCompare(_cqNomeTeste(b)));
+  const testes = _cqTestesDoFiltro(u, { incluirInativos: true }).sort((a, b) => _cqEquipTeste(a).localeCompare(_cqEquipTeste(b)) || _cqNomeTeste(a).localeCompare(_cqNomeTeste(b)));
+  // Teste aberto por atalho (corrida, NC) fora do setor filtrado continua disponível
+  const tSel = cqState.config.testes[_cqGraf.testeId];
+  if (tSel && tSel.unidadeId === u && !testes.some(t => t.id === tSel.id)) testes.unshift(tSel);
   if (_cqGraf.testeId && !testes.some(t => t.id === _cqGraf.testeId)) { _cqGraf.testeId = ''; _cqGraf.dados = null; }
-  const grupos = {};
-  testes.forEach(t => { (grupos[_cqEquipTeste(t)] = grupos[_cqEquipTeste(t)] || []).push(t); });
-  const meses = CQEngine.mesesAnteriores(CQEngine.mesDe(_cqNowLocal()), 36);
+  if (!_cqGraf.per) { const m = CQEngine.mesDe(_cqNowLocal()); _cqGraf.per = { modo: 'intervalo', de: _cqMesSoma(m, -2), ate: m, atalho: 3 }; }
   const t = cqState.config.testes[_cqGraf.testeId];
   const niveis = t ? _cqNiveisTeste(t) : [];
   const qual = !!t && _cqTesteQual(t);
@@ -30,20 +31,19 @@ function cqRenderGraficos(body) {
   body.innerHTML = `
   <div class="cq-graf">
     <div class="cq-toolbar cq-toolbar-wrap">
-      <select class="field-select" style="max-width:340px;" onchange="cqGraficoSelecionar(this.value);cqRender()">
-        <option value="">— Selecione o teste —</option>
-        ${Object.entries(grupos).map(([g, ts]) => `<optgroup label="${_cqEsc(g)}">${ts.map(x => `<option value="${x.id}" ${x.id === _cqGraf.testeId ? 'selected' : ''}>${_cqEsc(_cqNomeTeste(x))}${x.metodo ? ' · ' + _cqEsc(x.metodo) : ''}${x.ativo === false ? ' (inativo)' : ''}</option>`).join('')}</optgroup>`).join('')}
-      </select>
-      <select class="field-select" style="max-width:170px;" onchange="_cqGraf.periodo=this.value;_cqGraf.dados=null;cqRender()">
-        ${[['1', 'Mês atual'], ['3', 'Últimos 3 meses'], ['6', 'Últimos 6 meses'], ['12', 'Últimos 12 meses'], ['custom', 'Personalizado']].map(([k, l]) => `<option value="${k}" ${k === _cqGraf.periodo ? 'selected' : ''}>${l}</option>`).join('')}
-      </select>
-      ${_cqGraf.periodo === 'custom' ? `<select class="field-select" style="max-width:120px;" onchange="_cqGraf.de=this.value;_cqGraf.dados=null;cqRender()">${meses.map(m => `<option value="${m}" ${m === (_cqGraf.de || meses[2]) ? 'selected' : ''}>${_cqFmtMes(m)}</option>`).join('')}</select>
-        <span class="cq-muted">até</span><select class="field-select" style="max-width:120px;" onchange="_cqGraf.ate=this.value;_cqGraf.dados=null;cqRender()">${meses.map(m => `<option value="${m}" ${m === (_cqGraf.ate || meses[0]) ? 'selected' : ''}>${_cqFmtMes(m)}</option>`).join('')}</select>` : ''}
+      ${_cqGrafTesteHTML(testes, t)}
+      ${_cqMpHTML('cq-mp-graf', { get: () => _cqGraf.per, set: v => { _cqGraf.per = v; _cqGraf.dados = null; },
+          onchange: () => { const tt = cqState.config.testes[_cqGraf.testeId]; if (tt) { const a = document.getElementById('cq-graf-area'); if (a) a.innerHTML = '<div class="cq-vazio-p">Carregando resultados…</div>'; _cqGrafCarregar(tt); } },
+          modos: ['ano', 'intervalo'], atalhos: [1, 3, 6, 12], max: 36 })}
       ${qual ? '' : `<div class="cq-seg">
         <button class="${_cqGraf.modo === 'valor' ? 'active' : ''}" onclick="_cqGraf.modo='valor';cqRender()">Valores</button>
         <button class="${_cqGraf.modo === 'z' ? 'active' : ''}" onclick="_cqGraf.modo='z';cqRender()">Escore z (níveis juntos)</button>
       </div>`}
-      ${niveis.length > 1 ? `<div class="cq-checks cq-checks-inline">${niveis.map(n => `<label class="oc-check"><input type="checkbox" ${_cqGraf.niveis?.includes(n) ? 'checked' : ''} onchange="cqGrafNivel(${n},this.checked)"> ${qual ? _cqEsc(_cqRotuloNivel(t, n)) : 'N' + n}</label>`).join('')}</div>` : ''}
+      ${niveis.length > 1 ? `<div class="cq-cad-equip cq-graf-niv">${_cqMultiHTML('cq-graf-niv', niveis.map(n => {
+          const lote = cqState.config.lotesControle[t.lotesAtivos?.[n]];
+          return { value: n, label: qual ? _cqRotuloNivel(t, n) : `Nível ${n}`, sub: [qual ? `N${n}` : '', lote ? `lote ${lote.lote}` : 'sem lote em uso'].filter(Boolean).join(' · ') };
+        }), (_cqGraf.niveis || []).length === niveis.length ? [] : _cqGraf.niveis, { placeholder: 'Todos os níveis', resumo: 'níveis', filtro: true, ico: CQ_ICO.lista,
+          onchange: v => { _cqGraf.niveis = v.length ? v.map(Number).sort() : [...niveis]; _cqGrafDesenhar(); }, vazio: 'Teste sem níveis.' })}</div>` : ''}
       <div class="cq-spacer"></div>
       ${t ? `<button class="btn btn-outline btn-sm" onclick="_cqGraf.dados=null;cqRender()">${CQ_ICO.undo} Atualizar</button>
         <button class="btn btn-outline btn-sm" onclick="cqImprimirGrafico()">${CQ_ICO.print} Imprimir</button>` : ''}
@@ -61,16 +61,54 @@ function cqGrafNivel(n, on) {
 }
 
 function _cqGrafPeriodo() {
-  const atual = CQEngine.mesDe(_cqNowLocal());
-  if (_cqGraf.periodo === 'custom') {
-    const ms = CQEngine.mesesAnteriores(atual, 36);
-    let de = _cqGraf.de || ms[2], ate = _cqGraf.ate || ms[0];
-    if (de > ate) [de, ate] = [ate, de];
-    return { de, ate };
-  }
-  const n = Number(_cqGraf.periodo) || 3;
-  return { de: CQEngine.mesesAnteriores(atual, n)[n - 1], ate: atual };
+  // Atalhos (mês atual, 3, 6, 12 meses) acompanham a virada do mês
+  const p = _cqGraf.per;
+  if (p?.atalho) { const atual = CQEngine.mesDe(_cqNowLocal()); return { de: _cqMesSoma(atual, -(p.atalho - 1)), ate: atual }; }
+  return _cqPerFaixa(p, 36);
 }
+// Seletor do teste (popover com busca, agrupado por equipamento, com a situação da última corrida)
+function _cqGrafTesteHTML(testes, t) {
+  const ul = (cqState.indices[_cqUnidadeAtivaId()] || {}).ultimo || {};
+  const dot = x => { const u = ul[x.id]; if (!u) return 'encerrado'; const s = u.decisao === 'R' ? 'rejeitado' : (u.status || 'aceito'); return { aceito: 'corr-liberada', rejeitado: 'corr-rejeitada' }[s] || 'corr-parcial'; };
+  const sub = x => [_cqTesteQual(x) ? x.metodo : [x.metodo, _cqAnalito(x.analitoId)?.unidadeMedida].filter(Boolean).join(' · ')].filter(Boolean).join('');
+  const grupos = {};
+  testes.forEach(x => { (grupos[_cqEquipTeste(x)] = grupos[_cqEquipTeste(x)] || []).push(x); });
+  const item = x => `<button type="button" class="cq-sitpop-op${t?.id === x.id ? ' sel' : ''}" data-b="${_cqEsc(_cqNormBusca(`${_cqAnalito(x.analitoId)?.nome || ''} ${x.metodo || ''} ${_cqEquipTeste(x)}`))}" onclick="cqGrafTesteEscolher('${x.id}')">
+      <span class="cq-sitpop-marca"><span class="cq-sitpop-dot st-${dot(x)}"></span></span>
+      <span class="cq-sitpop-txt"><b>${_cqEsc(_cqAnalito(x.analitoId)?.nome || _cqNomeTeste(x))}${x.ativo === false ? ' <span class="cq-badge cq-st-semalvo">inativo</span>' : ''}</b>${sub(x) ? `<small>${_cqEsc(sub(x))}</small>` : ''}</span>
+      <svg class="cq-sitpop-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><polyline points="20 6 9 17 4 12"/></svg></button>`;
+  const rot = t ? `<span class="cq-tp-rot"><b>${_cqEsc(_cqAnalito(t.analitoId)?.nome || _cqNomeTeste(t))}</b><small>${_cqEsc([sub(t), _cqEquipTeste(t)].filter(Boolean).join(' · '))}</small></span>`
+    : '<span class="cq-tp-rot"><b class="cq-muted">Selecione o teste</b><small>Levey-Jennings ou histórico de conformidade</small></span>';
+  return `<div class="cq-sitpop cq-tp" id="cq-graf-teste-pop">
+    <input type="hidden" id="cq-graf-teste" value="${t?.id || ''}">
+    <button type="button" class="cq-sitpop-btn" onclick="cqSitPopAbrir('cq-graf-teste');setTimeout(()=>document.getElementById('cq-tp-busca')?.focus(),40)">
+      <span class="cq-sitpop-marca"><span class="cq-sitpop-ico">${CQ_ICO.grafico}</span></span>${rot}
+      <svg class="cq-sitpop-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="cq-sitpop-menu cq-tp-menu">
+      <div class="cq-tp-busca">${CQ_ICO.busca}<input type="text" id="cq-tp-busca" placeholder="Buscar analito, meio ou equipamento…" oninput="cqGrafTesteFiltrar(this.value)" autocomplete="off"></div>
+      <div class="cq-tp-lista">${Object.entries(grupos).map(([g, ts]) => `<div class="cq-tp-grupo"><div class="cq-tp-grupo-tit">${CQ_ICO.ativo}${_cqEsc(g)}<span>${ts.length}</span></div>${ts.map(item).join('')}</div>`).join('')
+        || '<div class="cq-ms-vazio">Nenhum teste nesta unidade.</div>'}<div class="cq-ms-vazio cq-tp-nada" hidden>Nenhum teste encontrado.</div></div>
+    </div>
+  </div>`;
+}
+function cqGrafTesteFiltrar(q) {
+  const n = _cqNormBusca(q || '').trim();
+  let algum = false;
+  document.querySelectorAll('#cq-graf-teste-pop .cq-tp-grupo').forEach(g => {
+    let vis = 0;
+    g.querySelectorAll('.cq-sitpop-op').forEach(b => { const ok = !n || b.dataset.b.includes(n); b.hidden = !ok; if (ok) vis++; });
+    g.hidden = !vis;
+    if (vis) algum = true;
+  });
+  const nada = document.querySelector('#cq-graf-teste-pop .cq-tp-nada');
+  if (nada) nada.hidden = algum;
+}
+function cqGrafTesteEscolher(id) {
+  document.getElementById('cq-graf-teste-pop')?.classList.remove('aberto');
+  cqGraficoSelecionar(id);
+  cqRender();
+}
+
 
 async function _cqGrafCarregar(t) {
   const u = _cqUnidadeAtivaId();
@@ -328,7 +366,7 @@ function cqImprimirGrafico() {
   if (!w) { showToast('Permita pop-ups para imprimir.', 'error'); return; }
   w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${titulo} — ${_cqEsc(_cqNomeTeste(t))}</title><style>${css}${cssQ}</style></head><body>
     <h1>${titulo} — ${_cqEsc(_cqNomeTeste(t))} · ${_cqEsc(_cqEquipTeste(t))}</h1>
-    <div>Unidade ${_cqEsc(un?.sigla)} · período ${_cqFmtMes(_cqGraf.dados?.de)} a ${_cqFmtMes(_cqGraf.dados?.ate)} · emitido em ${_cqFmtDH(_cqAgora())} por ${_cqEsc(_cqSess().nome)}</div>
+    <div>Unidade ${_cqEsc(un?.sigla)}${_cqSetorDoTeste(t) ? ' · setor ' + _cqEsc(_cqRotuloSetor(_cqSetorDoTeste(t))) : ''} · período ${_cqFmtMes(_cqGraf.dados?.de)} a ${_cqFmtMes(_cqGraf.dados?.ate)} · emitido em ${_cqFmtDH(_cqAgora())} por ${_cqEsc(_cqSess().nome)}</div>
     ${area.innerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
   w.document.close();
 }

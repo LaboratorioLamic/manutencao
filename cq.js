@@ -101,6 +101,7 @@ const CQ_ICO = {
   edit:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>`,
   ativo:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>`,
   clock:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`,
+  calendario:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`,
   lock:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>`,
   print:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`,
   baixar:  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`,
@@ -254,10 +255,10 @@ function _cqOpcoesEquipInsumo(manter) {
   const mapa = new Map();
   const add = o => { const k = _cqEquipChave(o.value); if (!mapa.has(k)) mapa.set(k, o); };
   const SIS = 'Sem equipamento (bancada / manual)';
-  _cqAtivosCQ().forEach(a => add({ value: 'a:' + a.id, label: a.nome || a.id, sub: [a.codigo, a.modelo].filter(Boolean).join(' · '), grupo: a.setor || 'Sem setor' }));
+  _cqAtivosCQ().forEach(a => add({ value: 'a:' + a.id, label: a.nome || a.id, sub: [a.codigo, a.modelo].filter(Boolean).join(' · '), grupo: _cqRotuloSetorAtivo(a) }));
   Object.values(cqState.config.analitos).filter(a => a.ativo !== false && _cqNaUnidade(a)).forEach(an => _cqEquipsDoAnalito(an).forEach(o => {
     const sis = o.value.startsWith('m:');
-    add({ value: o.value, label: sis ? o.label : (o.ativo?.nome || o.label), sub: sis ? 'Sistema analítico sem equipamento' : (o.ativo?.codigo || ''), grupo: sis ? SIS : (o.ativo?.setor || 'Sem setor') });
+    add({ value: o.value, label: sis ? o.label : (o.ativo?.nome || o.label), sub: sis ? 'Sistema analítico sem equipamento' : (o.ativo?.codigo || ''), grupo: sis ? SIS : _cqRotuloSetorAtivo(o.ativo) });
   }));
   _cqArr(manter).forEach(k => add({ value: k, label: _cqRotuloEquip(k), sub: 'Não vinculado a analito', grupo: String(k).startsWith('m:') ? SIS : 'Sem setor' }));
   const ordem = o => (o.grupo === SIS ? '1' : '0') + o.grupo;
@@ -269,7 +270,7 @@ function _cqEquipsDoAnalito(an) {
   if (!an) return [];
   const eq = _cqArr(an.ativoIds).map(id => {
     const a = typeof _ativoById === 'function' ? _ativoById(id) : null;
-    return { value: 'a:' + id, label: `${a?.nome || 'Equipamento removido'}${a?.codigo ? ' · ' + a.codigo : ''}`, grupo: a?.setor || 'Equipamentos', ativo: a };
+    return { value: 'a:' + id, label: `${a?.nome || 'Equipamento removido'}${a?.codigo ? ' · ' + a.codigo : ''}`, grupo: a ? _cqRotuloSetorAtivo(a) : 'Equipamentos', ativo: a };
   }).filter(o => o.ativo?.statusUso !== 'em_desuso');
   const sis = _cqArr(an.sistemas).map(x => ({ value: 'm:' + x, label: x, grupo: 'Sem equipamento (bancada / manual)' }));
   return [...eq, ...sis];
@@ -454,15 +455,18 @@ function _cqDiff(antes, depois, labels, fmt) {
 // então _cqMultiVal funciona mesmo antes de o popover ser aberto.
 const _cqMulti = {};
 // `resumo` (ex.: 'analitos'): com mais de um item marcado, o botão mostra um chip só ("3 analitos") em vez de um por item
-function _cqMultiHTML(id, opcoes, selecionados, { placeholder = 'Selecione…', disabled = false, onchange = null, vazio = 'Nenhuma opção.', resumo = '' } = {}) {
-  _cqMulti[id] = { opcoes: opcoes || [], sel: new Set(_cqArr(selecionados)), placeholder, disabled, onchange, vazio, busca: '', resumo };
-  return `<div class="cq-ms${disabled ? ' cq-ms-off' : ''}" id="${id}">
+// `filtro: true` (barras de filtro): botão compacto com ícone (`ico`), nome do item ou "N <resumo>", contador e ×;
+// popover com busca, grupos e rodapé "N selecionado(s) · Concluir"
+function _cqMultiHTML(id, opcoes, selecionados, { placeholder = 'Selecione…', disabled = false, onchange = null, vazio = 'Nenhuma opção.', resumo = '', filtro = false, ico = '' } = {}) {
+  _cqMulti[id] = { opcoes: opcoes || [], sel: new Set(_cqArr(selecionados)), placeholder, disabled, onchange, vazio, busca: '', resumo, filtro, ico };
+  return `<div class="cq-ms${disabled ? ' cq-ms-off' : ''}${filtro ? ' cq-ms-filtro' : ''}${filtro && _cqArr(selecionados).length ? ' tem-sel' : ''}" id="${id}">
     <div class="cq-ms-btn" id="${id}-btn" tabindex="${disabled ? -1 : 0}" role="button" aria-haspopup="listbox"
       onclick="cqMultiAbrir('${id}')" onkeydown="if(event.key==='Enter'||event.key===' '||event.key==='ArrowDown'){event.preventDefault();cqMultiAbrir('${id}')}">${_cqMultiBtnHTML(id)}</div>
     <div class="cq-ms-pop" id="${id}-pop" style="display:none;" onkeydown="if(event.key==='Escape'){event.stopPropagation();cqMultiFechar('${id}',true)}">
-      <div class="cq-ms-busca">${CQ_ICO.lista}<input type="text" id="${id}-busca" placeholder="Buscar…" autocomplete="off" oninput="cqMultiBuscar('${id}',this.value)"></div>
+      <div class="cq-ms-busca">${CQ_ICO.busca}<input type="text" id="${id}-busca" placeholder="Buscar…" autocomplete="off" oninput="cqMultiBuscar('${id}',this.value)"></div>
       <div class="cq-ms-acoes"><button type="button" onclick="cqMultiTodos('${id}',true)">Marcar visíveis</button><button type="button" onclick="cqMultiTodos('${id}',false)">Limpar</button></div>
       <div class="cq-ms-lista" id="${id}-lista" role="listbox" aria-multiselectable="true"></div>
+      ${filtro ? `<div class="cq-ms-pe"><span id="${id}-n"></span><button type="button" onclick="cqMultiFechar('${id}',true)">Concluir</button></div>` : ''}
     </div>
   </div>`;
 }
@@ -472,6 +476,15 @@ function _cqMultiBtnHTML(id) {
   if (!m) return '';
   const porValor = new Map(m.opcoes.map(o => [o.value, o]));
   const sel = [...m.sel];
+  const caret = '<svg class="cq-ms-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>';
+  if (m.filtro) {
+    const n = sel.length;
+    const nome = v => porValor.get(v)?.label || _cqRotuloMulti(v);
+    const txt = !n ? `<span class="cq-ms-ph">${_cqEsc(m.placeholder)}</span>`
+      : `<span class="cq-ms-f-txt" title="${_cqEsc(sel.map(nome).join('\n'))}">${_cqEsc(n === 1 ? nome(sel[0]) : `${n} ${m.resumo || 'selecionados'}`)}</span>`;
+    return `${m.ico ? `<span class="cq-ms-f-ico">${m.ico}</span>` : ''}${txt}
+      ${n && !m.disabled ? `<button type="button" class="cq-ms-f-x" title="Limpar filtro" onclick="event.stopPropagation();cqMultiTodos('${id}',false)">×</button>` : ''}${caret}`;
+  }
   if (m.resumo && sel.length > 1) {
     const nomes = sel.map(v => porValor.get(v)?.label || _cqRotuloMulti(v)).join('\n');
     return `<div class="cq-ms-chips cq-ms-resumo"><span class="cq-ms-chip" title="${_cqEsc(nomes)}"><span class="cq-ms-chip-txt">${sel.length} ${_cqEsc(m.resumo)}</span>${m.disabled ? '' : `<button type="button" title="Limpar" onclick="event.stopPropagation();cqMultiTodos('${id}',false)">×</button>`}</span></div>
@@ -501,6 +514,9 @@ function _cqMultiAtualizar(id, lista = true) {
   if (b) b.innerHTML = _cqMultiBtnHTML(id);
   const l = document.getElementById(id + '-lista');
   if (lista && l) l.innerHTML = _cqMultiListaHTML(id);
+  const n = document.getElementById(id + '-n');
+  if (n) { const k = _cqMulti[id].sel.size; n.textContent = k ? `${k} selecionado${k === 1 ? '' : 's'}` : 'Nenhum: mostra todos'; }
+  document.getElementById(id)?.classList.toggle('tem-sel', !!_cqMulti[id]?.sel.size);
 }
 function cqMultiAbrir(id) {
   const m = _cqMulti[id];
@@ -745,12 +761,11 @@ document.addEventListener('mousedown', e => {
   Object.keys(_cqSel).forEach(id => { const el = document.getElementById(id); if (el && !el.contains(e.target)) cqSelFechar(id); });
 });
 
-// Equipamentos (ativos) disponíveis para o CQ: setores das unidades (todos quando nenhuma unidade define setores)
-function _cqAtivosCQ() {
+// Equipamentos (ativos) disponíveis para o CQ: os da unidade (ativa, se não informada)
+function _cqAtivosCQ(u = _cqUnidadeAtivaId()) {
   const ativos = (typeof state !== 'undefined' && Array.isArray(state?.ativos)) ? state.ativos.filter(a => a && a.statusUso !== 'em_desuso') : [];
-  const setores = new Set(Object.values(cqState.config.unidades).filter(u => u.ativa !== false).flatMap(u => _cqArr(u.setores)));
-  return ativos.filter(a => !setores.size || setores.has(a.setor))
-    .sort((a, b) => (a.setor || '').localeCompare(b.setor || '') || (a.nome || '').localeCompare(b.nome || ''));
+  return ativos.filter(a => !u || _cqAtivoNaUnidade(a, u))
+    .sort((a, b) => _orgChaveOrdemAtivo(a).localeCompare(_orgChaveOrdemAtivo(b)) || (a.nome || '').localeCompare(b.nome || ''));
 }
 function _cqOpcoesAtivos(extraIds) {
   const lista = _cqAtivosCQ();
@@ -759,7 +774,7 @@ function _cqOpcoesAtivos(extraIds) {
     const a = typeof _ativoById === 'function' ? _ativoById(id) : null;
     lista.push(a || { id, nome: 'Equipamento removido', setor: '' });
   });
-  return lista.map(a => ({ value: a.id, label: a.nome || a.id, sub: [a.codigo, a.modelo].filter(Boolean).join(' · '), grupo: a.setor || '' }));
+  return lista.map(a => ({ value: a.id, label: a.nome || a.id, sub: [a.codigo, a.modelo].filter(Boolean).join(' · '), grupo: a.nome === 'Equipamento removido' && !a.codigo ? '' : _cqRotuloSetorAtivo(a) }));
 }
 function _cqNomeAtivo(id) {
   const a = typeof _ativoById === 'function' ? _ativoById(id) : null;
@@ -781,6 +796,19 @@ function _cqBadge(map, k, extra) {
   return `<span class="cq-badge ${c.cls || ''}">${_cqEsc(c.label || k || '—')}${extra || ''}</span>`;
 }
 
+// Permissão de outro usuário (grupo de acesso), no mesmo formato de authHasPermission ('cq.lancar')
+function _cqUserPode(user, key) {
+  if (!user) return false;
+  if (user.isAdmin) return true;
+  const groups = typeof authState !== 'undefined' ? (authState.groups || []) : [];
+  let perm = groups.find(g => g.id === user.grupoId)?.permissoes;
+  for (const p of key.split('.')) { perm = perm?.[p]; if (perm === undefined || perm === null) return false; }
+  return !!perm;
+}
+// Quem pode responder por registros da unidade: membro da unidade com a permissão `key` (ex.: 'cq.lancar')
+function _cqUsuariosDaUnidade(u, keys = ['cq.lancar', 'cq.configurar']) {
+  return _cqUsuarios().filter(x => _cqPapel(u, x.id) && keys.some(k => _cqUserPode(x, k)));
+}
 function _cqUsuarios() {
   const users = typeof authState !== 'undefined' ? (authState.users || []) : [];
   return users.filter(u => u.ativo !== false).sort((a, b) => (a.nomeCompleto || '').localeCompare(b.nomeCompleto || ''));
@@ -868,6 +896,78 @@ function _cqModoCorrida(u, grupoKey) {
 // ── CONSULTAS DE CADASTRO ────────────────────────────────────
 function _cqTestesDaUnidade(u, { incluirInativos = false } = {}) {
   return Object.values(cqState.config.testes).filter(t => t.unidadeId === u && (incluirInativos || t.ativo !== false));
+}
+
+// ── UNIDADE × SETOR (hierarquia de org.js) ───────────────────
+// A unidade do CQ é vinculada, no próprio formulário dela, a uma unidade do sistema
+// (Ativos › Unidades e setores) pelo campo orgUnidadeId; os setores e equipamentos vêm dessa unidade.
+// Sem vínculo (ex.: validação) vale o modelo antigo: lista de setores marcada na unidade do CQ.
+function _cqUnidadeOrg(u) {
+  const id = cqState.config.unidades[u]?.orgUnidadeId;
+  return id && typeof _orgUnidade === 'function' ? _orgUnidade(id) : null;
+}
+// Ativo pertence à unidade do CQ?
+function _cqAtivoNaUnidade(a, u) {
+  if (!a || !u) return !!a;
+  const org = _cqUnidadeOrg(u);
+  if (org) {
+    if (_orgUnidadeIdDoAtivo(a) !== org.id) return false;
+    // Setores escolhidos na unidade do CQ (vazio = todos os da unidade do sistema)
+    const ids = _cqArr(cqState.config.unidades[u]?.orgSetorIds);
+    return !ids.length || ids.includes(_orgSetorIdDoAtivo(a));
+  }
+  const setores = _cqArr(cqState.config.unidades[u]?.setores);
+  if (!setores.length) return true;
+  // Nome antigo marcado (ex.: item que virou setor de uma unidade continua valendo pelo id)
+  return setores.includes(a.setor) || _orgIdsDeNomes(setores).includes(_orgSetorIdDoAtivo(a));
+}
+function _cqSetoresDaUnidade(u) {
+  const org = _cqUnidadeOrg(u);
+  if (!org) return [];
+  const ids = _cqArr(cqState.config.unidades[u]?.orgSetorIds);
+  return _orgSetores(org.id, { todos: true }).filter(s => !ids.length || ids.includes(s.id));
+}
+// Setor do teste: o gravado no teste ou, sem ele, o do equipamento
+function _cqSetorDoTeste(t) {
+  if (!t) return '';
+  if (t.setorId) return t.setorId;
+  const a = t.ativoId && typeof _ativoById === 'function' ? _ativoById(t.ativoId) : null;
+  const s = a ? _orgSetorDoAtivo(a) : null;
+  return s && !s.virtual ? s.id : '';
+}
+function _cqRotuloSetor(id) { return id ? (_orgRotuloSetor(id, { semUnidade: true }) || 'Setor removido') : 'Sem setor'; }
+function _cqRotuloSetorAtivo(a) { return (a && _orgRotuloAtivo(a, { semUnidade: true })) || 'Sem setor'; }
+// Filtro de setor do CQ, por unidade ('' = todos; '__sem__' = testes sem setor)
+function _cqSetorAtivoId(u = _cqUnidadeAtivaId()) {
+  if (!u || !_cqSetoresDaUnidade(u).length) return '';
+  let id = '';
+  try { id = localStorage.getItem('cq-setor-ativo-' + u) || ''; } catch (e) { /* sem storage */ }
+  return id === '__sem__' || _cqSetoresDaUnidade(u).some(s => s.id === id) ? id : '';
+}
+function cqSetSetor(id) {
+  const u = _cqUnidadeAtivaId();
+  try { if (id) localStorage.setItem('cq-setor-ativo-' + u, id); else localStorage.removeItem('cq-setor-ativo-' + u); } catch (e) { /* sem storage */ }
+  if (typeof _cqLancReset === 'function') _cqLancReset();
+  _cqCorrCache = null;
+  cqRender();
+}
+function _cqSetorPassa(setorId, filtro) { return !filtro || (filtro === '__sem__' ? !setorId : setorId === filtro); }
+function _cqTestePassaSetor(t, filtro = _cqSetorAtivoId()) { return _cqSetorPassa(_cqSetorDoTeste(t), filtro); }
+// Testes da unidade que passam no filtro de setor do CQ
+function _cqTestesDoFiltro(u, opts) { const f = _cqSetorAtivoId(u); return _cqTestesDaUnidade(u, opts).filter(t => _cqTestePassaSetor(t, f)); }
+// Corrida/pendência no setor? Usa os setores gravados (setorIds) ou deriva dos testes
+function _cqSetoresDeRegistro(r) {
+  if (Array.isArray(r?.setorIds)) return r.setorIds;
+  return Object.keys(r?.testes || {}).map(tid => _cqSetorDoTeste(cqState.config.testes[tid]));
+}
+function _cqRegistroPassaSetor(r, filtro = _cqSetorAtivoId()) {
+  if (!filtro) return true;
+  const ids = _cqSetoresDeRegistro(r);
+  if (!ids.length) return true;   // sem como saber (registro antigo sem testes): não esconde
+  return ids.some(id => _cqSetorPassa(id, filtro));
+}
+function _cqSetoresDosTestes(testeIds) {
+  return [...new Set(testeIds.map(tid => _cqSetorDoTeste(cqState.config.testes[tid])))];
 }
 function _cqAnalito(id) { return cqState.config.analitos[id] || null; }
 function _cqNomeTeste(t) {
@@ -1074,6 +1174,159 @@ async function cqCarregarCorrida(u, mes, key) {
   return c ? { ...c, key, mes } : null;
 }
 
+// ── MENU FLUTUANTE ───────────────────────────────────────────
+// Menu solto no <body>, em posição fixa e acima de janelas e painéis (não é cortado por eles).
+let _cqFloatAncora = null;
+function _cqFloatAbrir(ancora, html, { cls = '', largura = 320 } = {}) {
+  let el = document.getElementById('cq-float');
+  if (!el) { el = document.createElement('div'); el.id = 'cq-float'; document.body.appendChild(el); }
+  el.className = `cq-float ${cls}`;
+  el.style.width = `${largura}px`;
+  el.innerHTML = html;
+  el.style.display = 'flex';
+  const r = ancora.getBoundingClientRect();
+  const h = el.offsetHeight, w = el.offsetWidth;
+  const baixo = r.bottom + 6 + h <= window.innerHeight - 8 || r.top < h + 14;
+  el.style.top = `${Math.max(8, baixo ? r.bottom + 6 : r.top - 6 - h)}px`;
+  el.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - w - 8))}px`;
+  _cqFloatAncora = ancora;
+}
+function _cqFloatFechar() {
+  const el = document.getElementById('cq-float');
+  if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+  _cqFloatAncora = null;
+}
+function _cqFloatAberto(ancora) { return !!_cqFloatAncora && _cqFloatAncora === ancora && document.getElementById('cq-float')?.style.display !== 'none'; }
+document.addEventListener('mousedown', e => {
+  const el = document.getElementById('cq-float');
+  if (!_cqFloatAncora || !el) return;
+  if (!el.contains(e.target) && !_cqFloatAncora.contains(e.target)) _cqFloatFechar();
+});
+window.addEventListener('scroll', e => { const el = document.getElementById('cq-float'); if (_cqFloatAncora && !(el && el.contains(e.target))) _cqFloatFechar(); }, true);
+window.addEventListener('resize', () => { if (_cqFloatAncora) _cqFloatFechar(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && _cqFloatAncora) _cqFloatFechar(); });
+
+// ── SELETOR DE PERÍODO (meses) ───────────────────────────────
+// Popover com modos (Geral · Ano inteiro · Intervalo), atalhos opcionais (Mês atual, 3, 6, 12 meses)
+// e grade de meses do ano. per: { modo: 'intervalo', de, ate, atalho? } | { modo: 'ano', ano } | { modo: 'geral' }.
+// cfg: { get(), set(per), onchange(), modos: ['geral','ano','intervalo'], atalhos: [1,3,6,12], max }
+const CQ_MESES_CURTOS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+const _cqMp = {};
+function _cqMesSoma(yyyymm, n) {
+  const d = new Date(Date.UTC(+yyyymm.slice(0, 4), +yyyymm.slice(4, 6) - 1 + n, 1));
+  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+function _cqMesFmt(m) { return `${CQ_MESES_CURTOS[+m.slice(4, 6) - 1]}/${m.slice(0, 4)}`; }
+function _cqMesesEntre(de, ate) { return (+ate.slice(0, 4) - +de.slice(0, 4)) * 12 + (+ate.slice(4, 6) - +de.slice(4, 6)) + 1; }
+// Período → { de, ate } (yyyymm)
+function _cqPerFaixa(per, max) {
+  const atual = CQEngine.mesDe(_cqNowLocal());
+  if (!per || per.modo === 'geral') return { de: _cqMesSoma(atual, -(max - 1)), ate: atual };
+  if (per.modo === 'ano') { const ate = `${per.ano}12` > atual ? atual : `${per.ano}12`; return { de: `${per.ano}01`, ate }; }
+  return { de: per.de, ate: per.ate };
+}
+// Período → lista de meses (do mais recente ao mais antigo), limitada a `max`
+function _cqPerMeses(per, max) {
+  const { de, ate } = _cqPerFaixa(per, max);
+  const out = [];
+  for (let m = ate; m >= de && out.length < max; m = _cqMesSoma(m, -1)) out.push(m);
+  return out;
+}
+function _cqPerRotulo(per, max) {
+  if (!per || per.modo === 'geral') return `Últimos ${max} meses`;
+  if (per.modo === 'ano') return `Ano ${per.ano}`;
+  if (per.atalho) return per.atalho === 1 ? 'Mês atual' : `Últimos ${per.atalho} meses`;
+  return per.de === per.ate ? _cqMesFmt(per.de) : `${_cqMesFmt(per.de)} – ${_cqMesFmt(per.ate)}`;
+}
+function _cqMpHTML(id, cfg) {
+  _cqMp[id] = { modos: ['geral', 'ano', 'intervalo'], atalhos: [], max: 24, ...cfg, ano: null, espera: false };
+  const c = _cqMp[id];
+  return `<div class="cq-mp" id="${id}">
+    <button type="button" class="cq-mp-btn" onclick="cqMpAbrir('${id}')">${CQ_ICO.calendario}<span class="cq-mp-rot" id="${id}-rot">${_cqEsc(_cqPerRotulo(c.get(), c.max))}</span>
+      <svg class="cq-sitpop-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="cq-mp-menu" id="${id}-menu"></div>
+  </div>`;
+}
+function _cqMpMenuHTML(id) {
+  const c = _cqMp[id], p = c.get();
+  const atual = CQEngine.mesDe(_cqNowLocal());
+  const anoAtual = +atual.slice(0, 4);
+  if (!c.ano) c.ano = p.modo === 'ano' ? p.ano : p.modo === 'intervalo' ? +p.ate.slice(0, 4) : anoAtual;
+  const rotModo = { geral: 'Geral', ano: 'Ano inteiro', intervalo: 'Intervalo' };
+  const { de, ate } = _cqPerFaixa(p, c.max);
+  const meses = CQ_MESES_CURTOS.map((nome, i) => {
+    const m = `${c.ano}${String(i + 1).padStart(2, '0')}`;
+    const futuro = m > atual;
+    let cls = '';
+    if (!futuro && m >= de && m <= ate) cls = p.modo === 'intervalo' && !p.atalho && (m === de || m === ate) ? 'sel' : 'faixa';
+    return `<button type="button" class="cq-mp-mes ${cls}${m === atual ? ' hoje' : ''}" ${futuro ? 'disabled' : `onclick="cqMpMes('${id}','${m}')"`}>${nome}</button>`;
+  }).join('');
+  const dica = p.modo === 'intervalo' && c.espera ? 'Escolha o último mês do intervalo (ou o mesmo, para um mês só)' : _cqPerRotulo(p, c.max);
+  return `<div class="cq-mp-modos" style="grid-template-columns:repeat(${c.modos.length},1fr)">${c.modos.map(k => `<button type="button" class="${p.modo === k ? 'active' : ''}" onclick="cqMpModo('${id}','${k}')">${rotModo[k]}</button>`).join('')}</div>
+    ${c.atalhos.length ? `<div class="cq-mp-atalhos">${c.atalhos.map(n => `<button type="button" class="${p.modo === 'intervalo' && p.atalho === n ? 'active' : ''}" onclick="cqMpAtalho('${id}',${n})">${n === 1 ? 'Mês atual' : `${n} meses`}</button>`).join('')}</div>` : ''}
+    <div class="cq-mp-ano"><button type="button" class="cq-mp-nav" onclick="cqMpAnoNav('${id}',-1)" title="Ano anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="15 6 9 12 15 18"/></svg></button>
+      <b>${c.ano}</b>
+      <button type="button" class="cq-mp-nav" onclick="cqMpAnoNav('${id}',1)" title="Próximo ano" ${c.ano >= anoAtual ? 'disabled' : ''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="9 6 15 12 9 18"/></svg></button></div>
+    <div class="cq-mp-grade">${meses}</div>
+    <div class="cq-mp-pe${c.espera ? ' espera' : ''}">${_cqEsc(dica)}</div>`;
+}
+function _cqMpAplicar(id, fechar) {
+  const c = _cqMp[id];
+  const menu = document.getElementById(id + '-menu');
+  if (menu) menu.innerHTML = _cqMpMenuHTML(id);
+  const rot = document.getElementById(id + '-rot');
+  if (rot) rot.textContent = _cqPerRotulo(c.get(), c.max);
+  if (fechar) document.getElementById(id)?.classList.remove('aberto');
+  c.onchange?.();
+}
+function cqMpAbrir(id) {
+  const el = document.getElementById(id), c = _cqMp[id];
+  if (!el || !c) return;
+  const abrir = !el.classList.contains('aberto');
+  document.querySelectorAll('.cq-sitpop.aberto, .cq-mp.aberto').forEach(x => x.classList.remove('aberto'));
+  if (abrir) { c.espera = false; c.ano = null; document.getElementById(id + '-menu').innerHTML = _cqMpMenuHTML(id); }
+  el.classList.toggle('aberto', abrir);
+}
+function cqMpModo(id, k) {
+  const c = _cqMp[id];
+  const atual = CQEngine.mesDe(_cqNowLocal());
+  c.espera = false;
+  if (k === 'geral') c.set({ modo: 'geral' });
+  else if (k === 'ano') c.set({ modo: 'ano', ano: c.ano || +atual.slice(0, 4) });
+  else if (c.get().modo !== 'intervalo') c.set({ modo: 'intervalo', de: atual, ate: atual });
+  _cqMpAplicar(id, k !== 'intervalo');
+}
+function cqMpAtalho(id, n) {
+  const c = _cqMp[id];
+  const atual = CQEngine.mesDe(_cqNowLocal());
+  c.espera = false;
+  c.ano = +atual.slice(0, 4);
+  c.set({ modo: 'intervalo', de: _cqMesSoma(atual, -(n - 1)), ate: atual, atalho: n });
+  _cqMpAplicar(id, true);
+}
+function cqMpAnoNav(id, d) {
+  const c = _cqMp[id];
+  const anoAtual = +CQEngine.mesDe(_cqNowLocal()).slice(0, 4);
+  c.ano = Math.min(anoAtual, (c.ano || anoAtual) + d);
+  if (c.get().modo === 'ano') { c.set({ modo: 'ano', ano: c.ano }); _cqMpAplicar(id, false); }
+  else document.getElementById(id + '-menu').innerHTML = _cqMpMenuHTML(id);
+}
+// Intervalo: 1º clique escolhe um mês (já aplica); 2º clique fecha o intervalo
+function cqMpMes(id, m) {
+  const c = _cqMp[id], p = c.get();
+  if (p.modo === 'intervalo' && c.espera) {
+    let de = p.de < m ? p.de : m, ate = p.de < m ? m : p.de;
+    if (_cqMesesEntre(de, ate) > c.max) { de = _cqMesSoma(ate, -(c.max - 1)); showToast(`Intervalo limitado a ${c.max} meses.`, 'error'); }
+    c.set({ modo: 'intervalo', de, ate });
+    c.espera = false;
+    _cqMpAplicar(id, true);
+    return;
+  }
+  c.set({ modo: 'intervalo', de: m, ate: m });
+  c.espera = true;
+  _cqMpAplicar(id, false);
+}
+
 // ── ABA PRINCIPAL ────────────────────────────────────────────
 function _cqTabAtiva() { return !!document.getElementById('tab-cq')?.classList.contains('active'); }
 
@@ -1153,6 +1406,22 @@ function cqRender() {
   if (fn) fn(body); else body.innerHTML = '<div class="cq-vazio">Em construção.</div>';
 }
 
+// Filtro de setor (em par com a unidade): só aparece quando a unidade tem setores na organização
+function _cqTopbarSetorHTML(u) {
+  const setores = u ? _cqSetoresDaUnidade(u) : [];
+  if (!setores.length) return '';
+  const f = _cqSetorAtivoId(u);
+  const temSem = _cqTestesDaUnidade(u).some(t => !_cqSetorDoTeste(t));
+  return `<div class="cq-topbar-unidade">
+      <span class="cq-topbar-lbl">Setor</span>
+      <select class="field-select cq-unidade-select" onchange="cqSetSetor(this.value)">
+        <option value="">Todos os setores</option>
+        ${setores.map(s => `<option value="${_cqEsc(s.id)}" ${s.id === f ? 'selected' : ''}>${_cqEsc(s.nome)}${s.ativo === false ? ' (inativo)' : ''}</option>`).join('')}
+        ${temSem || f === '__sem__' ? `<option value="__sem__" ${f === '__sem__' ? 'selected' : ''}>Sem setor</option>` : ''}
+      </select>
+    </div>`;
+}
+
 function _cqRenderTopbar() {
   const el = document.getElementById('cq-topbar');
   if (!el) return;
@@ -1167,6 +1436,7 @@ function _cqRenderTopbar() {
         ${vis.map(x => `<option value="${x.id}" ${x.id === u ? 'selected' : ''}>${_cqEsc(x.sigla)} — ${_cqEsc(x.nome)}${x.validacao ? ' (validação)' : ''}${x.ativa === false ? ' (inativa)' : ''}</option>`).join('')}
       </select>` : '<span class="cq-muted">nenhuma</span>'}
     </div>
+    ${_cqTopbarSetorHTML(u)}
     <div class="cq-topbar-estacao ${est ? '' : 'cq-estacao-falta'}" title="Nome desta estação de trabalho (registrado em cada lançamento)" onclick="cqEditarEstacao()">
       ${CQ_ICO.ativo}<span>${est ? _cqEsc(est) : 'Definir estação'}</span>
     </div>
@@ -1209,13 +1479,13 @@ function _cqTesteSemCQHoje(t, ultimo, un) {
   return false;
 }
 
-function _cqLotesVencendo(u, dias = 30) {
+function _cqLotesVencendo(u, dias = 30, testes = null) {
   const hoje = _cqHoje();
   const out = [];
   const usados = new Map();
   const ultimo = (cqState.indices[u] || {}).ultimo || {};
   const insumos = new Set();
-  _cqTestesDaUnidade(u).forEach(t => {
+  (testes || _cqTestesDaUnidade(u)).forEach(t => {
     Object.entries(t.lotesAtivos || {}).forEach(([nivel, lid]) => {
       const nl = _cqNivelNoLote(t, nivel);
       if (!usados.has(lid + '|' + nl)) usados.set(lid + '|' + nl, { lid, nivel: nl });
@@ -1242,10 +1512,11 @@ function _cqRenderPainel(body) {
   const un = _cqUnidade();
   const idx = cqState.indices[u] || {};
   const ultimo = idx.ultimo || {};
-  const testes = _cqTestesDaUnidade(u);
-  const pend = Object.entries(idx.pendentes || {}).map(([k, p]) => ({ key: k, ...p })).sort((a, b) => (a.dataHora || '').localeCompare(b.dataHora || ''));
-  const ncs = Object.entries(idx.ncAbertas || {}).map(([k, n]) => ({ id: k, ...n }));
-  const vencendo = _cqLotesVencendo(u);
+  const fSetor = _cqSetorAtivoId(u);
+  const testes = _cqTestesDoFiltro(u);
+  const pend = Object.entries(idx.pendentes || {}).map(([k, p]) => ({ key: k, ...p })).filter(p => _cqRegistroPassaSetor(p, fSetor)).sort((a, b) => (a.dataHora || '').localeCompare(b.dataHora || ''));
+  const ncs = Object.entries(idx.ncAbertas || {}).map(([k, n]) => ({ id: k, ...n })).filter(n => !fSetor || !n.testeId || _cqTestePassaSetor(cqState.config.testes[n.testeId], fSetor));
+  const vencendo = _cqLotesVencendo(u, 30, testes);
   const semHoje = testes.filter(t => _cqTesteSemCQHoje(t, ultimo[t.id], un));
   const provisorios = [];
   testes.filter(t => !_cqTesteQual(t)).forEach(t => _cqNiveisTeste(t).forEach(n => {
@@ -1269,17 +1540,27 @@ function _cqRenderPainel(body) {
   const cards = Object.entries(grupos).sort(([, a], [, b]) => a.nome.localeCompare(b.nome)).map(([gk, g]) => {
     const ativo = g.ativoId && typeof _ativoById === 'function' ? _ativoById(g.ativoId) : null;
     const st = ativo?.statusUso;
+    // Mini card por teste: analito, complemento (meio/método), situação da última corrida e data
+    const hojeP = _cqHoje(un?.fuso);
     const chips = g.testes.sort((a, b) => _cqNomeTeste(a).localeCompare(_cqNomeTeste(b))).map(t => {
       const ul = ultimo[t.id];
       const sem = _cqTesteSemCQHoje(t, ul, un);
-      let cls = 'cq-chip-cinza', tit = 'Sem corrida registrada';
+      const an = _cqAnalito(t.analitoId);
+      const titulo = an?.nome || _cqNomeTeste(t);
+      const compl = _cqTesteQual(t) ? (t.metodo || '') : [t.metodo, an?.unidadeMedida].filter(Boolean).join(' · ');
+      let st = 'nenhum', rot = 'Sem registro', tit = 'Sem corrida registrada';
       if (ul) {
-        const s = ul.decisao === 'R' ? 'rejeitado' : (ul.status || 'aceito');
-        cls = { aceito: 'cq-chip-verde', alerta: 'cq-chip-amarelo', rejeitado: 'cq-chip-vermelho', sem_alvo: 'cq-chip-amarelo' }[s] || 'cq-chip-cinza';
-        tit = `Última corrida ${_cqFmtDH(ul.dataHora)} · ${CQ_STATUS[s]?.label || s}${ul.decisao ? '' : ' · aguardando avaliação'}`;
+        st = ul.decisao === 'R' ? 'rejeitado' : (ul.status || 'aceito');
+        rot = CQ_STATUS[st]?.label || st;
+        tit = `Última corrida ${_cqFmtDH(ul.dataHora)} · ${rot}${ul.decisao ? '' : ' · aguardando avaliação'}`;
       }
       if (sem) tit += ' · sem CQ hoje';
-      return `<span class="cq-chip ${cls}${sem ? ' cq-chip-sem' : ''}" title="${_cqEsc(tit)}" onclick="cqAbrirGrafico('${t.id}')">${_cqEsc(_cqNomeTeste(t))}</span>`;
+      const quando = ul ? (ul.dataHora.slice(0, 10) === hojeP ? `hoje ${ul.dataHora.slice(11, 16)}` : _cqFmtDH(ul.dataHora).slice(0, 16).replace(/\/\d{4}/, '')) : 'nunca';
+      return `<button type="button" class="cq-tc cq-tc-${st}${sem ? ' sem' : ''}" title="${_cqEsc(tit)} · clique para ver o gráfico" onclick="cqAbrirGrafico('${t.id}')">
+        <div class="cq-tc-top"><span class="cq-tc-nome">${_cqEsc(titulo)}</span><span class="cq-tc-st"><i></i>${_cqEsc(rot)}</span></div>
+        ${compl ? `<div class="cq-tc-sub">${_cqEsc(compl)}</div>` : ''}
+        <div class="cq-tc-pe"><span>${CQ_ICO.clock}${_cqEsc(quando)}</span>${ul && !ul.decisao ? '<span class="cq-tc-tag aguarda">aguardando</span>' : ''}${sem ? '<span class="cq-tc-tag">sem CQ hoje</span>' : ''}</div>
+      </button>`;
     }).join('');
     return `<div class="cq-equip-card">
       <div class="cq-equip-head">
@@ -1288,7 +1569,7 @@ function _cqRenderPainel(body) {
           <div class="cq-equip-sub">${g.testes.length} teste${g.testes.length !== 1 ? 's' : ''}${st === 'em_pausa' ? ' · <span class="cq-txt-amarelo">em pausa (verificação)</span>' : st === 'em_desuso' ? ' · em desuso' : ''}</div></div>
         ${_cqCan('lancar') ? `<button class="btn btn-outline btn-sm" onclick="cqLancarPara('${_cqEsc(gk)}')">${CQ_ICO.lancar} Lançar</button>` : ''}
       </div>
-      <div class="cq-chips">${chips}</div>
+      <div class="cq-tc-grid">${chips}</div>
     </div>`;
   }).join('');
 
@@ -1312,9 +1593,9 @@ function _cqRenderPainel(body) {
   ${kpis}
   <div class="cq-painel-grid">
     <div class="cq-painel-main">
-      <div class="cq-sec-titulo">Equipamentos e testes · ${_cqEsc(un.sigla)}</div>
-      ${cards || `<div class="cq-vazio">Nenhum teste cadastrado nesta unidade. ${_cqCan('configurar') ? `<a href="#" onclick="cqNav('cadastros');return false;">Cadastrar testes</a>` : ''}</div>`}
-      <div class="cq-legenda"><span class="cq-chip cq-chip-verde">aceito</span><span class="cq-chip cq-chip-amarelo">alerta / sem alvo</span><span class="cq-chip cq-chip-vermelho">rejeitado</span><span class="cq-chip cq-chip-cinza">sem registro</span><span class="cq-chip cq-chip-cinza cq-chip-sem">sem CQ hoje</span></div>
+      <div class="cq-sec-titulo">Equipamentos e testes · ${_cqEsc(un.sigla)}${fSetor ? ' · ' + _cqEsc(_cqRotuloSetor(fSetor === '__sem__' ? '' : fSetor)) : ''}</div>
+      ${cards || `<div class="cq-vazio">Nenhum teste cadastrado ${fSetor ? 'neste setor' : 'nesta unidade'}. ${_cqCan('configurar') ? `<a href="#" onclick="cqNav('cadastros');return false;">Cadastrar testes</a>` : ''}</div>`}
+      <div class="cq-tc-legenda"><span class="cq-tc-leg aceito"><i></i>Aceito</span><span class="cq-tc-leg alerta"><i></i>Alerta / sem alvo</span><span class="cq-tc-leg rejeitado"><i></i>Rejeitado</span><span class="cq-tc-leg nenhum"><i></i>Sem registro</span><span class="cq-tc-tag">sem CQ hoje</span></div>
     </div>
     <div class="cq-painel-side">
       <div class="cq-card"><div class="cq-card-tit">Aguardando avaliação</div>${listaPend || '<div class="cq-vazio-p">Nenhuma corrida pendente.</div>'}
@@ -1447,7 +1728,9 @@ function cqDrawerOpen({ titulo, subtitulo, corpo, rodape, icone, cor }) {
 }
 function cqDrawerClose() { otCloseModal('cq-drawer'); }
 
-function cqModalOpen({ titulo, subtitulo, corpo, rodape, icone, cor }) {
+function cqModalOpen({ titulo, subtitulo, corpo, rodape, icone, cor, largura }) {
+  const caixa = document.querySelector('#cq-modal .modal');
+  if (caixa) caixa.style.maxWidth = largura || '';
   document.getElementById('cq-modal-title').textContent = titulo || '';
   document.getElementById('cq-modal-sub').textContent = subtitulo || '';
   const ico = document.getElementById('cq-modal-ico');
@@ -1729,10 +2012,26 @@ async function cqCatRemover(k, i) {
 // ── FORMULÁRIO DE UNIDADE ────────────────────────────────────
 let _cqUnFormId = null;
 const CQ_LBL_UNIDADE = {
-  sigla: 'Sigla', nome: 'Nome', cnes: 'CNES', endereco: 'Endereço', fuso: 'Fuso horário', setores: 'Setores',
-  rtUserId: 'Responsável técnico', ativa: 'Ativa', validacao: 'Unidade de validação', diasOperacao: 'Dias de operação',
+  sigla: 'Sigla', nome: 'Nome', cnes: 'CNES', endereco: 'Endereço', fuso: 'Fuso horário', setores: 'Setores', orgUnidadeId: 'Unidade do sistema',
+  orgSetorIds: 'Setores da unidade', rtUserId: 'Responsável técnico', ativa: 'Ativa', validacao: 'Unidade de validação', diasOperacao: 'Dias de operação',
   membros: 'Membros', politica: 'Política de liberação',
 };
+// Setores no formulário. org: unidade do sistema escolhida; lista: setores oferecidos; sel: ids marcados;
+// legado: nomes da lista antiga (unidade sem vínculo); sugerida: unidade do sistema deduzida desses nomes
+let _cqUnSt = { org: '', lista: [], sel: new Set(), legado: [], sugerida: '' };
+
+// Interruptor (checkbox com aparência de switch) — o id continua sendo lido por _cqChk
+function _cqSwitchHTML(id, on, titulo, desc) {
+  return `<label class="cq-sw-row">
+    <span class="cq-sw-txt"><b>${titulo}</b>${desc ? `<small>${desc}</small>` : ''}</span>
+    <input type="checkbox" id="${id}" ${on ? 'checked' : ''}><span class="cq-sw" aria-hidden="true"></span>
+  </label>`;
+}
+// Grupo de botões exclusivos (radios com aparência de segmento)
+function _cqSegRadioHTML(nome, opcoes, atual, attrs = '', cls = '') {
+  return `<div class="cq-segr ${cls}" role="radiogroup">${opcoes.map(([v, l]) => `<label class="cq-segr-op">
+    <input type="radio" name="${nome}" value="${_cqEsc(v)}" ${v === atual ? 'checked' : ''} ${attrs}><span>${_cqEsc(l)}</span></label>`).join('')}</div>`;
+}
 
 function cqUnidadeForm(id) {
   if (!_cqCan('configurar')) return;
@@ -1740,59 +2039,103 @@ function cqUnidadeForm(id) {
   _cqUnFormId = id || null;
   const pol = Object.assign({ liberarAceitosAoSalvar: true, comentarioObrigatorioAlerta: true, reautenticar: true, retroativoHoras: 24 }, un?.politica || {});
   const dias = un ? _cqArr(un.diasOperacao).map(Number) : [1, 2, 3, 4, 5, 6];
-  const setoresSel = _cqArr(un?.setores);
-  const setores = typeof state !== 'undefined' ? [...(state.setores || [])].sort((a, b) => a.localeCompare(b, 'pt')) : [];
+  // Vínculo com a unidade do sistema (Ativos › Unidades e setores): cada unidade do sistema em no máximo uma unidade do CQ
+  const orgVinc = un?.orgUnidadeId || '';
+  const orgUsadas = new Set(Object.values(cqState.config.unidades).filter(x => x.id !== id && x.orgUnidadeId).map(x => x.orgUnidadeId));
+  const orgOps = typeof _orgUnidades === 'function' ? _orgUnidades({ todas: true }).filter(o => !orgUsadas.has(o.id) && (o.ativa !== false || o.id === orgVinc)) : [];
+  // Sem vínculo: os nomes antigos marcados apontam a unidade provável
+  const legado = orgVinc ? [] : _cqArr(un?.setores);
+  const contUn = {};
+  _orgIdsDeNomes(legado).forEach(sid => { const u = _orgUnidadeIdDoSetor(sid); if (u && orgOps.some(o => o.id === u)) contUn[u] = (contUn[u] || 0) + 1; });
+  const sugerida = Object.entries(contUn).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+  _cqUnSt = { org: '', lista: [], sel: new Set(), legado, sugerida };
+  _cqUnSetoresIniciar(orgVinc, orgVinc ? _cqArr(un?.orgSetorIds) : null);
+
   const membros = un?.membros || {};
   const users = _cqUsuarios();
   const equipsUn = id && typeof _cqGruposLanc === 'function' ? _cqGruposLanc(id) : [];
+  const orgOpcoes = [
+    { value: '', label: 'Sem vínculo', sub: 'Modelo antigo ou unidade de validação' },
+    ...orgOps.map(o => {
+      const n = _orgSetores(o.id).length;
+      return { value: o.id, label: `${o.sigla} — ${o.nome}`, sub: `${n} setor${n === 1 ? '' : 'es'}`, extra: o.ativa === false ? 'inativa' : o.id === sugerida ? 'sugerida' : '' };
+    })];
+  const nAcesso = Object.values(membros).filter(Boolean).length;
+  const modoAtual = CQ_MODOS_CORRIDA[pol.modoCorrida] ? pol.modoCorrida : 'lote';
+  const modoTxt = k => { const m = String(CQ_MODOS_CORRIDA[k]).match(/^(.*?)\s*\((.*)\)$/); return m ? [m[1], m[2].charAt(0).toUpperCase() + m[2].slice(1)] : [CQ_MODOS_CORRIDA[k], '']; };
+
   cqDrawerOpen({
     titulo: un ? `Unidade ${un.sigla}` : 'Nova unidade', subtitulo: 'Local que executa exames e realiza CIQ/CEQ', icone: 'unidade',
     corpo: _cqAbasHTML('un', [{ k: 'dados', rotulo: 'Unidade', html: `
       ${_cqInativoNota(un, 'ativa', 'não aparece na seleção de unidades para quem não é administrador')}
-      <div class="form-section"><div class="form-section-title">${CQ_ICO.unidade}Identificação</div>
+      <div class="form-section"><div class="form-section-title">${CQ_ICO.unidade}Unidade do sistema e setores</div>
+        <div class="cq-un-vinc">
+          <div class="cq-un-passo"><span class="cq-un-passo-n">1</span><div><b>Unidade do sistema</b><small>Cadastrada em Ativos › Unidades e setores</small></div></div>
+          ${_cqSelHTML('cq-un-org', orgOpcoes, orgVinc, { placeholder: 'Selecione a unidade…', busca: 'Buscar unidade…', vazio: 'Nenhuma unidade disponível.', onchange: v => cqUnidadeOrgEscolher(v) })}
+          <div class="cq-un-passo"><span class="cq-un-passo-n">2</span><div><b>Setores que se aplicam</b><small>Definem os equipamentos oferecidos nos testes desta unidade</small></div></div>
+          <div id="cq-un-setores-box">${_cqUnSetoresBoxHTML()}</div>
+        </div>
+      </div>
+
+      <div class="form-section"><div class="form-section-title">${CQ_ICO.cadastro}Identificação</div>
         <div class="form-row">
-          <div class="form-field" style="max-width:130px;"><label class="field-label">Sigla <span class="required">*</span></label><input type="text" id="cq-un-sigla" class="field-input" maxlength="8" value="${_cqEsc(un?.sigla)}" placeholder="MAT"></div>
+          <div class="form-field" style="max-width:130px;"><label class="field-label">Sigla <span class="required">*</span></label><input type="text" id="cq-un-sigla" class="field-input cq-un-sigla" maxlength="8" value="${_cqEsc(un?.sigla)}" placeholder="MAT"></div>
           <div class="form-field"><label class="field-label">Nome <span class="required">*</span></label><input type="text" id="cq-un-nome" class="field-input" maxlength="80" value="${_cqEsc(un?.nome)}" placeholder="Unidade Matriz"></div>
         </div>
         <div class="form-row">
-          <div class="form-field"><label class="field-label">CNES</label><input type="text" id="cq-un-cnes" class="field-input" maxlength="12" value="${_cqEsc(un?.cnes)}"></div>
-          <div class="form-field"><label class="field-label">Fuso horário</label><select id="cq-un-fuso" class="field-select">${_cqMapOptions(CQ_FUSOS, un?.fuso || 'America/Sao_Paulo', null)}</select></div>
+          <div class="form-field"><label class="field-label">CNES</label><input type="text" id="cq-un-cnes" class="field-input" maxlength="12" inputmode="numeric" value="${_cqEsc(un?.cnes)}" placeholder="0000000"></div>
+          <div class="form-field"><label class="field-label">Fuso horário</label>
+            ${_cqSelHTML('cq-un-fuso', Object.entries(CQ_FUSOS).map(([v, l]) => ({ value: v, label: l })), un?.fuso || 'America/Sao_Paulo', { busca: 'Buscar fuso…' })}</div>
         </div>
-        <div class="form-field"><label class="field-label">Endereço</label><input type="text" id="cq-un-endereco" class="field-input" maxlength="160" value="${_cqEsc(un?.endereco)}"></div>
+        <div class="form-field"><label class="field-label">Endereço</label><input type="text" id="cq-un-endereco" class="field-input" maxlength="160" value="${_cqEsc(un?.endereco)}" placeholder="Rua, número, bairro, cidade"></div>
         <div class="form-field"><label class="field-label">Responsável técnico</label>
-          <select id="cq-un-rt" class="field-select"><option value="">— Selecione —</option>${users.map(u => `<option value="${u.id}" ${u.id === un?.rtUserId ? 'selected' : ''}>${_cqEsc(u.nomeCompleto || u.username)}</option>`).join('')}</select></div>
-        <div class="form-field"><label class="field-label">Setores de ativos desta unidade</label>
-          <div class="cq-nota">Restringe os equipamentos oferecidos no cadastro de testes. Sem seleção, todos os ativos aparecem.</div>
-          <div class="cq-checks">${setores.map(s => `<label class="oc-check"><input type="checkbox" class="cq-un-setor" value="${_cqEsc(s)}" ${setoresSel.includes(s) ? 'checked' : ''}> ${_cqEsc(s)}</label>`).join('') || '<span class="cq-muted">Nenhum setor cadastrado.</span>'}</div></div>
-        <div class="form-field"><label class="field-label">Dias de operação</label>
-          <div class="cq-checks cq-checks-inline">${CQ_DIAS.map((d, i) => `<label class="oc-check"><input type="checkbox" class="cq-un-dia" value="${i}" ${dias.includes(i) ? 'checked' : ''}> ${d}</label>`).join('')}</div></div>
-        <div class="cq-checks">
-          <input type="checkbox" id="cq-un-ativa" hidden ${un?.ativa === false ? '' : 'checked'}>
-          <label class="oc-check"><input type="checkbox" id="cq-un-validacao" ${un?.validacao ? 'checked' : ''}> Unidade de validação (testes do sistema; fora dos indicadores)</label>
-        </div>
+          ${_cqSelHTML('cq-un-rt', [{ value: '', label: 'Sem responsável técnico', sub: '' }, ...users.map(u => ({ value: u.id, label: u.nomeCompleto || u.username, sub: u.cargo || '' }))],
+            un?.rtUserId || '', { placeholder: 'Selecione…', busca: 'Buscar usuário…', onchange: v => cqUnRtEscolhido(v) })}
+          <div class="cq-nota">O responsável técnico entra automaticamente como membro com o papel RT.</div></div>
       </div>
+
+      <div class="form-section"><div class="form-section-title">${CQ_ICO.calendario}Operação</div>
+        <div class="form-field"><div class="cq-un-dias-head"><label class="field-label">Dias de operação</label>
+          <span class="cq-un-presets"><button type="button" onclick="cqUnDiasPreset([1,2,3,4,5])">Seg–Sex</button><button type="button" onclick="cqUnDiasPreset([1,2,3,4,5,6])">Seg–Sáb</button><button type="button" onclick="cqUnDiasPreset([0,1,2,3,4,5,6])">Todos</button></span></div>
+          <div class="cq-dias">${CQ_DIAS.map((d, i) => `<label class="cq-dia${i === 0 || i === 6 ? ' fds' : ''}"><input type="checkbox" class="cq-un-dia" value="${i}" ${dias.includes(i) ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div></div>
+        <input type="checkbox" id="cq-un-ativa" hidden ${un?.ativa === false ? '' : 'checked'}>
+        <div class="cq-sw-lista">${_cqSwitchHTML('cq-un-validacao', !!un?.validacao, 'Unidade de validação', 'Usada para testar o sistema; fica fora dos indicadores')}</div>
+      </div>
+
       <div class="form-section"><div class="form-section-title">${CQ_ICO.shield}Política de liberação</div>
-        <div class="cq-checks">
-          <label class="oc-check"><input type="checkbox" id="cq-un-pol-lib" ${pol.liberarAceitosAoSalvar ? 'checked' : ''}> Liberar automaticamente, ao salvar, os testes aceitos (sem violação) quando o usuário tem permissão de liberar</label>
-          <label class="oc-check"><input type="checkbox" id="cq-un-pol-com" ${pol.comentarioObrigatorioAlerta ? 'checked' : ''}> Exigir comentário para liberar testes em alerta</label>
-          <label class="oc-check"><input type="checkbox" id="cq-un-pol-reauth" ${pol.reautenticar ? 'checked' : ''}> Exigir senha em assinaturas críticas (liberar com violação, alterar alvos)</label>
+        <div class="cq-sw-lista">
+          ${_cqSwitchHTML('cq-un-pol-lib', pol.liberarAceitosAoSalvar, 'Liberar aceitos ao salvar', 'Libera automaticamente os testes sem violação quando o usuário tem permissão de liberar')}
+          ${_cqSwitchHTML('cq-un-pol-com', pol.comentarioObrigatorioAlerta, 'Comentário obrigatório em alerta', 'Exige comentário para liberar testes em alerta')}
+          ${_cqSwitchHTML('cq-un-pol-reauth', pol.reautenticar, 'Senha em assinaturas críticas', 'Liberar com violação e alterar alvos pedem a senha novamente')}
+          <label class="cq-sw-row"><span class="cq-sw-txt"><b>Lançamento retroativo sem justificativa</b><small>Até quantas horas depois da corrida dispensa justificativa</small></span>
+            <span class="cq-un-horas"><input type="number" min="0" max="720" id="cq-un-pol-retro" value="${Number(pol.retroativoHoras) || 0}"><span>h</span></span></label>
         </div>
-        <div class="form-field" style="max-width:260px;"><label class="field-label">Lançamento retroativo sem justificativa até (horas)</label>
-          <input type="number" min="0" max="720" id="cq-un-pol-retro" class="field-input" value="${Number(pol.retroativoHoras) || 0}"></div>
       </div>
+
       <div class="form-section"><div class="form-section-title">${CQ_ICO.lista}Lançamento de corridas</div>
-        <div class="cq-nota">Em lote: a grade mostra todos os testes do equipamento. Fracionada: o operador adiciona só os testes realizados naquela corrida, um a um — para rotinas em que os testes rodam em horários distintos. O modo pode ser trocado na própria tela de lançamento.</div>
-        <div class="form-field" style="max-width:360px;"><label class="field-label">Modo padrão da unidade</label>
-          <select id="cq-un-pol-modo" class="field-select">${_cqMapOptions(CQ_MODOS_CORRIDA, CQ_MODOS_CORRIDA[pol.modoCorrida] ? pol.modoCorrida : 'lote', null)}</select></div>
+        <div class="cq-modos">${Object.keys(CQ_MODOS_CORRIDA).map(k => { const [t, d] = modoTxt(k); return `<label class="cq-modo">
+          <input type="radio" name="cq-un-pol-modo" value="${k}" ${k === modoAtual ? 'checked' : ''}>
+          <span class="cq-modo-radio"></span><span class="cq-modo-txt"><b>${_cqEsc(t)}</b><small>${_cqEsc(d)}</small></span></label>`; }).join('')}</div>
+        <div class="cq-nota">Em lote: a grade mostra todos os testes do equipamento. Fracionada: o operador adiciona só os testes realizados naquela corrida — para rotinas em horários distintos. O modo pode ser trocado na própria tela de lançamento.</div>
         ${equipsUn.length ? `<div class="form-field"><label class="field-label">Exceções por equipamento / sistema</label>
-          <div class="cq-membros">${equipsUn.map(g => `<div class="cq-membro"><span>${_cqEsc(g.nome)}<span class="cq-muted"> ${g.testes.length} teste(s)</span></span>
-            <select class="field-select cq-un-modo-equip" data-k="${_cqEsc(_cqChaveModoEquip(g.key))}"><option value="">Padrão da unidade</option>${Object.entries(CQ_MODOS_CORRIDA).map(([k, l]) => `<option value="${k}" ${pol.modoCorridaEquip?.[_cqChaveModoEquip(g.key)] === k ? 'selected' : ''}>${_cqEsc(l)}</option>`).join('')}</select></div>`).join('')}</div></div>` : ''}
+          <div class="cq-un-lista">${equipsUn.map((g, i) => { const k = _cqChaveModoEquip(g.key); return `<div class="cq-un-linha">
+            <span class="cq-un-linha-txt"><b>${_cqEsc(g.nome)}</b><small>${g.testes.length} teste(s)</small></span>
+            ${_cqSegRadioHTML(`cq-un-me-${i}`, [['', 'Padrão'], ['lote', 'Lote'], ['fracionada', 'Fracionada']], pol.modoCorridaEquip?.[k] || '', `class="cq-un-me" data-k="${_cqEsc(k)}"`, 'sm')}
+          </div>`; }).join('')}</div></div>` : ''}
       </div>
       ${typeof _cqEsterUnidadeHTML === 'function' ? _cqEsterUnidadeHTML(id, equipsUn) : ''}
-      <div class="form-section"><div class="form-section-title">${CQ_ICO.lock}Membros e papéis</div>
+      <div class="form-section"><div class="form-section-title">${CQ_ICO.usuarios}Membros e papéis</div>
         <div class="cq-nota">Só os membros veem e lançam nesta unidade. As ações permitidas dependem também das permissões do grupo do usuário.</div>
-        <div class="cq-membros">${users.map(u => `<div class="cq-membro"><span>${_cqEsc(u.nomeCompleto || u.username)}<span class="cq-muted"> ${_cqEsc(u.cargo || '')}</span></span>
-          <select class="field-select cq-un-membro" data-user="${u.id}">${_cqMapOptions(CQ_PAPEIS, membros[u.id] || '', 'Sem acesso')}</select></div>`).join('')}</div>
+        <div class="cq-un-mb-bar">
+          <label class="cq-ms-busca cq-un-mb-busca">${CQ_ICO.busca}<input type="text" placeholder="Buscar usuário…" autocomplete="off" oninput="cqUnMembrosFiltrar(this.value)"></label>
+          <span class="cq-un-mb-n" id="cq-un-mb-n">${nAcesso} com acesso</span>
+        </div>
+        <div class="cq-un-lista cq-un-membros">${users.map((u, i) => { const nome = u.nomeCompleto || u.username || ''; return `<div class="cq-un-linha${membros[u.id] ? ' com-acesso' : ''}" data-busca="${_cqEsc(_cqNormBusca(nome + ' ' + (u.cargo || '')))}">
+          <span class="cq-un-av">${_cqEsc(nome.trim().charAt(0).toUpperCase() || '?')}</span>
+          <span class="cq-un-linha-txt"><b>${_cqEsc(nome)}</b>${u.cargo ? `<small>${_cqEsc(u.cargo)}</small>` : ''}</span>
+          ${_cqSegRadioHTML(`cq-un-mb-${i}`, [['', 'Sem acesso'], ...Object.entries(CQ_PAPEIS).map(([k, l]) => [k, k === 'rt' ? 'RT' : l])], membros[u.id] || '', `class="cq-un-mb" data-user="${_cqEsc(u.id)}" onchange="cqUnMembroMudou(this)"`, 'sm')}
+        </div>`; }).join('') || '<div class="cq-ms-vazio">Nenhum usuário ativo.</div>'}
+          <div class="cq-ms-vazio" id="cq-un-mb-vazio" hidden>Nenhum usuário encontrado.</div></div>
       </div>
 ` }, _cqAbaTrilha(un)]),
     rodape: `${un ? `<div class="cq-rodape-esq">${_cqBtnAtivoHTML({ ids: 'cq-un-ativa', fn: 'cqUnidadeSalvar', colecao: 'unidades', id: un.id, campo: 'ativa', ativo: un.ativa !== false })}</div>` : ''}
@@ -1801,39 +2144,174 @@ function cqUnidadeForm(id) {
   });
 }
 
+// Prepara os setores oferecidos para a unidade do sistema. ids: os gravados (vazio = todos);
+// null = unidade recém-escolhida (aproveita os setores antigos de mesmo nome, se houver)
+function _cqUnSetoresIniciar(org, ids) {
+  const st = _cqUnSt;
+  st.org = org || '';
+  if (!st.org) { st.lista = []; st.sel = new Set(); return; }
+  const todos = _orgSetores(st.org, { todos: true });
+  const existe = sid => todos.some(s => s.id === sid);
+  let sel = _cqArr(ids).filter(existe);
+  if (ids === null) {
+    // Só nomes antigos que viraram setor de mesmo nome (não os que viraram a própria unidade)
+    sel = st.legado.map(n => ({ n, sid: _orgIdDeNomeLegado(n) }))
+      .filter(x => existe(x.sid) && _orgNorm(_orgSetor(x.sid)?.nome) === _orgNorm(x.n)).map(x => x.sid);
+  }
+  if (!sel.length) sel = todos.filter(s => s.ativo !== false).map(s => s.id);
+  st.sel = new Set(sel);
+  st.lista = todos.filter(s => s.ativo !== false || st.sel.has(s.id));
+}
+// Todos os setores ativos marcados (e nenhum inativo): grava "todos", e os setores novos entram sozinhos
+function _cqUnSetoresTodos() {
+  const st = _cqUnSt;
+  return st.lista.length > 0 && st.lista.every(s => (s.ativo === false) !== st.sel.has(s.id));
+}
+
+function _cqUnSetoresBoxHTML() {
+  const st = _cqUnSt;
+  if (st.org) {
+    const ss = st.lista;
+    if (!ss.length) return `<div class="cq-un-st-vazio">${CQ_ICO.info}<span>Esta unidade ainda não tem setores.<small>Cadastre-os em Ativos › Unidades e setores.</small></span></div>`;
+    const n = ss.filter(s => st.sel.has(s.id)).length;
+    const nota = !n ? '<span class="cq-un-st-erro">Selecione ao menos um setor.</span>'
+      : _cqUnSetoresTodos() ? 'Todos os setores — os cadastrados depois nesta unidade entram automaticamente.'
+      : 'Só os equipamentos dos setores marcados são oferecidos nos testes desta unidade.';
+    return `<div class="cq-un-st-head">
+        <span><b>${n}</b> de ${ss.length} setor${ss.length === 1 ? '' : 'es'} selecionado${n === 1 ? '' : 's'}</span>
+        <span class="cq-un-presets"><button type="button" onclick="cqUnSetoresMarcar(true)">Todos</button><button type="button" onclick="cqUnSetoresMarcar(false)">Limpar</button></span>
+      </div>
+      <div class="cq-un-st-grid">${ss.map((s, i) => {
+        const on = st.sel.has(s.id);
+        const na = typeof _orgContarAtivos === 'function' ? _orgContarAtivos(s.id) : 0;
+        return `<button type="button" class="cq-tgl${on ? ' on' : ''}${s.ativo === false ? ' inativo' : ''}" aria-pressed="${on}" onclick="cqUnSetorAlternar(${i})">
+          <span class="cq-tgl-chk">${CQ_ICO.check}</span>
+          <span class="cq-tgl-txt"><b title="${_cqEsc(s.nome)}">${_cqEsc(s.nome)}</b><small>${na} equipamento${na === 1 ? '' : 's'}${s.ativo === false ? ' · inativo' : ''}</small></span>
+        </button>`;
+      }).join('')}</div>
+      <div class="cq-nota">${nota}</div>`;
+  }
+  if (st.legado.length) {
+    const sug = st.sugerida ? _orgUnidade(st.sugerida) : null;
+    return `<div class="cq-un-st-legado">
+      <div class="cq-un-st-head"><span>${CQ_ICO.alerta}<b>Modelo antigo</b> — setores marcados antes da hierarquia unidade › setor</span></div>
+      <div class="cq-ms-chips">${st.legado.map((s, i) => `<span class="cq-ms-chip"><span class="cq-ms-chip-txt">${_cqEsc(s)}</span><button type="button" title="Remover" onclick="cqUnLegadoRemover(${i})">×</button></span>`).join('')}</div>
+      <div class="cq-nota">Vincule a unidade do sistema acima para escolher os setores atuais.${sug ? ` <button type="button" class="cq-un-sug" onclick="cqUnOrgSugerida()">${CQ_ICO.unidade} Usar ${_cqEsc(sug.sigla)} — ${_cqEsc(sug.nome)}</button>` : ''}</div>
+    </div>`;
+  }
+  return `<div class="cq-un-st-vazio cq-un-st-off">${CQ_ICO.lock}<span>Selecione a unidade do sistema para habilitar os setores.<small>Sem vínculo (ex.: unidade de validação), todos os equipamentos são oferecidos.</small></span></div>`;
+}
+function _cqUnSetoresAtualizar() {
+  const box = document.getElementById('cq-un-setores-box');
+  if (box) box.innerHTML = _cqUnSetoresBoxHTML();
+}
+function cqUnSetorAlternar(i) {
+  const s = _cqUnSt.lista[i];
+  if (!s) return;
+  if (_cqUnSt.sel.has(s.id)) _cqUnSt.sel.delete(s.id); else _cqUnSt.sel.add(s.id);
+  _cqUnSetoresAtualizar();
+}
+function cqUnSetoresMarcar(on) {
+  _cqUnSt.sel = new Set(on ? _cqUnSt.lista.filter(s => s.ativo !== false).map(s => s.id) : []);
+  _cqUnSetoresAtualizar();
+}
+function cqUnLegadoRemover(i) {
+  _cqUnSt.legado.splice(i, 1);
+  _cqUnSetoresAtualizar();
+}
+function cqUnOrgSugerida() {
+  const m = _cqSel['cq-un-org'];
+  if (!m || !_cqUnSt.sugerida) return;
+  m.valor = _cqUnSt.sugerida;
+  const b = document.getElementById('cq-un-org-btn');
+  if (b) b.innerHTML = _cqSelBtnHTML('cq-un-org');
+  cqUnidadeOrgEscolher(_cqUnSt.sugerida);
+}
+function cqUnidadeOrgEscolher(v) {
+  const o = v ? _orgUnidade(v) : null;
+  const sig = document.getElementById('cq-un-sigla'), nom = document.getElementById('cq-un-nome');
+  // Unidade nova: sugere sigla e nome da unidade do sistema
+  if (o && sig && !sig.value) sig.value = String(o.sigla || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
+  if (o && nom && !nom.value) nom.value = o.nome || '';
+  const un = _cqUnFormId ? cqState.config.unidades[_cqUnFormId] : null;
+  // Voltando à unidade já gravada, recupera a seleção gravada
+  _cqUnSetoresIniciar(v, v && v === un?.orgUnidadeId ? _cqArr(un?.orgSetorIds) : null);
+  _cqUnSetoresAtualizar();
+}
+
+function cqUnDiasPreset(dias) {
+  document.querySelectorAll('#cq-drawer .cq-un-dia').forEach(c => { c.checked = dias.includes(Number(c.value)); });
+}
+// Escolheu o RT: passa a ser membro com o papel RT (se ainda não for membro)
+function cqUnRtEscolhido(userId) {
+  if (!userId) return;
+  const radios = [...document.querySelectorAll('#cq-drawer .cq-un-mb')].filter(r => r.dataset.user === userId);
+  if (radios.some(r => r.checked && r.value)) return;
+  const rt = radios.find(r => r.value === 'rt');
+  if (rt) { rt.checked = true; cqUnMembroMudou(rt); }
+}
+function cqUnMembroMudou(r) {
+  r.closest('.cq-un-linha')?.classList.toggle('com-acesso', !!r.value);
+  const n = [...document.querySelectorAll('#cq-drawer .cq-un-mb:checked')].filter(x => x.value).length;
+  const el = document.getElementById('cq-un-mb-n');
+  if (el) el.textContent = `${n} com acesso`;
+}
+function cqUnMembrosFiltrar(q) {
+  const t = _cqNormBusca(q).trim();
+  let vis = 0;
+  document.querySelectorAll('#cq-drawer .cq-un-membros .cq-un-linha').forEach(l => { const ok = !t || l.dataset.busca.includes(t); l.hidden = !ok; if (ok) vis++; });
+  const v = document.getElementById('cq-un-mb-vazio');
+  if (v) v.hidden = vis > 0;
+}
+
 async function cqUnidadeSalvar() {
   if (_cqSalvando) return;
+  const orgSel = _cqSelVal('cq-un-org');
+  if (orgSel && Object.values(cqState.config.unidades).some(u => u.id !== _cqUnFormId && u.orgUnidadeId === orgSel)) { showToast('Esta unidade do sistema já está vinculada a outra unidade do CQ.', 'error'); return; }
   const sigla = _cqVal('cq-un-sigla').toUpperCase(), nome = _cqVal('cq-un-nome');
   if (!sigla || !/^[A-Z0-9]{1,8}$/.test(sigla)) { showToast('Informe a sigla (até 8 letras ou números).', 'error'); return; }
   if (!nome) { showToast('Informe o nome da unidade.', 'error'); return; }
   if (Object.values(cqState.config.unidades).some(u => u.sigla === sigla && u.id !== _cqUnFormId)) { showToast('Já existe unidade com esta sigla.', 'error'); return; }
+  // Setores da unidade do sistema: null = todos (inclui os cadastrados depois)
+  let orgSetorIds = null;
+  if (orgSel && _cqUnSt.org === orgSel && _cqUnSt.lista.length) {
+    const sel = _cqUnSt.lista.filter(s => _cqUnSt.sel.has(s.id)).map(s => s.id);
+    if (!sel.length) { showToast('Selecione ao menos um setor da unidade.', 'error'); return; }
+    if (!_cqUnSetoresTodos()) orgSetorIds = sel;
+  }
   const antes = _cqUnFormId ? cqState.config.unidades[_cqUnFormId] : null;
   const membros = {};
-  document.querySelectorAll('#cq-drawer .cq-un-membro').forEach(sel => { if (sel.value) membros[sel.dataset.user] = sel.value; });
+  document.querySelectorAll('#cq-drawer .cq-un-mb:checked').forEach(r => { if (r.value) membros[r.dataset.user] = r.value; });
+  const modo = document.querySelector('#cq-drawer input[name="cq-un-pol-modo"]:checked')?.value;
   const rec = {
     ...(antes || {}),
-    id: _cqUnFormId || _cqUid(), sigla, nome, cnes: _cqVal('cq-un-cnes'), endereco: _cqVal('cq-un-endereco'),
-    fuso: _cqVal('cq-un-fuso') || 'America/Sao_Paulo', rtUserId: _cqVal('cq-un-rt') || null,
-    setores: [...document.querySelectorAll('#cq-drawer .cq-un-setor:checked')].map(x => x.value),
+    id: _cqUnFormId || _cqUid(), orgUnidadeId: orgSel || null, orgSetorIds, sigla, nome, cnes: _cqVal('cq-un-cnes'), endereco: _cqVal('cq-un-endereco'),
+    fuso: _cqSelVal('cq-un-fuso') || 'America/Sao_Paulo', rtUserId: _cqSelVal('cq-un-rt') || null,
+    // Setores do modelo antigo (sem vínculo); vinculada: mantém o valor gravado
+    setores: orgSel ? _cqArr(antes?.setores) : [..._cqUnSt.legado],
     diasOperacao: [...document.querySelectorAll('#cq-drawer .cq-un-dia:checked')].map(x => Number(x.value)),
     ativa: _cqChk('cq-un-ativa'), validacao: _cqChk('cq-un-validacao'), membros,
     politica: { liberarAceitosAoSalvar: _cqChk('cq-un-pol-lib'), comentarioObrigatorioAlerta: _cqChk('cq-un-pol-com'),
                 reautenticar: _cqChk('cq-un-pol-reauth'), retroativoHoras: Math.max(0, Number(_cqVal('cq-un-pol-retro')) || 0),
-                modoCorrida: CQ_MODOS_CORRIDA[_cqVal('cq-un-pol-modo')] ? _cqVal('cq-un-pol-modo') : 'lote' },
+                modoCorrida: CQ_MODOS_CORRIDA[modo] ? modo : 'lote' },
   };
   // Exceções por equipamento: preserva as de equipamentos que não aparecem agora (ex.: sem testes ativos)
   const modosEquip = { ...(antes?.politica?.modoCorridaEquip || {}) };
-  document.querySelectorAll('#cq-drawer .cq-un-modo-equip').forEach(sel => { if (sel.value) modosEquip[sel.dataset.k] = sel.value; else delete modosEquip[sel.dataset.k]; });
+  document.querySelectorAll('#cq-drawer .cq-un-me:checked').forEach(r => { if (r.value) modosEquip[r.dataset.k] = r.value; else delete modosEquip[r.dataset.k]; });
   if (Object.keys(modosEquip).length) rec.politica.modoCorridaEquip = modosEquip;
   if (rec.rtUserId && !rec.membros[rec.rtUserId]) rec.membros[rec.rtUserId] = 'rt';
   if (!antes) { rec.criadoEm = _cqAgora(); rec.criadoPor = _cqAssinatura(); }
   const fmt = {
     rtUserId: v => _cqNomeUsuario(v) || v, ativa: v => v ? 'Sim' : 'Não', validacao: v => v ? 'Sim' : 'Não',
+    orgUnidadeId: v => v ? (typeof _orgUnidade === 'function' && _orgUnidade(v) ? _orgUnidade(v).sigla + ' — ' + _orgUnidade(v).nome : v) : 'Sem vínculo',
+    orgSetorIds: v => _cqArr(v).map(sid => _orgRotuloSetor(sid, { semUnidade: true }) || sid).join(', '),
     diasOperacao: v => _cqArr(v).map(i => CQ_DIAS[i]).join(', '), fuso: v => CQ_FUSOS[v] || v,
     membros: v => Object.entries(v || {}).map(([id, p]) => `${_cqNomeUsuario(id) || id} (${CQ_PAPEIS[p] || p})`).join('; '),
     politica: v => JSON.stringify(v),
   };
   const diffs = antes ? _cqDiff(antes, rec, CQ_LBL_UNIDADE, fmt) : [];
+  // "Todos os setores" aparece na trilha como texto, não como vazio
+  diffs.forEach(d => { if (d.campo === CQ_LBL_UNIDADE.orgSetorIds) { if (d.antes === '—') d.antes = 'Todos'; if (d.depois === '—') d.depois = 'Todos'; } });
   if (antes && !diffs.length) { cqDrawerClose(); return; }
   _cqTrilhaAdd(rec, antes ? 'edicao' : 'criacao', antes ? 'Unidade alterada' : 'Unidade cadastrada', diffs);
   _cqSalvando = true;
@@ -1956,8 +2434,9 @@ function _cqResumoPendencia(c) {
   const ts = Object.values(c.testes || {}).filter(ct => !ct.naoRealizado);
   const pend = ts.filter(ct => !ct.decisao);
   if (!pend.length) return null;
+  const setorIds = _cqSetoresDosTestes(Object.entries(c.testes || {}).filter(([, ct]) => !ct.naoRealizado && !ct.decisao).map(([tid]) => tid));
   return { numero: c.numero || null, mes: c.mes || CQEngine.mesDe(c.key), dataHora: c.dataHora, equipNome: c.ativoSnap?.nome || c.sistemaAnalitico || '',
-           nPend: pend.length, temRejeicao: pend.some(ct => ct.avaliacao?.status === 'rejeitado') };
+           nPend: pend.length, temRejeicao: pend.some(ct => ct.avaliacao?.status === 'rejeitado'), setorIds };
 }
 
 function _cqStatusCorrida(c) {

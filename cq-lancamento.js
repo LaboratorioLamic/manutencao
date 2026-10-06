@@ -7,7 +7,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 let _cqLanc = null;           // estado do lançamento em edição
-let _cqCorrFiltro = { mes: null, status: 'todas', grupo: '' };
+let _cqCorrFiltro = { per: null, status: 'todas', grupo: '' };   // per: { modo: 'intervalo', de, ate } | { modo: 'ano', ano } | { modo: 'geral' }
 let _cqCorrCache = null;      // { u, mes, corridas }
 let _cqCorrAberta = null;     // { u, mes, key }
 
@@ -20,7 +20,7 @@ function _cqLancNovo(grupo) {
   const u = _cqUnidadeAtivaId();
   return {
     u, grupo: grupo || '', dataHora: _cqNowLocal(), operadorId: _cqSess().id,
-    flags: { posManutPrev: false, posManutCorr: false, reinicioEquip: false, verificacao: false, otRef: '' },
+    flags: { posManutPrev: false, posManutCorr: false, reinicioEquip: false, verificacao: false, otRef: '', otId: null },
     retroJust: '', repeticaoDe: null, somenteTestes: null, linhas: {}, hist: {}, carregando: new Set(), rascunhoRestaurado: false,
     modo: grupo ? _cqModoCorrida(u, grupo) : 'lote', selecionados: [],   // corrida fracionada: testes adicionados, na ordem
   };
@@ -29,10 +29,11 @@ function _cqLancNovo(grupo) {
 // Corrida fracionada: a grade mostra só os testes adicionados pelo operador (repetição sempre usa o teste fixo)
 function _cqLancFrac() { return !!_cqLanc && _cqLanc.modo === 'fracionada' && !_cqLanc.somenteTestes; }
 
-// Grupos (equipamentos ou sistemas manuais) com testes ativos na unidade
-function _cqGruposLanc(u) {
+// Grupos (equipamentos ou sistemas manuais) com testes ativos na unidade.
+// porSetor: só os testes do setor escolhido no CQ (listas); sem ele, todos (busca por chave do grupo)
+function _cqGruposLanc(u, { porSetor = false } = {}) {
   const g = {};
-  _cqTestesDaUnidade(u).forEach(t => {
+  (porSetor ? _cqTestesDoFiltro(u) : _cqTestesDaUnidade(u)).forEach(t => {
     const ativo = t.ativoId && typeof _ativoById === 'function' ? _ativoById(t.ativoId) : null;
     if (ativo?.statusUso === 'em_desuso') return;
     const k = _cqGrupoEquip(t);
@@ -65,8 +66,8 @@ function cqRenderLancar(body) {
   const u = _cqUnidadeAtivaId();
   if (!_cqCan('lancar')) { body.innerHTML = '<div class="cq-vazio">Sem permissão para lançar corridas.</div>'; return; }
   if (!_cqLanc || _cqLanc.u !== u) _cqLanc = _cqLancNovo('');
-  const grupos = _cqGruposLanc(u);
-  const g = grupos.find(x => x.key === _cqLanc.grupo);
+  const grupos = _cqGruposLanc(u, { porSetor: true });
+  const g = _cqGruposLanc(u).find(x => x.key === _cqLanc.grupo);
   if (g && !_cqLanc.carregado) { _cqLancCarregarGrupo(); return; }
   // Atualização remota durante a digitação: só recalcula as linhas, sem perder o foco
   if (g && body.dataset.lancGrupo === _cqLanc.grupo && document.activeElement?.closest?.('#cq-grade, #cq-l-ester')) {
@@ -74,7 +75,10 @@ function cqRenderLancar(body) {
     return;
   }
   body.dataset.lancGrupo = g ? _cqLanc.grupo : '';
-  const users = _cqUsuarios().filter(x => _cqPapel(u, x.id) || x.id === _cqSess().id);
+  // Executado por: membros da unidade com permissão de lançar/configurar o CQ (sem nenhum configurado, o próprio usuário)
+  let users = _cqUsuariosDaUnidade(u);
+  if (!users.length) users = _cqUsuarios().filter(x => x.id === _cqSess().id);
+  if (!users.some(x => x.id === _cqLanc.operadorId)) _cqLanc.operadorId = users.some(x => x.id === _cqSess().id) ? _cqSess().id : (users[0]?.id || _cqLanc.operadorId);
   const agora = _cqNowLocal();
   const ester = g && typeof _cqEsterLancCfg === 'function' ? _cqEsterLancCfg() : null;
   body.innerHTML = `
@@ -82,26 +86,17 @@ function cqRenderLancar(body) {
     ${_cqLanc.repeticaoDe ? `<div class="cq-alerta-box cq-info-box">${CQ_ICO.repeat} Repetição do controle da corrida ${_cqEsc(_cqLanc.repeticaoDe.numero)}. A repetição isolada não é ação corretiva: registre causa e ação na não conformidade.</div>` : ''}
     <div class="cq-lanc-head">
       <div class="form-field cq-lanc-equip"><label class="field-label">Equipamento / sistema <span class="required">*</span></label>
-        <select class="field-select" id="cq-l-grupo" onchange="cqLancGrupo(this.value)">
-          <option value="">— Selecione —</option>
-          ${grupos.map(x => `<option value="${_cqEsc(x.key)}" ${x.key === _cqLanc.grupo ? 'selected' : ''}>${_cqEsc(x.nome)} (${x.testes.length})${x.ativo?.statusUso === 'em_pausa' ? ' — em pausa' : ''}</option>`).join('')}
-        </select></div>
+        ${_cqLancEquipComboHTML(grupos)}</div>
       <div class="form-field" style="max-width:200px;"><label class="field-label">Data/hora da corrida <span class="required">*</span></label>
         <input type="datetime-local" class="field-input" id="cq-l-dh" max="${agora}" value="${_cqEsc(_cqLanc.dataHora)}" onchange="cqLancDataHora(this.value)"></div>
-      <div class="form-field" style="max-width:240px;"><label class="field-label">${ester ? 'Operador do equipamento' : 'Executado por'} <span class="required">*</span></label>
-        <select class="field-select" id="cq-l-oper" onchange="_cqLanc.operadorId=this.value">${users.map(x => `<option value="${x.id}" ${x.id === _cqLanc.operadorId ? 'selected' : ''}>${_cqEsc(x.nomeCompleto || x.username)}</option>`).join('')}</select></div>
+      <div class="form-field" style="max-width:280px;min-width:240px;"><label class="field-label">${ester ? 'Operador do equipamento' : 'Executado por'} <span class="required">*</span></label>
+        ${_cqUsuarioPopHTML('cq-l-oper', u, users, _cqLanc.operadorId, v => { _cqLanc.operadorId = v; })}</div>
       ${g ? _cqLancModoHTML() : ''}
     </div>
     ${g ? `
     ${g.ativo?.statusUso === 'em_pausa' ? `<div class="cq-alerta-box">${CQ_ICO.alerta} Equipamento em pausa: esta corrida será registrada como <b>verificação</b> (pós-manutenção / liberação), sem liberar resultados de pacientes.</div>` : ''}
     <div id="cq-l-retro"></div>
-    <div class="cq-lanc-flags">
-      <span class="cq-lanc-flags-lbl">Condições da corrida:</span>
-      <label class="oc-check"><input type="checkbox" ${_cqLanc.flags.posManutPrev ? 'checked' : ''} onchange="_cqLanc.flags.posManutPrev=this.checked"> Após manutenção preventiva</label>
-      <label class="oc-check"><input type="checkbox" ${_cqLanc.flags.posManutCorr ? 'checked' : ''} onchange="_cqLanc.flags.posManutCorr=this.checked"> Após manutenção corretiva</label>
-      <label class="oc-check"><input type="checkbox" ${_cqLanc.flags.reinicioEquip ? 'checked' : ''} onchange="_cqLanc.flags.reinicioEquip=this.checked"> Após reinício do equipamento</label>
-      <input type="text" class="field-input cq-lanc-otref" placeholder="Nº OT / ocorrência (opcional)" value="${_cqEsc(_cqLanc.flags.otRef)}" oninput="_cqLanc.flags.otRef=this.value">
-    </div>
+    <div class="cq-lanc-cond">${_cqLancCondHTML()}${_cqLancOtHTML()}</div>
     ${typeof _cqEsterLancHTML === 'function' ? _cqEsterLancHTML() : ''}
     ${_cqLanc.rascunhoRestaurado ? `<div class="cq-alerta-box cq-info-box">${CQ_ICO.undo} Rascunho não salvo restaurado deste computador. <a href="#" onclick="cqLancDescartarRascunho();return false;">Descartar rascunho</a></div>` : ''}
     ${_cqLancAddHTML()}
@@ -111,9 +106,207 @@ function cqRenderLancar(body) {
       <div class="cq-spacer"></div>
       <button class="btn btn-outline" onclick="cqLancLimpar()">Limpar</button>
       <button class="btn btn-primary" id="cq-l-salvar" onclick="cqLancSalvar()">${CQ_ICO.check} Salvar corrida</button>
-    </div>` : `<div class="cq-vazio">${grupos.length ? 'Selecione o equipamento para lançar os controles.' : 'Nenhum teste ativo nesta unidade. Cadastre testes em Cadastros.'}</div>`}
+    </div>` : grupos.length ? `<div class="cq-lanc-escolha">
+      <div class="cq-sec-titulo">Escolha o equipamento ou sistema</div>
+      <div class="cq-lanc-equips">${grupos.map(x => {
+        const r = _cqLancEquipResumo(x);
+        return `<button type="button" class="cq-lanc-eq ${r.cls}" data-k="${_cqEsc(x.key)}" onclick="cqLancGrupo(this.dataset.k)">
+          <span class="cq-lanc-eq-ico">${x.key.startsWith('m:') ? CQ_ICO.beaker : CQ_ICO.ativo}</span>
+          <span class="cq-lanc-eq-txt"><b>${_cqEsc(x.nome)}</b><small>${x.testes.length} teste${x.testes.length === 1 ? '' : 's'}${x.ativo?.statusUso === 'em_pausa' ? ' · em pausa (verificação)' : ''}</small>
+            <span class="cq-lanc-eq-st"><i></i>${_cqEsc(r.status)}</span></span>
+          <svg class="cq-cfg-tile-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 6 15 12 9 18"/></svg></button>`;
+      }).join('')}</div></div>` : '<div class="cq-vazio">Nenhum teste ativo nesta unidade. Cadastre testes em Cadastros.</div>'}
   </div>`;
   if (g) { _cqLancAtualizarRetro(); _cqGradeAtualizarTudo(); if (ester) _cqEsterAtualizar(); }
+}
+
+// Resumo do equipamento para a escolha: testes sem CQ hoje, aguardando avaliação ou em dia
+function _cqLancEquipResumo(x) {
+  const un = _cqUnidade();
+  const ul = (cqState.indices[_cqUnidadeAtivaId()] || {}).ultimo || {};
+  const semHoje = x.testes.filter(t => _cqTesteSemCQHoje(t, ul[t.id], un)).length;
+  const aguarda = x.testes.filter(t => ul[t.id] && !ul[t.id].decisao).length;
+  const status = semHoje ? `${semHoje} sem CQ hoje` : aguarda ? `${aguarda} aguardando avaliação` : 'CQ do dia em dia';
+  const pausa = x.ativo?.statusUso === 'em_pausa' ? ' · em pausa' : '';
+  return { status, cls: semHoje ? 'pend' : aguarda ? 'aguarda' : 'ok', txt: `${x.testes.length} teste${x.testes.length === 1 ? '' : 's'} · ${status}${pausa}` };
+}
+
+// ── Equipamento / sistema: campo de pesquisa com lista (clicar no escolhido desmarca) ──
+let _cqEqcAtivo = -1;
+function _cqLancEquipComboHTML(grupos) {
+  const g = grupos.find(x => x.key === _cqLanc.grupo);
+  const ico = x => (x.key.startsWith('m:') ? CQ_ICO.beaker : CQ_ICO.ativo);
+  const itens = grupos.map((x, i) => {
+    const sel = x.key === _cqLanc.grupo;
+    return `<button type="button" class="cq-sitpop-op cq-eqc-op${sel ? ' sel' : ''}" data-i="${i}" data-k="${_cqEsc(x.key)}" data-b="${_cqEsc(_cqNormBusca(x.nome))}"
+        onclick="cqEqcEscolher(this.dataset.k)" onmouseenter="cqEqcHover(${i})" title="${sel ? 'Clique para desmarcar e voltar à lista de equipamentos' : 'Lançar neste equipamento'}">
+      <span class="cq-sitpop-marca"><span class="cq-sitpop-ico">${ico(x)}</span></span>
+      <span class="cq-sitpop-txt"><b>${_cqEsc(x.nome)}</b><small>${_cqEsc(_cqLancEquipResumo(x).txt)}</small></span>
+      ${sel ? '<span class="cq-eqc-desm">desmarcar ×</span>' : ''}</button>`;
+  }).join('');
+  return `<div class="cq-sitpop cq-eqc${g ? ' com-valor' : ''}" id="cq-l-grupo-pop" onfocusout="cqEqcSaiu(event)">
+    <div class="cq-eqc-campo" onclick="document.getElementById('cq-eqc-in').focus()">
+      <span class="cq-sitpop-ico">${g ? ico(g) : CQ_ICO.busca}</span>
+      <input type="text" id="cq-eqc-in" autocomplete="off" spellcheck="false" value="${_cqEsc(g?.nome || '')}" placeholder="Pesquise ou selecione o equipamento / sistema"
+        onfocus="cqEqcAbrir()" oninput="cqEqcFiltrar(this.value)" onkeydown="cqEqcTecla(event)">
+      ${g ? `<span class="cq-sitpop-x" role="button" title="Desmarcar e voltar à lista" onmousedown="event.preventDefault()" onclick="event.stopPropagation();cqLancSairEquip()">×</span>` : ''}
+      <svg class="cq-sitpop-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+    </div>
+    <div class="cq-sitpop-menu cq-eqc-menu" onmousedown="event.preventDefault()">${itens || '<div class="cq-ms-vazio">Nenhum equipamento com testes ativos.</div>'}
+      <div class="cq-ms-vazio cq-eqc-nada" hidden>Nenhum equipamento encontrado.</div></div>
+  </div>`;
+}
+function _cqEqcVisiveis() { return [...document.querySelectorAll('#cq-l-grupo-pop .cq-eqc-op')].filter(b => !b.hidden); }
+function cqEqcAbrir() {
+  const pop = document.getElementById('cq-l-grupo-pop'), inp = document.getElementById('cq-eqc-in');
+  if (!pop || !inp) return;
+  document.querySelectorAll('.cq-sitpop.aberto, .cq-mp.aberto').forEach(x => { if (x !== pop) x.classList.remove('aberto'); });
+  pop.classList.add('aberto');
+  inp.select();
+  cqEqcFiltrar('');
+}
+function cqEqcFiltrar(q) {
+  const n = _cqNormBusca(q || '').trim();
+  // Texto igual ao nome escolhido (campo recém-focado): mostra todos
+  const nomeSel = _cqNormBusca(document.querySelector('#cq-l-grupo-pop .cq-eqc-op.sel b')?.textContent || '');
+  let vis = 0;
+  document.querySelectorAll('#cq-l-grupo-pop .cq-eqc-op').forEach(b => { const ok = !n || n === nomeSel || b.dataset.b.includes(n); b.hidden = !ok; if (ok) vis++; });
+  const nada = document.querySelector('#cq-l-grupo-pop .cq-eqc-nada');
+  if (nada) nada.hidden = !!vis;
+  document.getElementById('cq-l-grupo-pop')?.classList.add('aberto');
+  cqEqcHover(n && n !== nomeSel ? 0 : -1, true);
+}
+function cqEqcHover(i, visivel) {
+  const vis = _cqEqcVisiveis();
+  document.querySelectorAll('#cq-l-grupo-pop .cq-eqc-op.foco').forEach(b => b.classList.remove('foco'));
+  const alvo = visivel ? vis[i] : document.querySelector(`#cq-l-grupo-pop .cq-eqc-op[data-i="${i}"]`);
+  _cqEqcAtivo = alvo ? vis.indexOf(alvo) : -1;
+  alvo?.classList.add('foco');
+}
+function cqEqcTecla(e) {
+  const vis = _cqEqcVisiveis();
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (!vis.length) return;
+    const n = (_cqEqcAtivo + (e.key === 'ArrowDown' ? 1 : -1) + vis.length) % vis.length;
+    cqEqcHover(n, true);
+    vis[n].scrollIntoView({ block: 'nearest' });
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    const b = vis[_cqEqcAtivo] || (vis.length === 1 ? vis[0] : null);
+    if (b) cqEqcEscolher(b.dataset.k);
+  } else if (e.key === 'Escape') { cqEqcFechar(); e.target.blur(); }
+}
+function cqEqcFechar() {
+  const pop = document.getElementById('cq-l-grupo-pop');
+  pop?.classList.remove('aberto');
+  const inp = document.getElementById('cq-eqc-in');
+  const nome = document.querySelector('#cq-l-grupo-pop .cq-eqc-op.sel b')?.textContent || '';
+  if (inp) inp.value = nome;
+}
+function cqEqcSaiu(e) {
+  const pop = document.getElementById('cq-l-grupo-pop');
+  if (pop && !pop.contains(e.relatedTarget)) cqEqcFechar();
+}
+// Clicar no equipamento já escolhido desmarca e volta à lista
+function cqEqcEscolher(k) {
+  if (k === _cqLanc.grupo) { cqLancSairEquip(); return; }
+  document.getElementById('cq-l-grupo-pop')?.classList.remove('aberto');
+  cqLancGrupo(k);
+}
+
+// ── Condições da corrida (popover) e vínculo com OT ──────────
+const CQ_COND_CORRIDA = [
+  { k: 'posManutPrev', label: 'Após manutenção preventiva', desc: 'Primeira corrida depois da manutenção programada' },
+  { k: 'posManutCorr', label: 'Após manutenção corretiva', desc: 'Primeira corrida depois de reparo ou troca de peça' },
+  { k: 'reinicioEquip', label: 'Após reinício do equipamento', desc: 'Equipamento desligado, reiniciado ou sem energia' },
+];
+function _cqLancCondHTML(aberto) {
+  const f = _cqLanc.flags;
+  const on = CQ_COND_CORRIDA.filter(c => f[c.k]);
+  const rot = !on.length ? 'Nenhuma condição especial' : on.length === 1 ? on[0].label : `${on.length} condições marcadas`;
+  return `<div class="cq-sitpop cq-lanc-pop${on.length ? ' tem' : ''}${aberto ? ' aberto' : ''}" id="cq-l-cond-pop">
+    <button type="button" class="cq-sitpop-btn" onclick="cqSitPopAbrir('cq-l-cond')" title="${_cqEsc(on.map(c => c.label).join('\n') || 'Marque se a corrida foi feita após manutenção ou reinício')}">
+      <span class="cq-sitpop-marca"><span class="cq-sitpop-ico">${CQ_ICO.alerta}</span></span>
+      <span class="cq-lanc-pop-txt"><small>Condições da corrida</small><b>${_cqEsc(rot)}</b></span>
+      ${on.length ? `<span class="cq-lanc-pop-n">${on.length}</span>` : ''}
+      <svg class="cq-sitpop-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="cq-sitpop-menu cq-lanc-cond-menu">
+      ${CQ_COND_CORRIDA.map(c => `<button type="button" class="cq-tgl${f[c.k] ? ' on' : ''}" onclick="cqLancCond('${c.k}')"><span class="cq-tgl-sw"><i></i></span><span class="cq-tgl-txt"><b>${c.label}</b><small>${c.desc}</small></span></button>`).join('')}
+      <div class="cq-nota" style="margin:4px 2px 0;">Ficam registradas na corrida para explicar desvios após intervenções no equipamento.</div>
+    </div>
+  </div>`;
+}
+function cqLancCond(k) {
+  _cqLanc.flags[k] = !_cqLanc.flags[k];
+  const el = document.getElementById('cq-l-cond-pop');
+  if (el) el.outerHTML = _cqLancCondHTML(true);
+}
+
+// OT vinculada: escolhida da lista de OTs (as do equipamento primeiro) ou referência livre
+function _cqLancOt() { return _cqLanc.flags.otId && typeof otState !== 'undefined' ? otState.ordens.find(o => o.id === _cqLanc.flags.otId) || null : null; }
+function _cqLancOtHTML(aberto) {
+  const f = _cqLanc.flags;
+  const o = _cqLancOt();
+  const tem = !!(o || f.otRef);
+  const rot = o ? `${o.numero} · ${o.titulo || ''}` : f.otRef ? `Ref.: ${f.otRef}` : 'Vincular a uma OT';
+  const ico = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71"/></svg>';
+  return `<div class="cq-sitpop cq-lanc-pop cq-lanc-ot${tem ? ' tem' : ''}${aberto ? ' aberto' : ''}" id="cq-l-ot-pop">
+    <button type="button" class="cq-sitpop-btn" onclick="cqSitPopAbrir('cq-l-ot');setTimeout(()=>document.getElementById('cq-l-ot-busca')?.focus(),40)">
+      <span class="cq-sitpop-marca"><span class="cq-sitpop-ico">${ico}</span></span>
+      <span class="cq-lanc-pop-txt"><small>Ordem de trabalho</small><b>${_cqEsc(rot)}</b></span>
+      ${tem ? `<span class="cq-sitpop-x" role="button" title="Desvincular" onclick="event.stopPropagation();cqLancOtLimpar()">×</span>` : ''}
+      <svg class="cq-sitpop-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
+    <div class="cq-sitpop-menu cq-lanc-ot-menu">
+      <div class="cq-tp-busca">${CQ_ICO.busca}<input type="text" id="cq-l-ot-busca" placeholder="Buscar OT por número ou título…" autocomplete="off" oninput="cqLancOtBuscar(this.value)"></div>
+      <div class="cq-tp-lista" id="cq-l-ot-lista">${_cqLancOtListaHTML('')}</div>
+    </div>
+  </div>`;
+}
+function _cqLancOtListaHTML(q) {
+  if (typeof otState === 'undefined' || !Array.isArray(otState.ordens)) return '<div class="cq-ms-vazio">Módulo de ordens de trabalho indisponível.</div>';
+  const g = _cqGruposLanc(_cqLanc.u).find(x => x.key === _cqLanc.grupo);
+  const ativoId = g?.ativoId || null;
+  const n = _cqNormBusca(q).trim();
+  const ehDoEquip = o => !!ativoId && typeof otAtivoIds === 'function' && otAtivoIds(o).includes(ativoId);
+  const aberta = o => !['concluida', 'cancelada'].includes(o.status);
+  const lista = otState.ordens.filter(o => o && (!n || _cqNormBusca(`${o.numero} ${o.titulo}`).includes(n)))
+    .sort((a, b) => ehDoEquip(b) - ehDoEquip(a) || aberta(b) - aberta(a) || (b.criadoEm || '').localeCompare(a.criadoEm || ''))
+    .slice(0, 40);
+  const cfg = typeof OT_STATUS_CFG !== 'undefined' ? OT_STATUS_CFG : {};
+  const item = o => `<button type="button" class="cq-sitpop-op${o.id === _cqLanc.flags.otId ? ' sel' : ''}" onclick="cqLancOtEscolher('${o.id}')">
+      <span class="cq-sitpop-marca"><span class="cq-sitpop-dot" style="background:${cfg[o.status]?.dot || '#9aa5b1'}"></span></span>
+      <span class="cq-sitpop-txt"><b>${_cqEsc(o.numero || '')} · ${_cqEsc(o.titulo || '')}</b>
+        <small>${_cqEsc([cfg[o.status]?.label?.replace(/s$/, '') || o.status, o.criadoEm ? _cqFmtData(o.criadoEm.slice(0, 10)) : '', typeof _otNomeAtivos === 'function' ? _otNomeAtivos(o) : ''].filter(Boolean).join(' · '))}</small></span>
+      <svg class="cq-sitpop-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><polyline points="20 6 9 17 4 12"/></svg></button>`;
+  const doEq = lista.filter(ehDoEquip), outras = lista.filter(o => !ehDoEquip(o));
+  const grupo = (tit, xs) => xs.length ? `<div class="cq-tp-grupo"><div class="cq-tp-grupo-tit">${tit}<span>${xs.length}</span></div>${xs.map(item).join('')}</div>` : '';
+  const livre = n ? `<button type="button" class="cq-sitpop-op cq-lanc-ot-livre" data-q="${_cqEsc(q.trim())}" onclick="cqLancOtRef(this.dataset.q)">
+      <span class="cq-sitpop-marca"><span class="cq-sitpop-ico">${CQ_ICO.edit}</span></span><span class="cq-sitpop-txt"><b>Usar “${_cqEsc(q.trim())}” como referência</b><small>Sem vínculo: ocorrência, chamado ou documento externo</small></span></button>` : '';
+  return (grupo(g?.nome ? `OTs de ${_cqEsc(g.nome)}` : 'Deste equipamento', doEq) + grupo(doEq.length ? 'Outras OTs' : 'Ordens de trabalho', outras)
+    || `<div class="cq-ms-vazio">${n ? 'Nenhuma OT encontrada.' : 'Nenhuma ordem de trabalho registrada.'}</div>`) + livre;
+}
+function cqLancOtBuscar(q) { const l = document.getElementById('cq-l-ot-lista'); if (l) l.innerHTML = _cqLancOtListaHTML(q); }
+function _cqLancOtRedesenhar() { const el = document.getElementById('cq-l-ot-pop'); if (el) el.outerHTML = _cqLancOtHTML(false); }
+function cqLancOtEscolher(id) {
+  const o = otState.ordens.find(x => x.id === id);
+  if (!o) return;
+  _cqLanc.flags.otId = o.id;
+  _cqLanc.flags.otRef = o.numero || '';
+  _cqLancOtRedesenhar();
+}
+function cqLancOtRef(txt) { _cqLanc.flags.otId = null; _cqLanc.flags.otRef = String(txt || '').trim().slice(0, 60); _cqLancOtRedesenhar(); }
+function cqLancOtLimpar() { _cqLanc.flags.otId = null; _cqLanc.flags.otRef = ''; _cqLancOtRedesenhar(); }
+
+// × do equipamento: volta à escolha (os valores digitados ficam no rascunho deste computador)
+function cqLancSairEquip() {
+  const anterior = _cqLanc;
+  const temValor = anterior && Object.values(anterior.linhas || {}).some(_cqLinhaPreenchida);
+  _cqLanc = _cqLancNovo('');
+  _cqLanc.dataHora = anterior?.dataHora || _cqNowLocal();
+  _cqLanc.operadorId = anterior?.operadorId || _cqSess().id;
+  cqRender();
+  if (temValor) showToast('Valores digitados guardados como rascunho: voltam ao escolher o mesmo equipamento.', 'success');
 }
 
 function cqLancGrupo(k) {
@@ -427,7 +620,7 @@ function _cqMaxNiveis(testes) { return Math.max(1, ...testes.map(t => Math.max(0
 function _cqGradeHTML() {
   const testes = _cqLancTestes();
   const maxN = _cqMaxNiveis(testes);
-  const head = `<thead><tr><th class="cq-g-teste">Teste</th>${Array.from({ length: maxN }, (_, i) => `<th class="cq-g-nivel">Nível ${i + 1}</th>`).join('')}<th>Insumos (lote)</th><th class="cq-g-status">Avaliação</th></tr></thead>`;
+  const head = `<thead><tr><th class="cq-g-real" title="Marque os testes não realizados nesta corrida">Execução</th><th class="cq-g-teste">Teste</th>${Array.from({ length: maxN }, (_, i) => `<th class="cq-g-nivel">Nível ${i + 1}</th>`).join('')}<th>Insumos (lote)</th><th class="cq-g-status">Avaliação</th></tr></thead>`;
   const rows = testes.map(t => {
     const l = _cqLanc.linhas[t.id] || {};
     const an = _cqAnalito(t.analitoId);
@@ -454,13 +647,16 @@ function _cqGradeHTML() {
     const optIns = (lista, atual) => `<option value="">—</option>` + lista.map(i => `<option value="${i.id}" ${i.id === atual ? 'selected' : ''} ${i.vencido || i.bloqueado ? 'class="cq-opt-bloq"' : ''}>${_cqEsc(i.lote)}${i.vencido ? ' (vencido)' : i.bloqueado ? ' (quarentena)' : ''}</option>`).join('');
     const linhaTeste = `<td class="cq-g-teste"><div class="cq-g-nome">${_cqEsc(_cqNomeTeste(t))}</div><div class="cq-muted">${qual ? _cqEsc(CQ_TIPOS_ANALITO[an?.tipo] || '') : `${_cqEsc(an?.unidadeMedida || '')}${t.metodo ? ' · ' + _cqEsc(t.metodo) : ''}`}</div>
         ${_cqLancFrac() ? `<button type="button" class="cq-icobtn cq-g-remover" title="Remover este teste da corrida" onclick="cqLancRemover('${t.id}')">${CQ_ICO.close}</button>` : ''}
-        <label class="cq-g-nrlbl"><input type="checkbox" ${l.nr ? 'checked' : ''} onchange="cqLancNR('${t.id}',this.checked)"> não realizado</label>
-        ${l.nr ? `<input type="text" class="field-input cq-g-nrmot" placeholder="Motivo" value="${_cqEsc(l.motivoNR)}" oninput="_cqLanc.linhas['${t.id}'].motivoNR=this.value;_cqRascunhoSalvar()">` : ''}</td>`;
+        ${l.nr ? `<input type="text" class="field-input cq-g-nrmot" placeholder="Motivo do não realizado *" value="${_cqEsc(l.motivoNR)}" oninput="_cqLanc.linhas['${t.id}'].motivoNR=this.value;_cqRascunhoSalvar()">` : ''}</td>`;
+    // Coluna à esquerda: Realizado ⇄ Não realizado
+    const colReal = `<td class="cq-g-real"><button type="button" class="cq-g-realbtn${l.nr ? ' nr' : ''}" onclick="cqLancNR('${t.id}',${!l.nr})"
+        title="${l.nr ? 'Clique para voltar a lançar este teste' : 'Clique para marcar como não realizado nesta corrida'}">
+        <span class="cq-g-realbtn-ico">${l.nr ? CQ_ICO.ban : CQ_ICO.check}</span><span>${l.nr ? 'Não realizado' : 'Realizado'}</span></button></td>`;
     if (qual) {
       const tipo = t.insumoTipo;
       const prodNome = _cqNomeProdutoTeste(t);
       const lista = tipo ? _cqInsumosPara(t.analitoId, tipo, t.insumoProdutoId || t.insumoProduto, _cqEquipDoTeste(t), _cqLanc.u, diaCorrida) : [];
-      return `<tr class="cq-g-row${l.nr ? ' cq-g-nr' : ''}" id="cq-g-row-${t.id}">${linhaTeste}${cells}
+      return `<tr class="cq-g-row${l.nr ? ' cq-g-nr' : ''}" id="cq-g-row-${t.id}">${colReal}${linhaTeste}${cells}
       <td class="cq-g-ins">${tipo ? `<select class="field-select cq-g-sel" title="Lote de ${_cqEsc((CQ_TIPOS_INSUMO[tipo] || 'insumo').toLowerCase())}${prodNome ? ' — ' + _cqEsc(prodNome) : ''}" onchange="cqLancInsumo('${t.id}','lr',this.value)">${optIns(lista, l.lr)}</select>
         ${_cqLancPrepHTML(t, l)}
         <div class="cq-muted">${_cqEsc(prodNome || CQ_TIPOS_INSUMO[tipo] || '')}${t.exigirInsumo ? ' <span class="required">*</span>' : ''}</div>
@@ -469,7 +665,7 @@ function _cqGradeHTML() {
     }
     const reag = _cqInsumosPara(t.analitoId, 'reagente', '', _cqEquipDoTeste(t), _cqLanc.u, diaCorrida), cal = _cqInsumosPara(t.analitoId, 'calibrador', '', _cqEquipDoTeste(t), _cqLanc.u, diaCorrida);
     return `<tr class="cq-g-row${l.nr ? ' cq-g-nr' : ''}" id="cq-g-row-${t.id}">
-      ${linhaTeste}
+      ${colReal}${linhaTeste}
       ${cells}
       <td class="cq-g-ins">
         ${reag.length ? `<select class="field-select cq-g-sel" title="Lote de reagente" onchange="cqLancInsumo('${t.id}','lr',this.value)">${optIns(reag, l.lr)}</select>${_cqLancPrepHTML(t, l)}` : ''}
@@ -479,7 +675,7 @@ function _cqGradeHTML() {
       </td>
       <td class="cq-g-status" id="cq-g-st-${t.id}"></td></tr>`;
   }).join('');
-  if (!testes.length && _cqLancFrac()) return head + `<tbody><tr><td colspan="${maxN + 3}" class="cq-td-vazio">Nenhum teste adicionado. Use “Adicionar teste” acima para incluir os testes realizados nesta corrida.</td></tr></tbody>`;
+  if (!testes.length && _cqLancFrac()) return head + `<tbody><tr><td colspan="${maxN + 4}" class="cq-td-vazio">Nenhum teste adicionado. Use “Adicionar teste” acima para incluir os testes realizados nesta corrida.</td></tr></tbody>`;
   return head + `<tbody>${rows}</tbody>`;
 }
 
@@ -592,6 +788,7 @@ function cqLancNR(tid, v) {
   _cqRascunhoSalvar();
   document.getElementById('cq-grade').innerHTML = _cqGradeHTML();
   _cqGradeAtualizarTudo();
+  if (v) document.querySelector(`#cq-g-row-${tid} .cq-g-nrmot`)?.focus();
 }
 function cqLancInsumo(tid, campo, v) {
   const l = _cqLanc.linhas[tid];
@@ -619,7 +816,7 @@ function _cqLancPrepHTML(t, l) {
   }).join('');
   const info = `cqPreparoInfo('${ins.id}','${l.prep}','${l.prepData || ''}','${_cqEsc(respNome(l.prepResp)).replace(/'/g, '&#39;')}')`;
   const camposNovo = `<input type="date" class="field-input" title="Data do preparo" max="${dia}" value="${_cqEsc(l.prepData)}" onchange="cqLancPrepCampo('${t.id}','prepData',this.value)">
-      <select class="field-select" title="Responsável pelo preparo" onchange="cqLancPrepCampo('${t.id}','prepResp',this.value)">${_cqUsuarios().map(u => `<option value="${u.id}" ${u.id === l.prepResp ? 'selected' : ''}>${_cqEsc(u.nomeCompleto || u.username)}</option>`).join('')}</select>
+      <select class="field-select" title="Responsável pelo preparo" onchange="cqLancPrepCampo('${t.id}','prepResp',this.value)">${(_cqUsuariosDaUnidade(_cqLanc.u).length ? _cqUsuariosDaUnidade(_cqLanc.u) : _cqUsuarios()).map(u => `<option value="${u.id}" ${u.id === l.prepResp ? 'selected' : ''}>${_cqEsc(u.nomeCompleto || u.username)}</option>`).join('')}</select>
       <div class="cq-prep-qtd-lin"><input type="number" class="field-input" min="0" step="any" inputmode="decimal" title="Quantidade preparada (opcional)" placeholder="Qtd. (opcional)" value="${_cqEsc(l.prepQtd || '')}" onchange="cqLancPrepCampo('${t.id}','prepQtd',this.value)">
         <select class="field-select" title="Unidade" onchange="cqLancPrepCampo('${t.id}','prepUn',this.value)">${CQ_UNID_PREPARO.map(x => `<option ${x === l.prepUn ? 'selected' : ''}>${x}</option>`).join('')}</select></div>`;
   // Lote sem preparos registrados: a lista teria só "+ Novo preparo", então vai direto para data e responsável
@@ -999,8 +1196,10 @@ async function cqLancSalvar() {
       lancadoPorId: ass.porId, lancadoPorNome: ass.porNome, lancadoEm: ass.em, servTs: window.dbServerTs(), estacao: ass.estacao,
       retroativo: retro ? { horas: Math.round(horas), justificativa: lanc.retroJust.trim() } : null,
       flags: { posManutPrev: lanc.flags.posManutPrev, posManutCorr: lanc.flags.posManutCorr, reinicioEquip: lanc.flags.reinicioEquip,
-               verificacao, otRef: lanc.flags.otRef.trim() || null },
+               verificacao, otRef: String(lanc.flags.otRef || '').trim() || null, otId: lanc.flags.otId || null },
       repeticaoDe: lanc.repeticaoDe ? lanc.repeticaoDe.key : null,
+      // Setores dos testes no momento da corrida (filtros e relatórios por setor)
+      setorIds: _cqSetoresDosTestes(Object.keys(testesHdr)).filter(Boolean),
       testes: testesHdr, trilha: {},
     };
     hdr.status = _cqStatusCorrida(hdr);
@@ -1059,11 +1258,15 @@ async function cqLancSalvar() {
 // ── LISTA DE CORRIDAS ────────────────────────────────────────
 function cqRenderCorridas(body) {
   const u = _cqUnidadeAtivaId();
-  if (!_cqCorrFiltro.mes) _cqCorrFiltro.mes = CQEngine.mesDe(_cqNowLocal());
+  if (!_cqCorrFiltro.per) { const m = CQEngine.mesDe(_cqNowLocal()); _cqCorrFiltro.per = { modo: 'intervalo', de: m, ate: m }; }
   const idx = cqState.indices[u] || {};
-  const pend = Object.entries(idx.pendentes || {}).map(([k, p]) => ({ key: k, ...p })).sort((a, b) => (a.dataHora || '').localeCompare(b.dataHora || ''));
-  const meses = CQEngine.mesesAnteriores(CQEngine.mesDe(_cqNowLocal()), 24);
-  const grupos = _cqGruposLanc(u);
+  const pend = Object.entries(idx.pendentes || {}).map(([k, p]) => ({ key: k, ...p })).filter(p => _cqRegistroPassaSetor(p)).sort((a, b) => (a.dataHora || '').localeCompare(b.dataHora || ''));
+  const grupos = _cqGruposLanc(u, { porSetor: true });
+  const opsEquip = [{ value: '', label: 'Todos os equipamentos', desc: `${grupos.length} equipamento(s) e sistema(s)`, ico: CQ_ICO.lista },
+    ...grupos.map(x => ({ value: x.key, label: x.nome, desc: `${x.key.startsWith('a:') ? 'Equipamento' : 'Sistema / bancada'} · ${x.testes.length} teste(s)`, ico: CQ_ICO.ativo }))];
+  const descSt = { pendente: 'Com teste sem decisão', liberada: 'Todos os testes liberados', parcial: 'Parte liberada, parte rejeitada', rejeitada: 'Todos os testes rejeitados' };
+  const opsSt = [{ value: 'todas', label: 'Todas as situações', desc: 'Corridas em qualquer situação', dot: 'todas' },
+    ...Object.entries(CQ_CORRIDA_STATUS).map(([k, s]) => ({ value: k, label: s.label, desc: descSt[k] || '', dot: 'corr-' + k }))];
   body.innerHTML = `
   <div class="cq-corr">
     ${pend.length ? `<div class="cq-card cq-card-pend"><div class="cq-card-tit">${CQ_ICO.clock} Aguardando avaliação (${pend.length})
@@ -1073,10 +1276,10 @@ function cqRenderCorridas(body) {
         <div style="flex:1;min-width:0;"><div class="cq-pend-tit">${_cqEsc(p.numero || p.key)} · ${_cqEsc(p.equipNome || '')}</div>
         <div class="cq-pend-sub">${_cqFmtDH(p.dataHora)} · ${p.nPend} teste(s)${p.temRejeicao ? ' · <b class="cq-txt-vermelho">rejeição</b>' : ''}</div></div></div>`).join('')}</div></div>` : ''}
     <div class="cq-toolbar">
-      <select class="field-select" style="max-width:160px;" onchange="_cqCorrFiltro.mes=this.value;_cqCorrCache=null;cqRender()">${meses.map(m => `<option value="${m}" ${m === _cqCorrFiltro.mes ? 'selected' : ''}>${_cqFmtMes(m)}</option>`).join('')}</select>
-      <select class="field-select" style="max-width:240px;" onchange="_cqCorrFiltro.grupo=this.value;_cqCorrRenderLista()"><option value="">Todos os equipamentos</option>${grupos.map(x => `<option value="${_cqEsc(x.key)}" ${x.key === _cqCorrFiltro.grupo ? 'selected' : ''}>${_cqEsc(x.nome)}</option>`).join('')}</select>
-      <select class="field-select" style="max-width:200px;" onchange="_cqCorrFiltro.status=this.value;_cqCorrRenderLista()">
-        <option value="todas" ${_cqCorrFiltro.status === 'todas' ? 'selected' : ''}>Todas</option>${Object.entries(CQ_CORRIDA_STATUS).map(([k, s]) => `<option value="${k}" ${k === _cqCorrFiltro.status ? 'selected' : ''}>${s.label}</option>`).join('')}</select>
+      ${_cqMpHTML('cq-mp-corr', { get: () => _cqCorrFiltro.per, set: v => { _cqCorrFiltro.per = v; }, onchange: () => _cqCorrCarregar(), modos: ['geral', 'ano', 'intervalo'], atalhos: [1, 3, 6, 12], max: 24 })}
+      ${_cqPopSelHTML('cq-corr-equip', opsEquip, _cqCorrFiltro.grupo, { compacto: true, onchange: v => { _cqCorrFiltro.grupo = v; _cqCorrRenderLista(); } })}
+      ${_cqPopSelHTML('cq-corr-st', opsSt, _cqCorrFiltro.status, { compacto: true, onchange: v => { _cqCorrFiltro.status = v; _cqCorrRenderLista(); } })}
+      <span class="cq-corr-total" id="cq-corr-total"></span>
       <div class="cq-spacer"></div>
       <button class="btn btn-outline btn-sm" onclick="_cqCorrCache=null;cqRender()">${CQ_ICO.undo} Atualizar</button>
     </div>
@@ -1086,10 +1289,14 @@ function cqRenderCorridas(body) {
 }
 
 async function _cqCorrCarregar() {
-  const u = _cqUnidadeAtivaId(), mes = _cqCorrFiltro.mes;
-  if (!_cqCorrCache || _cqCorrCache.u !== u || _cqCorrCache.mes !== mes) {
-    const corridas = await cqCarregarCorridasMes(u, mes);
-    _cqCorrCache = { u, mes, corridas };
+  const u = _cqUnidadeAtivaId();
+  const meses = _cqPerMeses(_cqCorrFiltro.per, 24), chave = meses.join(',');
+  if (!_cqCorrCache || _cqCorrCache.u !== u || _cqCorrCache.chave !== chave) {
+    const el = document.getElementById('cq-corr-lista');
+    if (el) el.innerHTML = '<div class="cq-vazio-p">Carregando…</div>';
+    const partes = await Promise.all(meses.map(m => cqCarregarCorridasMes(u, m)));
+    if (_cqPerMeses(_cqCorrFiltro.per, 24).join(',') !== chave) return;   // período mudou durante a leitura
+    _cqCorrCache = { u, chave, corridas: Object.assign({}, ...partes) };
   }
   _cqCorrRenderLista();
 }
@@ -1100,7 +1307,10 @@ function _cqCorrRenderLista() {
   const lista = Object.values(_cqCorrCache.corridas)
     .filter(c => _cqCorrFiltro.status === 'todas' || (c.status || _cqStatusCorrida(c)) === _cqCorrFiltro.status)
     .filter(c => !_cqCorrFiltro.grupo || (_cqCorrFiltro.grupo === (c.ativoId ? 'a:' + c.ativoId : 'm:' + (c.sistemaAnalitico || 'Bancada / manual'))))
+    .filter(c => _cqRegistroPassaSetor(c))
     .sort((a, b) => b.key.localeCompare(a.key));
+  const tot = document.getElementById('cq-corr-total');
+  if (tot) tot.textContent = `${lista.length} corrida${lista.length === 1 ? '' : 's'}`;
   el.innerHTML = `<div class="oc-table-scroll"><table class="ot-list-table cq-table">
     <thead><tr><th class="ot-list-th">Nº</th><th class="ot-list-th">Data/hora</th><th class="ot-list-th">Equipamento</th><th class="ot-list-th">Testes</th><th class="ot-list-th">Avaliação</th><th class="ot-list-th">Situação</th><th class="ot-list-th">Executado por</th></tr></thead>
     <tbody>${lista.length ? lista.map(c => {
@@ -1190,7 +1400,7 @@ async function _cqCorrRenderDetalhe(forcar) {
       <td>${nivs}</td><td>${_cqBadge(CQ_STATUS, av.status || 'sem_alvo')}${viol}</td><td>${decisaoHTML}</td></tr>`;
   }).join('');
   const flags = [c.fracionada ? 'Corrida fracionada' : '', c.flags?.posManutPrev ? 'Após manutenção preventiva' : '', c.flags?.posManutCorr ? 'Após manutenção corretiva' : '', c.flags?.reinicioEquip ? 'Após reinício' : '',
-                 c.flags?.verificacao ? 'Verificação (equipamento em pausa)' : '', c.flags?.otRef ? `Ref.: ${c.flags.otRef}` : ''].filter(Boolean);
+                 c.flags?.verificacao ? 'Verificação (equipamento em pausa)' : '', c.flags?.otRef && !c.flags?.otId ? `Ref.: ${c.flags.otRef}` : ''].filter(Boolean);
   const aceitosPend = testesIds.filter(tid => !c.testes[tid].naoRealizado && !c.testes[tid].decisao && c.testes[tid].avaliacao?.status === 'aceito');
   document.getElementById('cq-modal-title').textContent = `Corrida ${c.numero}`;
   document.getElementById('cq-modal-sub').textContent = `${c.ativoSnap?.nome || c.sistemaAnalitico || ''} · ${_cqFmtDH(c.dataHora)}`;
@@ -1203,12 +1413,12 @@ async function _cqCorrRenderDetalhe(forcar) {
       ${c.observacao ? `<div><span class="cq-muted">Observação</span><b class="cq-txt-amarelo">${_cqEsc(c.observacao)}</b></div>` : ''}
       ${c.repeticaoDe ? `<div><span class="cq-muted">Repetição de</span><a href="#" onclick="cqAbrirCorrida('${CQEngine.mesDe(c.repeticaoDe)}','${c.repeticaoDe}');return false;">${_cqEsc(c.repeticaoDe)}</a></div>` : ''}
     </div>
-    ${flags.length ? `<div class="cq-det-flags">${flags.map(f => `<span class="cq-tag">${_cqEsc(f)}</span>`).join('')}</div>` : ''}
+    ${flags.length || c.flags?.otId ? `<div class="cq-det-flags">${flags.map(f => `<span class="cq-tag">${_cqEsc(f)}</span>`).join('')}${c.flags?.otId ? `<a href="#" class="cq-tag cq-tag-ot" title="Abrir a ordem de trabalho" onclick="${typeof otOpenView === 'function' ? `cqModalClose();setTimeout(()=>otOpenView('${_cqEsc(c.flags.otId)}'),60)` : ''};return false;">OT ${_cqEsc(c.flags.otRef || '')}</a>` : ''}</div>` : ''}
     ${typeof _cqEsterDetalheHTML === 'function' ? _cqEsterDetalheHTML(c) : ''}
     <div class="oc-table-scroll"><table class="ot-list-table cq-table cq-det-tbl"><thead><tr><th class="ot-list-th">Teste</th><th class="ot-list-th">Resultados</th><th class="ot-list-th">Avaliação</th><th class="ot-list-th">Decisão</th></tr></thead><tbody>${linhas}</tbody></table></div>
     <details class="cq-det-trilha"><summary>Rastreabilidade da corrida</summary>${_cqTrilhaHTML(c)}</details>`;
   document.getElementById('cq-modal-foot').innerHTML = `
-    <div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline" onclick="cqImprimirCorrida()">${CQ_ICO.print} Imprimir</button></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline" onclick="cqImprimirCorrida()">${CQ_ICO.print} Imprimir</button>${_cqCorrBtnExcluir(c)}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       ${podeLib && aceitosPend.length > 1 ? `<button class="btn btn-primary" onclick="cqLiberarAceitos()">${CQ_ICO.check} Liberar ${aceitosPend.length} aceitos</button>` : ''}
       <button class="btn btn-outline" onclick="cqModalClose()">Fechar</button></div>`;
@@ -1495,7 +1705,7 @@ async function cqImprimirCorrida() {
   <style>@page{size:A4;margin:14mm}body{font:12px/1.4 system-ui,sans-serif;color:#111}h1{font-size:16px;margin:0 0 4px}table{width:100%;border-collapse:collapse;margin-top:10px}
   th,td{border:1px solid #999;padding:4px 6px;vertical-align:top;text-align:left}th{background:#eee}small{color:#555}.meta{display:grid;grid-template-columns:1fr 1fr;gap:2px 16px;margin-top:6px}</style></head>
   <body><h1>Registro de corrida de controle interno — ${_cqEsc(c.numero)}</h1>
-  <div class="meta"><div><b>Unidade:</b> ${_cqEsc(un?.sigla)} — ${_cqEsc(un?.nome)}${un?.cnes ? ` (CNES ${_cqEsc(un.cnes)})` : ''}</div><div><b>Equipamento:</b> ${_cqEsc(c.ativoSnap?.nome || c.sistemaAnalitico || '')}${c.ativoSnap?.serie ? ` · S/N ${_cqEsc(c.ativoSnap.serie)}` : ''}</div>
+  <div class="meta"><div><b>Unidade:</b> ${_cqEsc(un?.sigla)} — ${_cqEsc(un?.nome)}${un?.cnes ? ` (CNES ${_cqEsc(un.cnes)})` : ''}${_cqSetoresDeRegistro(c).filter(Boolean).length ? ` · <b>Setor:</b> ${_cqEsc([...new Set(_cqSetoresDeRegistro(c).filter(Boolean))].map(_cqRotuloSetor).join(', '))}` : ''}</div><div><b>Equipamento:</b> ${_cqEsc(c.ativoSnap?.nome || c.sistemaAnalitico || '')}${c.ativoSnap?.serie ? ` · S/N ${_cqEsc(c.ativoSnap.serie)}` : ''}</div>
   <div><b>Data/hora:</b> ${_cqFmtDH(c.dataHora)}</div><div><b>Executado por:</b> ${_cqEsc(c.operadorNome)}</div>
   <div><b>Lançado por:</b> ${_cqEsc(c.lancadoPorNome)} em ${_cqFmtDH(c.lancadoEm)} (estação ${_cqEsc(c.estacao || '')})</div><div><b>Situação:</b> ${_cqEsc(CQ_CORRIDA_STATUS[_cqStatusCorrida(c)]?.label)}</div>${c.observacao ? `<div style="grid-column:1/-1;"><b>Observação:</b> ${_cqEsc(c.observacao)}</div>` : ''}</div>
   ${typeof _cqEsterImpressaoHTML === 'function' ? _cqEsterImpressaoHTML(c) : ''}
@@ -1506,4 +1716,195 @@ async function cqImprimirCorrida() {
   if (!w) { showToast('Permita pop-ups para imprimir.', 'error'); return; }
   w.document.write(html);
   w.document.close();
+}
+
+// ── EXCLUSÃO DE CORRIDA (ATÉ 24 H) ───────────────────────────
+// Para remover lançamentos de teste ou feitos por engano logo após o registro. Desfaz os vínculos:
+// resultados, índices (pendência e última corrida de cada teste), NCs abertas pela corrida, uso dos
+// preparos (e o preparo criado nela), reserva do lote da carga e leitura do ciclo. A corrida completa
+// (cabeçalho, resultados e NCs) fica no histórico de exclusões; o número não é reaproveitado.
+const CQ_EXCLUIR_CORRIDA_H = 24;
+function _cqCorrHorasDesde(c) { const t = Date.parse(c?.lancadoEm || ''); return isNaN(t) ? Infinity : (Date.now() - t) / 36e5; }
+function _cqCorrPodeExcluir(c) {
+  if (!c || _cqCorrHorasDesde(c) > CQ_EXCLUIR_CORRIDA_H) return false;
+  return c.lancadoPorId === _cqSess().id || _cqCan('invalidar');
+}
+function _cqCorrBtnExcluir(c) {
+  if (!_cqCorrPodeExcluir(c)) return '';
+  const rest = Math.max(0, CQ_EXCLUIR_CORRIDA_H - _cqCorrHorasDesde(c));
+  const txt = rest >= 1 ? `${Math.floor(rest)} h` : `${Math.max(1, Math.round(rest * 60))} min`;
+  return `<button class="btn btn-outline cq-btn-perigo" onclick="cqCorridaExcluir()" title="Disponível por mais ${txt} (até ${CQ_EXCLUIR_CORRIDA_H} h após o lançamento)">${CQ_ICO.lixo} Excluir corrida</button>`;
+}
+
+// Levanta tudo o que a exclusão precisa desfazer; `bloqueios` impede a exclusão
+async function _cqCorrPlanoExclusao(u, mes, key) {
+  const c = await cqCarregarCorrida(u, mes, key);
+  if (!c) return { erro: 'Corrida não encontrada (já excluída?).' };
+  const bloqueios = [];
+  if (_cqCorrHorasDesde(c) > CQ_EXCLUIR_CORRIDA_H) bloqueios.push(`Lançada há mais de ${CQ_EXCLUIR_CORRIDA_H} h: use correção ou invalidação dos resultados.`);
+  // Repetições lançadas a partir desta corrida
+  const dProx = new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(4, 6), 1));   // 1º dia do mês seguinte
+  const proxMes = `${dProx.getUTCFullYear()}${String(dProx.getUTCMonth() + 1).padStart(2, '0')}`;
+  const vizinhas = { ...(await cqCarregarCorridasMes(u, mes)), ...(proxMes !== mes ? await cqCarregarCorridasMes(u, proxMes) : {}) };
+  Object.values(vizinhas).filter(x => x.repeticaoDe === key && x.key !== key).forEach(x => bloqueios.push(`A corrida ${x.numero} é repetição desta: exclua-a primeiro.`));
+  if (c.ciclo && !c.ciclo.vinculo && Object.keys(c.ciclo.leituras || {}).length) bloqueios.push(`O ciclo ${c.ciclo.loteCarga} já tem leitura de indicador em outra corrida: exclua a leitura primeiro.`);
+  // NCs abertas pela decisão desta corrida
+  const ncs = [];
+  for (const [tid, ct] of Object.entries(c.testes || {})) {
+    if (!ct?.ncId) continue;
+    const ano = ct.ncAno || mes.slice(0, 4);
+    const nc = await window.dbLoad(`${CQ_KEYS.acoes}/${u}/${ano}/${ct.ncId}`);
+    if (!nc) continue;
+    if (nc.ocorrenciaId) bloqueios.push(`A não conformidade ${nc.numero} gerou a ocorrência ${nc.ocorrenciaNumero || ''} do equipamento.`);
+    if (Object.keys(nc.repeticoes || {}).some(k => k !== key)) bloqueios.push(`A não conformidade ${nc.numero} já tem repetição lançada.`);
+    ncs.push({ tid, ano, id: ct.ncId, nc });
+  }
+  // Resultados (cópia crua para o histórico)
+  const resultados = {};
+  await Promise.all(Object.entries(c.testes || {}).filter(([, ct]) => !ct.naoRealizado).map(async ([tid, ct]) => {
+    resultados[tid] = {};
+    await Promise.all(Object.values(ct.niveis || {}).map(async rk => { resultados[tid][rk] = await window.dbLoad(`${CQ_KEYS.resultados}/${u}/${mes}/${tid}/${rk}`); }));
+  }));
+  return { c, bloqueios, ncs, resultados };
+}
+
+function cqCorridaExcluir() {
+  const ctx = _cqCorrAberta;
+  if (!ctx) return;
+  (async () => {
+    let plano;
+    try { plano = await _cqCorrPlanoExclusao(ctx.u, ctx.mes, ctx.key); }
+    catch (err) { console.error('[cq-lancamento.js] cqCorridaExcluir:', err); showToast('Não foi possível verificar a corrida. Tente novamente.', 'error'); return; }
+    if (plano.erro) { showToast(plano.erro, 'error'); return; }
+    const { c, bloqueios, ncs } = plano;
+    if (!_cqCorrPodeExcluir(c)) { showToast('Sem permissão para excluir esta corrida.', 'error'); return; }
+    const nomes = Object.entries(c.testes || {}).map(([tid, ct]) => `${cqState.config.testes[tid] ? _cqNomeTeste(cqState.config.testes[tid]) : tid}${ct.naoRealizado ? ' (não realizado)' : ''}`);
+    const preps = Object.values(c.testes || {}).filter(ct => ct.prep && ct.lr).map(ct => {
+      const ins = cqState.config.insumos[ct.lr];
+      const p = ins ? _cqPreparo(ins, ct.prep) : null;
+      return p ? `${p.codigo || 'preparo de ' + _cqFmtData(p.data)}${_cqPrepCriadoNaCorrida(p, c) ? ' (criado nesta corrida: será excluído)' : ''}` : '';
+    }).filter(Boolean);
+    cqModalClose();
+    if (bloqueios.length) {
+      _cqPrompt({ titulo: 'Não é possível excluir a corrida', subtitulo: `Corrida ${c.numero} · ${_cqFmtDH(c.dataHora)}`, confirmar: 'Entendi',
+        corpo: `<div class="cq-alerta-box">${CQ_ICO.alerta} ${bloqueios.map(_cqEsc).join('<br>')}</div>`, onConfirm: () => { cqAbrirCorrida(ctx.mes, ctx.key); return true; } });
+      return;
+    }
+    const li = (l, v) => `<div class="cq-excl-lin"><span>${l}</span><b>${v}</b></div>`;
+    _cqPrompt({
+      titulo: 'Excluir corrida', subtitulo: `Corrida ${c.numero} · ${c.ativoSnap?.nome || c.sistemaAnalitico || ''} · ${_cqFmtDH(c.dataHora)}`, perigo: true, confirmar: 'Excluir corrida',
+      corpo: `<div class="cq-alerta-box">${CQ_ICO.alerta} A corrida e seus resultados deixam de aparecer em gráficos, relatórios e liberações. Use só para lançamentos de teste ou feitos por engano; para valor digitado errado, prefira corrigir ou invalidar o resultado.</div>
+        <div class="cq-excl-resumo">
+          ${li('Testes', _cqEsc(nomes.join(', ')))}
+          ${li('Lançada', `${_cqEsc(c.lancadoPorNome)} · ${_cqFmtDH(c.lancadoEm)}`)}
+          ${ncs.length ? li('Não conformidades', _cqEsc(ncs.map(x => x.nc.numero).join(', ')) + ' <span class="cq-muted">(excluídas junto)</span>') : ''}
+          ${preps.length ? li('Preparos', _cqEsc(preps.join('; '))) : ''}
+          ${c.ciclo ? li('Ciclo de esterilização', _cqEsc(c.ciclo.vinculo ? `leitura do ciclo ${c.ciclo.loteCarga} (removida)` : `lote da carga ${c.ciclo.loteCarga} liberado para reuso`)) : ''}
+        </div>
+        <div class="cq-nota">Uma cópia completa fica no histórico de exclusões (RDC 978/2025). O número ${_cqEsc(c.numero)} não é reaproveitado.</div>
+        <div class="form-field"><label class="field-label">Motivo <span class="required">*</span></label>
+          <input type="text" id="cq-corr-excl-motivo" class="field-input" maxlength="200" placeholder="Ex.: lançamento de teste / corrida lançada no equipamento errado" onkeydown="if(event.key==='Enter')cqPromptConfirmar()"></div>`,
+      onConfirm: async () => {
+        const motivo = _cqVal('cq-corr-excl-motivo');
+        if (!motivo) { showToast('Informe o motivo da exclusão.', 'error'); return false; }
+        if (!_cqPodeGravar() || _cqSalvando) return false;
+        _cqSalvando = true;
+        try { return await _cqCorrExcluirGravar(ctx, motivo); }
+        catch (err) { console.error('[cq-lancamento.js] cqCorridaExcluir:', err); showToast('Falha ao excluir. Nada foi alterado.', 'error'); return false; }
+        finally { _cqSalvando = false; }
+      },
+    });
+  })();
+}
+
+// Preparo registrado no lançamento desta corrida (e só usado nela)
+function _cqPrepCriadoNaCorrida(p, c) {
+  return !!p && p.origem !== 'preparos' && !p.legado && p.criadoEm === c.lancadoEm && Object.keys(p.corridas || {}).every(k => k === c.key);
+}
+
+async function _cqCorrExcluirGravar(ctx, motivo) {
+  const { u, mes, key } = ctx;
+  // Revalida com o banco atual
+  const plano = await _cqCorrPlanoExclusao(u, mes, key);
+  if (plano.erro) { showToast(plano.erro, 'error'); return true; }
+  if (plano.bloqueios.length) { showToast(plano.bloqueios[0], 'error'); return true; }
+  const { c, ncs, resultados } = plano;
+  if (!_cqCorrPodeExcluir(c)) { showToast('Sem permissão ou prazo de exclusão encerrado.', 'error'); return true; }
+  const ass = _cqAssinatura();
+  const base = `${CQ_KEYS.corridas}/${u}/${mes}/${key}`;
+  const updates = { [base]: null, [`${CQ_KEYS.indices}/${u}/pendentes/${key}`]: null };
+  Object.entries(resultados).forEach(([tid, rks]) => Object.keys(rks).forEach(rk => { updates[`${CQ_KEYS.resultados}/${u}/${mes}/${tid}/${rk}`] = null; }));
+
+  // Última corrida de cada teste: volta para a anterior (até 3 meses)
+  const testes = Object.entries(c.testes || {}).filter(([, ct]) => !ct.naoRealizado).map(([tid]) => tid);
+  const idxUlt = (cqState.indices[u] || {}).ultimo || {};
+  const afetados = testes.filter(tid => idxUlt[tid]?.corridaKey === key);
+  if (afetados.length) {
+    const meses = CQEngine.mesesAnteriores(mes, 3);
+    const anteriores = (await Promise.all(meses.map(m => cqCarregarCorridasMes(u, m)))).flatMap(o => Object.values(o))
+      .filter(x => x.key !== key).sort((a, b) => (b.dataHora || '').localeCompare(a.dataHora || ''));
+    afetados.forEach(tid => {
+      const x = anteriores.find(y => y.testes?.[tid] && !y.testes[tid].naoRealizado);
+      const ct = x?.testes[tid];
+      updates[`${CQ_KEYS.indices}/${u}/ultimo/${tid}`] = x ? { dataHora: x.dataHora, corridaKey: x.key, mes: x.mes, status: ct.avaliacao?.status || 'aceito',
+        decisao: ct.decisao ? CQ_DECISAO[ct.decisao.acao]?.sigla || null : null, lr: ct.lr || null, lk: ct.lk || null } : null;
+    });
+  }
+  // NCs abertas por esta corrida
+  ncs.forEach(({ ano, id }) => { updates[`${CQ_KEYS.acoes}/${u}/${ano}/${id}`] = null; updates[`${CQ_KEYS.indices}/${u}/ncAbertas/${id}`] = null; });
+  // Repetição: retira o registro da NC da corrida original
+  if (c.repeticaoDe) {
+    const orig = await cqCarregarCorrida(u, CQEngine.mesDe(c.repeticaoDe), c.repeticaoDe);
+    Object.values(orig?.testes || {}).forEach(ct => { if (ct?.ncId) updates[`${CQ_KEYS.acoes}/${u}/${ct.ncAno || CQEngine.mesDe(c.repeticaoDe).slice(0, 4)}/${ct.ncId}/repeticoes/${key}`] = null; });
+  }
+  // Preparos: tira o uso; desfaz a liberação/reprovação e a finalização automática vindas desta corrida
+  const prepFeitos = new Set();
+  Object.values(c.testes || {}).forEach(ct => {
+    if (!ct.prep || !ct.lr || prepFeitos.has(ct.lr + ct.prep)) return;
+    prepFeitos.add(ct.lr + ct.prep);
+    const ins = cqState.config.insumos[ct.lr];
+    const p = ins ? _cqPreparo(ins, ct.prep) : null;
+    if (!p || p.legado) return;
+    const pb = `${CQ_KEYS.config}/insumos/${ct.lr}/preparos/${ct.prep}`;
+    if (_cqPrepCriadoNaCorrida(p, c)) {
+      updates[pb] = null;
+      updates[`${CQ_KEYS.config}/insumos/${ct.lr}/trilha/${_cqTk()}${ct.prep.slice(-3)}`] = _cqTrilhaEntry('exclusao', `Preparo ${p.codigo || 'de ' + _cqFmtData(p.data)} excluído com a corrida ${c.numero}: ${motivo}`);
+      return;
+    }
+    updates[`${pb}/corridas/${key}`] = null;
+    if (p.avaliacao?.corridaKey === key) { updates[`${pb}/situacao`] = 'em_avaliacao'; updates[`${pb}/avaliacao`] = null; }
+    if (p.finalizado?.auto && String(p.finalizado.motivo || '').endsWith(`corrida ${c.numero}`)) updates[`${pb}/finalizado`] = null;
+    updates[`${CQ_KEYS.config}/insumos/${ct.lr}/trilha/${_cqTk()}${ct.prep.slice(-3)}`] = _cqTrilhaEntry('edicao', `Uso do preparo ${p.codigo || 'de ' + _cqFmtData(p.data)} na corrida ${c.numero} removido (corrida excluída): ${motivo}`);
+  });
+  // Esterilização: libera o lote da carga ou retira a leitura do ciclo de origem
+  if (c.ciclo && !c.ciclo.vinculo && typeof _cqEsterCaminhoLote === 'function' && c.ciclo.loteCarga) {
+    const pl = _cqEsterCaminhoLote(u, c.ciclo.loteCarga);
+    const res = await window.dbLoad(pl);
+    if (res && (res.corridaKey === key || res.numero === c.numero)) updates[pl] = null;
+  }
+  if (c.ciclo?.vinculo) {
+    const v = c.ciclo.vinculo;
+    updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/ciclo/leituras/${key}`] = null;
+    updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/trilha/${_cqTk()}`] = _cqTrilhaEntry('exclusao', `Leitura do indicador da corrida ${c.numero} removida (corrida excluída): ${motivo}`);
+  }
+  updates[`${CQ_KEYS.exclusoes}/${_cqTk()}`] = {
+    colecao: 'corridas', id: key, unidadeId: u, mes, numero: c.numero, motivo,
+    resumo: `Corrida ${c.numero} · ${c.ativoSnap?.nome || c.sistemaAnalitico || ''} · ${_cqFmtDH(c.dataHora)}`,
+    registro: c, resultados, ncs: ncs.length ? Object.fromEntries(ncs.map(x => [x.id, x.nc])) : null, ...ass,
+  };
+  if (!(await window.dbUpdate(updates))) { showToast('Falha ao excluir. Verifique a conexão e tente novamente.', 'error'); return false; }
+  // Caches locais
+  testes.forEach(tid => _cqResCacheInvalidar(u, mes, tid));
+  Object.entries(updates).forEach(([p, v]) => {
+    if (!p.startsWith(`${CQ_KEYS.indices}/${u}/`)) return;
+    const [grupo, id] = p.slice(`${CQ_KEYS.indices}/${u}/`.length).split('/');
+    const idx = cqState.indices[u] = cqState.indices[u] || {};
+    idx[grupo] = idx[grupo] || {};
+    if (v === null) delete idx[grupo][id]; else idx[grupo][id] = v;
+  });
+  _cqCorrCache = null;
+  _cqCorrAberta = null;
+  showToast(`Corrida ${c.numero} excluída.`, 'success');
+  cqRender();
+  return true;
 }
