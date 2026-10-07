@@ -359,6 +359,9 @@ body.dark-mode .oc-tipo-alerta { color: var(--text-secondary); }
 /* ── Card do Início ── */
 .oc-home-card { margin-bottom: 16px; }
 .oc-hk-row { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; padding: 14px 16px 6px; }
+.oc-hk-row.oc-hk-6 { grid-template-columns: repeat(6, 1fr); }
+@media (max-width: 1200px) { .oc-hk-row.oc-hk-6 { grid-template-columns: repeat(3, 1fr); } }
+@media (max-width: 600px) { .oc-hk-row.oc-hk-6 { grid-template-columns: repeat(2, 1fr); } }
 .oc-hk {
   border: 1.5px solid var(--border); border-radius: 12px; padding: 10px 12px; cursor: pointer;
   transition: var(--transition);

@@ -148,6 +148,7 @@ function cqLoad() {
     window.dbListen(CQ_KEYS.indices, data => {
       _cqIndicesReady = true;
       cqState.indices = (data && typeof data === 'object') ? data : {};
+      _cqHomeCorr = null;   // corrida nova ou avaliada: recontar no Início
       _cqUpdateNavBadge();
       if (_cqTabAtiva() && ['painel', 'corridas', 'ncs'].includes(_cqSub)) cqRender();
       if (typeof renderHome === 'function' && document.getElementById('tab-inicio')?.classList.contains('active')) renderHome();
@@ -1210,7 +1211,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && _cqFloatAn
 // ── SELETOR DE PERÍODO (meses) ───────────────────────────────
 // Popover com modos (Geral · Ano inteiro · Intervalo), atalhos opcionais (Mês atual, 3, 6, 12 meses)
 // e grade de meses do ano. per: { modo: 'intervalo', de, ate, atalho? } | { modo: 'ano', ano } | { modo: 'geral' }.
-// cfg: { get(), set(per), onchange(), modos: ['geral','ano','intervalo'], atalhos: [1,3,6,12], max }
+// cfg: { get(), set(per), onchange(), modos: ['geral','ano','intervalo'], atalhos: [1,3,6,12], max, rotulo?(per) }
+// rotulo: texto do botão no lugar do padrão (o Início usa "Geral" para todos os registros).
 const CQ_MESES_CURTOS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
 const _cqMp = {};
 function _cqMesSoma(yyyymm, n) {
@@ -1240,14 +1242,17 @@ function _cqPerRotulo(per, max) {
   return per.de === per.ate ? _cqMesFmt(per.de) : `${_cqMesFmt(per.de)} – ${_cqMesFmt(per.ate)}`;
 }
 function _cqMpHTML(id, cfg) {
-  _cqMp[id] = { modos: ['geral', 'ano', 'intervalo'], atalhos: [], max: 24, ...cfg, ano: null, espera: false };
+  // Redesenho com o menu em uso (ex.: Início) mantém o ano exibido e a espera do 2º mês
+  const ant = _cqMp[id];
+  _cqMp[id] = { modos: ['geral', 'ano', 'intervalo'], atalhos: [], max: 24, ...cfg, ano: ant?.ano ?? null, espera: ant?.espera ?? false };
   const c = _cqMp[id];
   return `<div class="cq-mp" id="${id}">
-    <button type="button" class="cq-mp-btn" onclick="cqMpAbrir('${id}')">${CQ_ICO.calendario}<span class="cq-mp-rot" id="${id}-rot">${_cqEsc(_cqPerRotulo(c.get(), c.max))}</span>
+    <button type="button" class="cq-mp-btn" onclick="cqMpAbrir('${id}')">${CQ_ICO.calendario}<span class="cq-mp-rot" id="${id}-rot">${_cqEsc(_cqMpRotulo(id))}</span>
       <svg class="cq-sitpop-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></button>
     <div class="cq-mp-menu" id="${id}-menu"></div>
   </div>`;
 }
+function _cqMpRotulo(id) { const c = _cqMp[id]; return c.rotulo ? c.rotulo(c.get()) : _cqPerRotulo(c.get(), c.max); }
 function _cqMpMenuHTML(id) {
   const c = _cqMp[id], p = c.get();
   const atual = CQEngine.mesDe(_cqNowLocal());
@@ -1262,7 +1267,7 @@ function _cqMpMenuHTML(id) {
     if (!futuro && m >= de && m <= ate) cls = p.modo === 'intervalo' && !p.atalho && (m === de || m === ate) ? 'sel' : 'faixa';
     return `<button type="button" class="cq-mp-mes ${cls}${m === atual ? ' hoje' : ''}" ${futuro ? 'disabled' : `onclick="cqMpMes('${id}','${m}')"`}>${nome}</button>`;
   }).join('');
-  const dica = p.modo === 'intervalo' && c.espera ? 'Escolha o último mês do intervalo (ou o mesmo, para um mês só)' : _cqPerRotulo(p, c.max);
+  const dica = p.modo === 'intervalo' && c.espera ? 'Escolha o último mês do intervalo (ou o mesmo, para um mês só)' : _cqMpRotulo(id);
   return `<div class="cq-mp-modos" style="grid-template-columns:repeat(${c.modos.length},1fr)">${c.modos.map(k => `<button type="button" class="${p.modo === k ? 'active' : ''}" onclick="cqMpModo('${id}','${k}')">${rotModo[k]}</button>`).join('')}</div>
     ${c.atalhos.length ? `<div class="cq-mp-atalhos">${c.atalhos.map(n => `<button type="button" class="${p.modo === 'intervalo' && p.atalho === n ? 'active' : ''}" onclick="cqMpAtalho('${id}',${n})">${n === 1 ? 'Mês atual' : `${n} meses`}</button>`).join('')}</div>` : ''}
     <div class="cq-mp-ano"><button type="button" class="cq-mp-nav" onclick="cqMpAnoNav('${id}',-1)" title="Ano anterior"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="15 6 9 12 15 18"/></svg></button>
@@ -1276,7 +1281,7 @@ function _cqMpAplicar(id, fechar) {
   const menu = document.getElementById(id + '-menu');
   if (menu) menu.innerHTML = _cqMpMenuHTML(id);
   const rot = document.getElementById(id + '-rot');
-  if (rot) rot.textContent = _cqPerRotulo(c.get(), c.max);
+  if (rot) rot.textContent = _cqMpRotulo(id);
   if (fechar) document.getElementById(id)?.classList.remove('aberto');
   c.onchange?.();
 }
@@ -1605,7 +1610,8 @@ function _cqRenderPainel(body) {
   }).join('');
 
   // Preparos da área (cq-trocas.js); sem testes na área, vêm antes dos equipamentos
-  const preparos = typeof _cqPainelPreparosHTML === 'function' ? _cqPainelPreparosHTML(u) : '';
+  const preparos = (typeof _cqPainelPreparosHTML === 'function' ? _cqPainelPreparosHTML(u) : '')
+    + (typeof _cqPainelInsumosHTML === 'function' ? _cqPainelInsumosHTML(u) : '');
   const equipamentos = `<div class="cq-sec-titulo">Equipamentos e testes · ${_cqEsc(un.sigla)}${fSetor ? ' · ' + _cqEsc(_cqRotuloSetor(fSetor === '__sem__' ? '' : fSetor)) : ''}</div>
       ${cards || `<div class="cq-vazio">Nenhum teste cadastrado ${fSetor ? 'neste setor' : 'nesta área'}. ${_cqCan('configurar') ? `<a href="#" onclick="cqNav('cadastros');return false;">Cadastrar testes</a>` : ''}</div>`}
       ${cards ? '<div class="cq-tc-legenda"><span class="cq-tc-leg aceito"><i></i>Aceito</span><span class="cq-tc-leg alerta"><i></i>Alerta / sem alvo</span><span class="cq-tc-leg rejeitado"><i></i>Rejeitado</span><span class="cq-tc-leg nenhum"><i></i>Sem registro</span><span class="cq-tc-tag">sem CQ hoje</span></div>' : ''}`;
@@ -1657,7 +1663,8 @@ function _cqUpdateNavBadge() {
   if (b2) { b2.style.display = k.ncs ? '' : 'none'; b2.textContent = k.ncs; }
 }
 
-function cqRenderHomeCard() {
+// periodo: { inicio, fim, label } do filtro do Início (vazios = Geral)
+function cqRenderHomeCard(periodo) {
   if (!_cqConfigReady || !(typeof authCanViewTab !== 'function' || authCanViewTab('cq'))) return '';
   const unidades = _cqUnidadesVisiveis().filter(u => !u.validacao);
   if (!unidades.length) return '';
@@ -1676,20 +1683,159 @@ function cqRenderHomeCard() {
   const comAviso = unidades.some(un => _cqDaUnidade('insumoProdutos', un.id).some(p => p.ativo !== false && p.preparo?.avisoDias != null));
   const trocas = comAviso && typeof _cqTrocasAlertasTodas === 'function' ? _cqTrocasAlertasTodas().filter(a => unidades.some(un => un.id === a.u)) : [];
   const trU = trocas[0]?.u || '';
-  return `<div class="home-chart-card oc-home-card cq-home-card">
+
+  // Listas para agir, de todas as Áreas visíveis (com a sigla quando há mais de uma)
+  const LIM = 6;
+  const multi = unidades.length > 1;
+  const sig = (un) => multi ? `<b class="cq-home-sig">${_cqEsc(un.sigla)}</b>` : '';
+  const hojeMs = Date.now();
+  const pendList = unidades.flatMap(un => Object.entries((cqState.indices[un.id] || {}).pendentes || {}).map(([key, p]) => ({ un, key, ...p })))
+    .sort((a, b) => (b.temRejeicao - a.temRejeicao) || (a.dataHora || '').localeCompare(b.dataHora || ''));
+  const ncList = unidades.flatMap(un => Object.entries((cqState.indices[un.id] || {}).ncAbertas || {}).map(([id, n]) => ({ un, id, ...n })))
+    .sort((a, b) => (a.abertaEm || '').localeCompare(b.abertaEm || ''));
+  const vencList = unidades.flatMap(un => _cqLotesVencendo(un.id).filter(x => x.v.diasRestantes <= 7).map(x => ({ un, ...x })));
+  const item = (cor, titulo, sub, acao) => `<div class="home-notif-item" onclick="${acao}">
+      <div class="home-notif-dot" style="background:${cor}"></div>
+      <div class="home-notif-content"><div class="home-notif-title">${titulo}</div><div class="home-notif-meta">${sub}</div></div>
+    </div>`;
+  const vazio = (t) => `<div class="home-notif-empty"><span>${t}</span></div>`;
+  const listaCard = (titulo, n, corpo, acao) => `<div class="home-chart-card home-lista-card">
+      <div class="home-chart-header">
+        <span class="home-chart-title">${titulo}<span class="home-chart-badge">${n}</span></span>
+        ${n > LIM ? `<button type="button" class="hup-toggle-btn" onclick="${acao}">Ver todas</button>` : ''}
+      </div>
+      <div class="home-notif-body">${corpo}</div>
+    </div>`;
+  const listaPend = pendList.slice(0, LIM).map(p => item(p.temRejeicao ? '#e63946' : '#f4a261',
+    `${sig(p.un)}${_cqEsc(p.numero || 'Corrida')} · ${_cqEsc(p.equipNome || '')}`,
+    `${_cqFmtDH(p.dataHora)} · ${p.nPend || 0} teste(s) aguardando${p.temRejeicao ? ' · com rejeição' : ''}`,
+    `cqHomeAbrir('${p.un.id}','corrida','${p.mes || CQEngine.mesDe(p.key)}','${p.key}')`)).join('');
+  const listaNc = ncList.slice(0, LIM).map(n => {
+    const t = cqState.config.testes[n.testeId];
+    const dias = n.abertaEm ? Math.max(0, Math.floor((hojeMs - new Date(n.abertaEm).getTime()) / 864e5)) : null;
+    return item('#e63946', `${sig(n.un)}${_cqEsc(n.numero || 'NC')}${t ? ' · ' + _cqEsc(_cqNomeTeste(t)) : ''}`,
+      dias === null ? 'Aberta' : `Aberta há ${dias} dia(s)`, `cqHomeAbrir('${n.un.id}','ncs')`);
+  }).join('');
+  const listaVenc = vencList.slice(0, LIM).map(x => {
+    const nome = x.insumo ? `${_cqEsc(x.insumo.nome)} · lote ${_cqEsc(x.insumo.lote)}`
+      : `${_cqEsc(cqState.config.materiais[x.lote.materialId]?.nome || 'Material')} · lote ${_cqEsc(x.lote.lote)} · nível ${x.nivel}`;
+    return item(x.v.vencido ? '#e63946' : '#f4a261', `${sig(x.un)}${nome}`,
+      `${x.v.vencido ? 'Vencido' : `Vence em ${x.v.diasRestantes} dia(s)`} · ${_cqFmtData(x.v.dataLimite)}`, `cqHomeAbrir('${x.un.id}','cadastros')`);
+  }).join('');
+  const listas = `<div class="home-cols-3">
+    ${listaCard('Corridas aguardando avaliação', pendList.length, listaPend || vazio('Nenhuma corrida pendente'), "cqHomeAbrir('','corridas')")}
+    ${listaCard('Não conformidades abertas', ncList.length, listaNc || vazio('Nenhuma NC aberta'), "cqHomeAbrir('','ncs')")}
+    ${listaCard('Lotes vencendo (7 dias)', vencList.length, listaVenc || vazio('Nenhum lote vencendo'), "cqHomeAbrir('','cadastros')")}
+  </div>`;
+
+  return `<div class="home-cols home-cols-larga cq-home-topo"><div class="home-chart-card oc-home-card cq-home-card">
     <div class="home-chart-header">
-      <span class="home-chart-title">Controle de Qualidade</span>
-      <span class="home-chart-badge" style="cursor:pointer;" onclick="switchTab('cq')">Abrir</span>
+      <span class="home-chart-title">Indicadores</span>
+      <button type="button" class="hup-toggle-btn" onclick="switchTab('cq')">Abrir CQ</button>
     </div>
     <div class="oc-hk-row${comAviso ? ' cq-hk-5' : ''}">
-      ${tile(pend, 'Corridas aguardando avaliação', rej ? 'red' : pend ? 'amber' : '')}
-      ${tile(ncs, 'Não conformidades abertas', ncs ? 'red' : '')}
-      ${tile(sem, 'Testes sem CQ hoje', sem ? 'cyan' : '')}
-      ${tile(venc, 'Lotes vencendo (7 dias)', venc ? 'amber' : '')}
+      ${tile(pend, 'Corridas aguardando avaliação', rej ? 'red' : pend ? 'amber' : '', "cqHomeAbrir('','corridas')")}
+      ${tile(ncs, 'Não conformidades abertas', ncs ? 'red' : '', "cqHomeAbrir('','ncs')")}
+      ${tile(sem, 'Testes sem CQ hoje', sem ? 'cyan' : '', "cqHomeAbrir('','lancar')")}
+      ${tile(venc, 'Lotes vencendo (7 dias)', venc ? 'amber' : '', "cqHomeAbrir('','cadastros')")}
       ${comAviso ? tile(trocas.length, 'Trocas de preparo vencendo', trocas.some(a => a.tipo === 'danger') ? 'red' : trocas.length ? 'amber' : '', `cqAbrirTrocaAlerta('${trU}')`) : ''}
     </div>
     ${linhas.length > 1 ? `<div class="cq-home-unidades">${linhas.map(l => `<div class="cq-home-un"><b>${_cqEsc(l.un.sigla)}</b><span>${l.p} pend.</span><span>${l.n} NC</span><span>${l.s} sem CQ</span></div>`).join('')}</div>` : ''}
+  </div>
+  ${_cqHomeRegistros(unidades, periodo || {})}</div>
+  ${listas}`;
+}
+
+// ── INÍCIO: lançamentos do período e cadastros (respeita período e filtro de setores) ──
+// As corridas ficam por mês no banco e não são escutadas: são lidas só para contar, uma vez por
+// combinação de áreas × meses, e a cópia é descartada quando os índices mudam (corrida nova ou avaliada).
+let _cqHomeCorr = null;   // { chave, corridas: [] | null }
+function _cqHomeMeses(inicio, fim) {
+  const ate = CQEngine.mesDe(fim || _cqHoje());
+  const de = inicio ? CQEngine.mesDe(inicio) : _cqMesSoma(ate, -11);
+  const out = [];
+  for (let m = ate; m >= de && out.length < 24; m = _cqMesSoma(m, -1)) out.push(m);
+  return out;
+}
+function _cqHomeCorridas(unidades, meses) {
+  const chave = unidades.map(u => u.id).join(',') + '|' + meses.join(',');
+  if (_cqHomeCorr?.chave === chave) return _cqHomeCorr.corridas;
+  _cqHomeCorr = { chave, corridas: null };
+  Promise.all(unidades.flatMap(un => meses.map(m => cqCarregarCorridasMes(un.id, m))))
+    .then(partes => {
+      if (_cqHomeCorr?.chave !== chave) return;
+      _cqHomeCorr.corridas = partes.flatMap(o => Object.values(o));
+      if (typeof renderHome === 'function' && document.getElementById('tab-inicio')?.classList.contains('active')) renderHome();
+    })
+    .catch(() => { if (_cqHomeCorr?.chave === chave) _cqHomeCorr = null; });
+  return null;
+}
+function _cqHomeRegistros(unidades, { inicio = '', fim = '', label = '', ativa = true }) {
+  // Filtro de unidades/setores da barra do topo (mesma regra do Início: sem setor conhecido, não esconde)
+  const vis = typeof _getFilteredSetores === 'function' ? _getFilteredSetores() : null;
+  const passaSetores = (ids) => { const v = ids.filter(Boolean); return !vis || !v.length || v.some(id => vis.includes(id)); };
+  const noPeriodo = (d) => !d || ((!inicio || d >= inicio) && (!fim || d <= fim));
+  const geral = !inicio && !fim;
+
+  // Só lê o banco com a aba do CQ aberta no Início (fora dela o card nem aparece)
+  const corridas = ativa ? _cqHomeCorridas(unidades, _cqHomeMeses(inicio, fim)) : null;
+  let nCorr = '…', nLib = '…', nRej = 0;
+  if (corridas) {
+    const doPeriodo = corridas.filter(c => noPeriodo((c.dataHora || '').slice(0, 10)) && passaSetores(_cqSetoresDeRegistro(c)));
+    const st = c => c.status || _cqStatusCorrida(c);
+    nCorr = doPeriodo.length;
+    nLib = doPeriodo.filter(c => ['liberada', 'parcial'].includes(st(c))).length;
+    nRej = doPeriodo.filter(c => st(c) === 'rejeitada').length;
+  }
+
+  // Cadastros ativos das áreas visíveis (um cadastro compartilhado conta uma vez)
+  const uniao = (col, filtro) => { const m = new Map(); unidades.forEach(un => _cqDaUnidade(col, un.id).filter(filtro).forEach(r => m.set(r.id, r))); return [...m.values()]; };
+  const ativo = r => r.ativo !== false;
+  const testes = unidades.flatMap(un => _cqTestesDaUnidade(un.id));
+  const nAnalitos = uniao('analitos', ativo).filter(a => {
+    const ts = testes.filter(t => t.analitoId === a.id);
+    return !ts.length || ts.some(t => passaSetores([_cqSetorDoTeste(t)]));
+  }).length;
+  const nControles = uniao('materiais', ativo).length;
+  const nReagentes = uniao('insumoProdutos', ativo).length + uniao('insumos', i => !_cqProdutoInsumo(i) && i.status !== 'encerrado').length;
+  const nPreparos = typeof _cqPrepAbaItens === 'function'
+    ? unidades.flatMap(un => _cqPrepAbaItens(un.id)).filter(x => x.p.data && noPeriodo(x.p.data.slice(0, 10))).length : 0;
+
+  const t = (v, l, acao, sub) => `<button type="button" class="cq-reg-item" onclick="${acao}"><span class="cq-reg-v">${v}</span><span class="cq-reg-l">${l}</span>${sub ? `<span class="cq-reg-sub">${sub}</span>` : ''}</button>`;
+  return `<div class="home-chart-card cq-home-reg">
+    <div class="home-chart-header">
+      <span class="home-chart-title">Registros</span>
+      <span class="home-chart-sub">${_cqEsc(label || 'Geral')}${geral ? ' · 12 meses' : ''}</span>
+    </div>
+    <div class="cq-reg-corpo">
+      <div class="cq-reg-sec">Lançamentos</div>
+      <div class="cq-reg-grid">
+        ${t(nCorr, 'Corridas', "cqHomeAbrir('','corridas')")}
+        ${t(nLib, 'Liberações', "cqHomeAbrir('','corridas')", nRej ? `${nRej} rejeitada(s)` : '')}
+      </div>
+      <div class="cq-reg-sec">Cadastros</div>
+      <div class="cq-reg-grid">
+        ${t(nAnalitos, 'Analitos', "cqHomeCad('analitos')")}
+        ${t(nControles, 'Controles', "cqHomeCad('materiais')")}
+        ${t(nReagentes, 'Reagentes', "cqHomeCad('insumos')")}
+        ${t(nPreparos, 'Preparos', "cqHomeCad('preparos')", 'no período')}
+      </div>
+    </div>
   </div>`;
+}
+function cqHomeCad(aba) {
+  if (typeof switchTab === 'function') switchTab('cq');
+  _cqCadTab = aba;
+  _cqCadExp.clear();
+  cqNav('cadastros');
+}
+
+// Atalhos do Início: abre o CQ na Área do item (u vazio mantém a Área ativa) e vai ao destino
+function cqHomeAbrir(u, destino, mes, key) {
+  if (typeof switchTab === 'function') switchTab('cq');
+  if (u && u !== _cqUnidadeAtivaId() && _cqUnidadesVisiveis().some(x => x.id === u)) cqSetUnidade(u);
+  if (destino === 'corrida') { cqNav('corridas'); cqAbrirCorrida(mes, key); }
+  else cqNav(destino);
 }
 
 // ── MODAIS GENÉRICOS ─────────────────────────────────────────

@@ -697,3 +697,63 @@ function _cqPainelPreparosHTML(u) {
     </div>
   </div>`;
 }
+
+// ── PAINEL: REAGENTES, MEIOS E INSUMOS DA ÁREA ───────────────
+// Números dos lotes e, por produto, os lotes ativos e o próximo vencimento (mais urgentes primeiro).
+// Lote ativo = não encerrado. Vazio quando a área não tem produto cadastrado.
+const CQ_PAINEL_INS_MAX = 10;
+function cqAbrirInsumos() { _cqCadTab = 'insumos'; _cqCadExp.clear(); cqNav('cadastros'); }
+function _cqPainelInsumosHTML(u) {
+  const prods = _cqDaUnidade('insumoProdutos', u).filter(p => p.ativo !== false);
+  if (!prods.length) return '';
+  const hoje = _cqHoje(cqState.config.unidades[u]?.fuso);
+  const lotesU = _cqDaUnidade('insumos', u);
+  const n = { ativos: 0, vencendo: 0, vencidos: 0, avaliacao: 0, semLote: 0 };
+  const ord = { vencido: 0, sem: 1, vencendo: 2, ok: 3 };
+  const linhas = prods.map(p => {
+    const ls = lotesU.filter(l => _cqLoteCru(l).produtoId === p.id && !_cqLoteInativo(l)).sort((a, b) => (a.validade || '9999').localeCompare(b.validade || '9999'));
+    n.ativos += ls.length;
+    const venc = ls.filter(l => _cqLoteVencido(l, hoje));
+    n.vencidos += venc.length;
+    const validos = ls.filter(l => !_cqLoteVencido(l, hoje));
+    const prox = validos[0]?.validade || null;
+    const dias = prox ? _cqPrepDias(hoje, prox) : null;
+    n.vencendo += validos.filter(l => l.validade && _cqPrepDias(hoje, l.validade) <= 30).length;
+    const aval = ls.filter(l => ['em_avaliacao', 'quarentena'].includes(l.status)).length;
+    n.avaliacao += aval;
+    if (!ls.length) n.semLote++;
+    const sit = venc.length ? { k: 'vencido', txt: `${venc.length} lote${venc.length === 1 ? '' : 's'} vencido${venc.length === 1 ? '' : 's'}` }
+      : !ls.length ? { k: 'sem', txt: 'sem lote ativo' }
+      : dias !== null && dias <= 30 ? { k: 'vencendo', txt: dias === 0 ? 'vence hoje' : `vence em ${dias} d` }
+      : { k: 'ok', txt: dias !== null ? `${dias} d de validade` : 'em uso' };
+    return { p, ls, prox, dias, aval, sit };
+  }).sort((a, b) => ord[a.sit.k] - ord[b.sit.k] || (a.dias ?? 1e6) - (b.dias ?? 1e6) || a.p.nome.localeCompare(b.p.nome, 'pt'));
+
+  const stat = (v, l, cls, tit) => `<div class="cq-pp-stat${v && cls ? ' ' + cls : ''}" title="${_cqEsc(tit)}"><b>${v}</b><span>${l}</span></div>`;
+  const stats = `<div class="cq-pp-stats">
+    ${stat(n.ativos, 'lotes ativos', '', 'Lotes não encerrados dos produtos da área')}
+    ${stat(n.vencendo, 'vencendo em 30 dias', 'amarelo', 'Lotes ativos que vencem nos próximos 30 dias')}
+    ${stat(n.vencidos, 'vencidos não encerrados', 'vermelho', 'Lotes com validade expirada ainda não encerrados')}
+    ${stat(n.avaliacao, 'em avaliação / quarentena', 'ciano', 'Lotes novos ainda não liberados para uso pleno')}
+    ${stat(n.semLote, 'produtos sem lote ativo', 'amarelo', 'Produtos ativos sem nenhum lote em uso')}
+  </div>`;
+  const cor = { vencido: 'vermelho', sem: 'cinza', vencendo: 'amarelo', ok: 'verde' };
+  const linha = ({ p, ls, prox, aval, sit }) => `<button type="button" class="cq-pi2-lin" onclick="cqInsumoProdutoVer('${p.id}')" title="Ver o produto">
+      <span class="cq-pi2-ico ${cor[sit.k]}">${CQ_ICO.beaker}</span>
+      <span class="cq-pi2-nome"><b>${_cqEsc(p.nome)}</b><small>${_cqEsc([CQ_TIPOS_INSUMO[p.tipo] || p.tipo, p.fabricante, p.preparoInterno ? 'preparado no laboratório' : ''].filter(Boolean).join(' · '))}</small></span>
+      <span class="cq-pi2-lotes">${ls.length ? `<b>${ls.length}</b> lote${ls.length === 1 ? '' : 's'}<small>${_cqEsc(ls.slice(0, 2).map(l => l.lote).join(', '))}${ls.length > 2 ? '…' : ''}</small>` : '<small>nenhum lote ativo</small>'}</span>
+      <span class="cq-pi2-val">${prox ? `<b>${_cqFmtData(prox)}</b><small>próximo vencimento</small>` : '<small>—</small>'}</span>
+      <span class="cq-pi2-sit">${aval ? '<span class="cq-tc-tag aguarda">em avaliação</span>' : ''}<span class="cq-pi2-pill ${cor[sit.k]}"><i></i>${_cqEsc(sit.txt)}</span></span>
+    </button>`;
+  const vis = linhas.slice(0, CQ_PAINEL_INS_MAX);
+  const un = cqState.config.unidades[u];
+  return `<div class="cq-pp">
+    <div class="cq-pp-head"><div class="cq-sec-titulo">Reagentes, meios e insumos · ${_cqEsc(un?.sigla || '')}</div>
+      <div class="cq-pp-acoes"><button class="btn btn-outline btn-sm" onclick="cqAbrirInsumos()">${CQ_ICO.cadastro} Ver cadastro</button></div></div>
+    <div class="cq-equip-card cq-pp-card">
+      ${stats}
+      <div class="cq-pi2-lista">${vis.map(linha).join('')}</div>
+      ${linhas.length > vis.length ? `<a href="#" class="cq-link" onclick="cqAbrirInsumos();return false;">Ver todos os produtos (${linhas.length})</a>` : ''}
+    </div>
+  </div>`;
+}

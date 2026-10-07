@@ -8,16 +8,12 @@
   // ── ESTADO ───────────────────────────────────────────────────
   const _MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 
-  let _hf = {
-    modo:        'geral',   // 'geral' | 'ano' | 'mes' | 'custom'
-    dataInicio:  '',
-    dataFim:     '',
-    mesSel:      null,    // mês selecionado no picker (1-12)
-    anoSel:      null,    // ano selecionado no picker de mês
-    pickerNavAno:null,    // ano exibido na grade de meses (navegação)
-    anoPicker:   null,    // ano selecionado no picker de ano
-  };
-  let _activeNotifTab = 'tarefas';
+  // Período do Início no formato do seletor de meses (cq.js › _cqMpHTML):
+  // { modo: 'geral' } | { modo: 'ano', ano } | { modo: 'intervalo', de, ate, atalho? } (de/ate em yyyymm).
+  // dataInicio/dataFim (yyyy-mm-dd, fim limitado a hoje) são derivadas dele e usadas nos filtros.
+  let _hf = { per: { modo: 'geral' }, dataInicio: '', dataFim: '' };
+  // Aba do Início; a escolha fica no navegador só por conveniência
+  let _homeAba = (function () { try { return localStorage.getItem('home-aba') || 'tarefas'; } catch (e) { return 'tarefas'; } })();
   let _homeOnlyMine   = false;
   let _hupMinhas = false; // toggle "Minhas Execuções" no card de últimas publicações
   let _hupPage   = 0;    // página atual das publicações (5 por página)
@@ -28,52 +24,35 @@
   let _kpiCardTipo = '';     // tipo do KPI aberto atualmente no modal
 
   // ── HELPERS DE DATA ──────────────────────────────────────────
-  function _initPeriodo(modo) {
-    const hoje = new Date();
-    if (modo) _hf.modo = modo;
+  function _hojeISO() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+  const _ymISO = (yyyymm) => `${yyyymm.slice(0, 4)}-${yyyymm.slice(4, 6)}`;
+  const _mesRot = (yyyymm) => `${_MESES[+yyyymm.slice(4, 6) - 1]} ${yyyymm.slice(0, 4)}`;
 
-    if (_hf.modo === 'geral') {
-      _hf.dataInicio = '';
-      _hf.dataFim    = '';
-
-    } else if (_hf.modo === 'ano') {
-      const ano = _hf.anoPicker || hoje.getFullYear();
-      _hf.dataInicio = `${ano}-01-01`;
-      _hf.dataFim    = ano === hoje.getFullYear()
-        ? hoje.toISOString().split('T')[0]
-        : `${ano}-12-31`;
-
-    } else if (_hf.modo === 'mes') {
-      const mes = _hf.mesSel  || (hoje.getMonth() + 1);
-      const ano = _hf.anoSel  || hoje.getFullYear();
-      const m   = String(mes).padStart(2, '0');
-      const y   = String(ano);
-      _hf.dataInicio = `${y}-${m}-01`;
-      const ultimo   = new Date(ano, mes, 0).getDate();
-      const fim      = `${y}-${m}-${String(ultimo).padStart(2,'0')}`;
-      const hojeSt   = hoje.toISOString().split('T')[0];
-      _hf.dataFim    = fim > hojeSt ? hojeSt : fim;
-
-    } else if (_hf.modo === 'custom' && (!_hf.dataInicio || !_hf.dataFim)) {
-      const inicio = new Date(); inicio.setDate(hoje.getDate() - 30);
-      _hf.dataInicio = inicio.toISOString().split('T')[0];
-      _hf.dataFim    = hoje.toISOString().split('T')[0];
+  function _initPeriodo() {
+    const p = _hf.per;
+    let ini = '', fim = '';
+    if (p.modo === 'ano') {
+      ini = `${p.ano}-01-01`; fim = `${p.ano}-12-31`;
+    } else if (p.modo === 'intervalo') {
+      const ultimo = new Date(+p.ate.slice(0, 4), +p.ate.slice(4, 6), 0).getDate();
+      ini = `${_ymISO(p.de)}-01`; fim = `${_ymISO(p.ate)}-${String(ultimo).padStart(2, '0')}`;
     }
+    const hoje = _hojeISO();
+    _hf.dataInicio = ini;
+    _hf.dataFim    = fim && fim > hoje ? hoje : fim;
   }
 
   function _modoLabel() {
-    if (_hf.modo === 'geral')  return 'Geral';
-    if (_hf.modo === 'custom') return 'Personalizado';
-    if (_hf.modo === 'ano') {
-      const ano = _hf.anoPicker || new Date().getFullYear();
-      return `${ano}`;
+    const p = _hf.per;
+    if (p.modo === 'ano') return String(p.ano);
+    if (p.modo === 'intervalo') {
+      if (p.atalho) return p.atalho === 1 ? _mesRot(p.de) : `Últimos ${p.atalho} meses`;
+      return p.de === p.ate ? _mesRot(p.de) : `${_mesRot(p.de)} – ${_mesRot(p.ate)}`;
     }
-    if (_hf.modo === 'mes') {
-      const mes = _hf.mesSel || new Date().getMonth() + 1;
-      const ano = _hf.anoSel || new Date().getFullYear();
-      return `${_MESES[mes - 1]} ${ano}`;
-    }
-    return 'Período';
+    return 'Geral';
   }
 
   // ── HELPERS DE ACESSO AO ESTADO ──────────────────────────────
@@ -82,13 +61,39 @@
     return (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : [];
   }
 
+  // Índices de todos os ativos da OT (a OT pode envolver vários; o primeiro é o principal)
+  function _otIdxs(ot) {
+    if (typeof otAtivoIdxs === 'function') return otAtivoIdxs(ot);
+    const i = ot?.ativoIdx;
+    return (i != null && i !== '' && state?.ativos[Number(i)]) ? [Number(i)] : [];
+  }
+
+  // OT entra no filtro de setor quando qualquer um dos seus ativos é do setor visível
   function _otSetor(ot) {
-    if (ot.ativoIdx != null && typeof state !== 'undefined') {
-      const a = state.ativos[ot.ativoIdx];
-      if (a) { const ids = _orgSetorIdsDoAtivo(a); if (ids.length) return ids; }
+    if (typeof state !== 'undefined') {
+      const ids = _otIdxs(ot).flatMap(i => _orgSetorIdsDoAtivo(state.ativos[i]));
+      if (ids.length) return ids;
     }
     return _orgSetorIdDeRef(ot.setorId, ot.setor);
   }
+
+  // Nome do(s) ativo(s) e rótulo "Unidade · Setor" do principal
+  function _otAtivoMeta(ot) {
+    const idxs = _otIdxs(ot);
+    const a = idxs.length ? state.ativos[idxs[0]] : null;
+    if (!a) return { nome: '', rotulo: _rotuloSetorItem(null, ot) || '—' };
+    return { nome: a.nome + (idxs.length > 1 ? ` +${idxs.length - 1}` : ''), rotulo: _orgRotuloAtivo(a) };
+  }
+
+  function _otResponsaveis(ot) {
+    return Array.isArray(ot.responsavelIds) && ot.responsavelIds.length ? ot.responsavelIds : [ot.responsavelId].filter(Boolean);
+  }
+
+  const _OT_FINAIS = ['concluida', 'cancelada'];
+  const _otAberta = (o) => !_OT_FINAIS.includes(o.status);
+  // Data de conclusão; registros antigos sem dataConclusao usam a última atualização
+  const _otDataConclusao = (o) => o.dataConclusao || (o.atualizadoEm || '').split('T')[0];
+  const _diasEntre = (a, b) => Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
 
   function _rotinaSetor(rotina) {
     if (!rotina) return '';
@@ -141,7 +146,7 @@
     const _uid  = _sess?.userId;
     const _gid  = _sess?.grupoId;
     function _isMine_ot(o) {
-      return o.responsavelId === _uid;
+      return _otResponsaveis(o).includes(_uid);
     }
     function _isMine_tarefa(t) {
       const resp = t.responsaveis || { usuarios: [], grupos: [] };
@@ -158,19 +163,52 @@
     const tarefasIds  = new Set(tarefasVis.map(t => t.id));
     const pubsVis     = publicacoes.filter(p => tarefasIds.has(p.tarefaId) && (!_homeOnlyMine || !_uid || _isMine_pub(p)));
 
-    // OT counts
-    const otByStatus = { pendente: 0, em_processo: 0, em_revisao: 0, concluida: 0, cancelada: 0 };
-    ordensVis.forEach(o => { if (otByStatus[o.status] !== undefined) otByStatus[o.status]++; });
+    // OTs: "situação atual" usa as abertas (sem período); distribuições e histórico usam o período
+    const otsAbertasList = ordensVis.filter(_otAberta);
+    const ordensPeriodo  = ordensVis.filter(o => _inPeriod(o.criadoEm));
 
-    const otConcluidas = ordensVis.filter(o => o.status === 'concluida' && _inPeriod(o.criadoEm)).length;
-    const otsFalhaList = ordensVis.filter(o => o.tipo === 'corretiva' && o.ativoFalhou && _inPeriod(o.criadoEm));
+    const otByStatus = { pendente: 0, em_processo: 0, em_revisao: 0, concluida: 0, cancelada: 0 };
+    ordensPeriodo.forEach(o => { if (otByStatus[o.status] !== undefined) otByStatus[o.status]++; });
+
+    // Concluídas no período (pela data de conclusão) e tempo médio da abertura à conclusão
+    const otConcluidasList = ordensVis.filter(o => o.status === 'concluida' && _inPeriod(_otDataConclusao(o)));
+    const comDuracao = otConcluidasList.filter(o => o.dataConclusao && o.criadoEm);
+    const otTempoMedio = comDuracao.length
+      ? Math.round(comDuracao.reduce((s, o) => s + Math.max(0, _diasEntre(o.criadoEm.split('T')[0], o.dataConclusao)), 0) / comDuracao.length)
+      : null;
+
+    const otsFalhaList = ordensPeriodo.filter(o => o.tipo === 'corretiva' && o.ativoFalhou);
     const otsFalhaTotal = otsFalhaList.length;
+    const otsParadaList = ordensPeriodo.filter(o => o.causouParada);
 
     const otByTipo = { corretiva: 0, implantacao: 0, melhoria: 0, alteracao: 0 };
-    ordensVis.forEach(o => { if (otByTipo[o.tipo] !== undefined) otByTipo[o.tipo]++; });
+    ordensPeriodo.forEach(o => { if (otByTipo[o.tipo] !== undefined) otByTipo[o.tipo]++; });
 
+    // Severidade só das abertas: é o que ainda pede atenção
     const otBySev = { critica: 0, alta: 0, media: 0, baixa: 0 };
-    ordensVis.forEach(o => { if (otBySev[o.severidade] !== undefined) otBySev[o.severidade]++; });
+    otsAbertasList.forEach(o => { if (otBySev[o.severidade] !== undefined) otBySev[o.severidade]++; });
+
+    // Carga por responsável (OTs abertas)
+    const otPorResp = {};
+    otsAbertasList.forEach(o => {
+      const ids = _otResponsaveis(o);
+      const nomes = (o.responsavelNome || '').split(',').map(s => s.trim()).filter(Boolean);
+      if (!ids.length) { (otPorResp.__sem__ = otPorResp.__sem__ || { nome: 'Sem responsável', n: 0 }).n++; return; }
+      ids.forEach((id, i) => {
+        const u = typeof authState !== 'undefined' ? authState.users.find(x => x.id === id) : null;
+        (otPorResp[id] = otPorResp[id] || { nome: u?.nomeCompleto || u?.username || nomes[i] || 'Responsável', n: 0 }).n++;
+      });
+    });
+
+    // Ativos com mais corretivas no período (cada ativo da OT conta)
+    const corrPorAtivo = {};
+    ordensPeriodo.filter(o => o.tipo === 'corretiva' && o.status !== 'cancelada').forEach(o => {
+      _otIdxs(o).forEach(i => {
+        const a = state.ativos[i];
+        (corrPorAtivo[i] = corrPorAtivo[i] || { idx: i, nome: a.nome, rotulo: _orgRotuloAtivo(a), n: 0 }).n++;
+      });
+    });
+    const topCorretivas = Object.values(corrPorAtivo).sort((a, b) => b.n - a.n).slice(0, 5);
 
     // Tarefas
     const tarefasAtrasadas = tarefasVis.filter(t =>
@@ -196,31 +234,24 @@
     const base = tarefasVencPeriodo.length + execsPeriodo.length;
     const pctCumprimento = base > 0 ? Math.min(100, Math.round((execsPeriodo.length / base) * 100)) : 0;
 
-    // OTs corretivas abertas
-    const otCorretivas = ordensVis.filter(o =>
-      o.tipo === 'corretiva' && !['concluida', 'cancelada'].includes(o.status)
-    ).length;
+    // Faixa de prazos das tarefas: hoje e próximos 7 dias (independe do lembrete)
+    const _diasAte = (t) => Math.ceil((new Date(t.proximaData + 'T00:00:00') - hoje) / 86400000);
+    const tarefasAtivas = tarefasVis.filter(t => t.status === 'Ativo' && t.proximaData);
+    const tarefasHoje   = tarefasAtivas.filter(t => _diasAte(t) === 0).length;
+    const tarefas7d     = tarefasAtivas.filter(t => { const d = _diasAte(t); return d >= 1 && d <= 7; }).length;
 
-    // OTs de Serviço Abertas: abertas, não corretivas
-    const otsServicoList = ordensVis.filter(o =>
-      o.tipo !== 'corretiva' && !['concluida', 'cancelada'].includes(o.status)
-    );
-    const otsServico = otsServicoList.length;
+    // Abertas por tipo
+    const otCorretivas   = otsAbertasList.filter(o => o.tipo === 'corretiva').length;
+    const otsServicoList = otsAbertasList.filter(o => o.tipo !== 'corretiva');
+    const otsServico     = otsServicoList.length;
 
-    // OTs com Atraso: abertas (não finalizadas) com prazo vencido
-    const hoje2 = _hoje();
-    const otsAtrasoList = ordensVis.filter(o => {
-      if (['concluida', 'cancelada'].includes(o.status)) return false;
-      if (!o.prazo) return false;
-      const d = new Date(o.prazo + 'T00:00:00');
-      return d < hoje2;
-    });
+    // OTs com Atraso: abertas com prazo vencido
+    const otsAtrasoList = otsAbertasList.filter(o => o.prazo && new Date(o.prazo + 'T00:00:00') < hoje);
     const otsAtraso = otsAtrasoList.length;
 
-    // OTs críticas abertas (para painel)
-    const otCriticasAbertas = ordensVis.filter(o =>
-      o.severidade === 'critica' && !['concluida', 'cancelada'].includes(o.status)
-    );
+    // Aguardando revisão (dependem de aprovação) e prioritárias (crítica/alta)
+    const otsRevisaoList     = otsAbertasList.filter(o => o.status === 'em_revisao');
+    const otsPrioritariasList = otsAbertasList.filter(o => o.severidade === 'critica' || o.severidade === 'alta');
 
     // Tarefas por tipo de rotina
     const tiposRotina = state?.tiposRotina || ['Preventivo', 'Rotina'];
@@ -235,32 +266,32 @@
     // Ativos em uso: exclui pausados E em desuso
     const ativosEmUsoFiltered = ativosVis.filter(a => a.statusUso !== 'em_pausa' && a.statusUso !== 'em_desuso');
 
-    // OTs corretivas com dados de falha, agrupadas por ativo (respeitando filtro de período)
-    // Inclui qualquer OT corretiva que tenha ao menos um campo de falha preenchido
-    const otsComFalha = ordensVis.filter(o =>
-      o.tipo === 'corretiva' &&
-      _inPeriod(o.criadoEm) &&
-      (o.tipoFalha || o.causaRaiz || o.metodoDetec || o.tipoDano)
-    );
+    // OTs em que o ativo falhou, agrupadas por ativo (mesmo conjunto do KPI "OTs com Falha").
+    // OT com vários ativos aparece em cada um deles.
     const otsFalhaByAtivo = {};
-    otsComFalha.forEach(o => {
-      const ativoIdx = o.ativoIdx !== null && o.ativoIdx !== undefined ? Number(o.ativoIdx) : null;
-      const ativo = ativoIdx !== null ? state?.ativos[ativoIdx] : null;
-      const key = ativo ? String(ativoIdx) : '__sem_ativo__';
-      const nome = ativo ? ativo.nome : 'Sem ativo';
-      if (!otsFalhaByAtivo[key]) otsFalhaByAtivo[key] = { nome, ots: [] };
-      otsFalhaByAtivo[key].ots.push(o);
+    otsFalhaList.forEach(o => {
+      const idxs = _otIdxs(o);
+      (idxs.length ? idxs : [null]).forEach(i => {
+        const key = i === null ? '__sem_ativo__' : String(i);
+        if (!otsFalhaByAtivo[key]) otsFalhaByAtivo[key] = { nome: i === null ? 'Sem ativo' : state.ativos[i].nome, ots: [] };
+        otsFalhaByAtivo[key].ots.push(o);
+      });
     });
 
     return {
-      otEmProcesso:  otByStatus.em_processo,
-      otEmRevisao:   otByStatus.em_revisao,
+      otsAbertasList,
       otsServico, otsServicoList,
       otsAtraso, otsAtrasoList,
-      otConcluidas,
+      otsRevisaoList, otsPrioritariasList,
+      otConcluidas: otConcluidasList.length, otConcluidasList, otTempoMedio,
       otsFalhaTotal, otsFalhaList,
+      otsParadaList,
+      otPorResp: Object.values(otPorResp).sort((a, b) => b.n - a.n),
+      topCorretivas,
       tarefasAtrasadas: tarefasAtrasadas.length,
+      tarefasHoje, tarefas7d,
       tarefasConcluidas: execsPeriodo.length,
+      tarefasVencPeriodo: tarefasVencPeriodo.length,
       otCorretivas,
       rotinasAtivas: rotinasVis.filter(r => r.status === 'Ativo').length,
       rotinasAtivasList: rotinasVis.filter(r => r.status === 'Ativo'),
@@ -270,31 +301,31 @@
       ativosParados: ativosParados.length,
       ativosParadosList: ativosParados,
       pctCumprimento,
+      temBaseCumprimento: base > 0,
       execsPeriodo:  execsPeriodo.length,
       execsPeriodoList: execsPeriodo,
       otByStatus, otByTipo, otBySev, tarefasByTipo,
       otPorMes: _calcOtsPorMes(ordensVis),
-      totalOTs: ordensVis.length,
+      totalOTsPeriodo: ordensPeriodo.length,
       otsFalhaByAtivo,
       tarefasAtrasadasList: tarefasAtrasadas,
       tarefasProximasList:  tarefasProximas,
-      otCriticasAbertas,
       ordensVis,
       tarefasVisList: tarefasVis,
     };
   }
 
+  // Últimos 6 meses: OTs abertas (criadas) e concluídas em cada mês
   function _calcOtsPorMes(ordens) {
     const hoje = new Date();
+    const mesDe = (s) => (s || '').slice(0, 7);
     return Array.from({ length: 6 }, (_, i) => {
       const d = new Date(hoje.getFullYear(), hoje.getMonth() - (5 - i), 1);
+      const ym = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const label = d.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
-      const count = ordens.filter(o => {
-        if (!o.criadoEm) return false;
-        const od = new Date(o.criadoEm);
-        return od.getFullYear() === d.getFullYear() && od.getMonth() === d.getMonth();
-      }).length;
-      return { label, count };
+      const count = ordens.filter(o => mesDe(o.criadoEm) === ym).length;
+      const concl = ordens.filter(o => o.status === 'concluida' && mesDe(_otDataConclusao(o)) === ym).length;
+      return { label, count, concl };
     });
   }
 
@@ -311,7 +342,7 @@
 
     if (total === 0) {
       return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">
-        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#e8edf2" stroke-width="${sw}"/>
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" class="home-ring-bg" stroke-width="${sw}"/>
       </svg>`;
     }
 
@@ -328,40 +359,9 @@
 
     return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"
       style="transform:rotate(-90deg);display:block;">
-      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#f0f4f8" stroke-width="${sw}"/>
+      <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" class="home-ring-bg" stroke-width="${sw}"/>
       ${arcs}
     </svg>`;
-  }
-
-  function _gaugeChart(value, size) {
-    size = size || 148;
-    const r  = size * 0.37;
-    const sw = r * 0.21;
-    const cx = size / 2;
-    const cy = r + sw * 0.6 + 2;
-
-    const p   = Math.min(1, Math.max(0, value / 100));
-    const clr = value >= 80 ? '#2a9d8f' : value >= 50 ? '#f4a261' : '#e63946';
-
-    const bgPath = `M ${f(cx - r)} ${f(cy)} A ${f(r)} ${f(r)} 0 0 0 ${f(cx + r)} ${f(cy)}`;
-    const endAngle = Math.PI * (1 - p);
-    const ex = cx + r * Math.cos(endAngle);
-    const ey = cy - r * Math.sin(endAngle);
-    const fillPath = p <= 0 ? ''
-      : `M ${f(cx - r)} ${f(cy)} A ${f(r)} ${f(r)} 0 ${p >= 1 ? 1 : 0} 0 ${f(ex)} ${f(ey)}`;
-
-    return `
-      <div class="home-gauge-wrap">
-        <svg width="${size}" height="${f(cy + sw * 0.6 + 4)}"
-          viewBox="0 0 ${size} ${f(cy + sw * 0.6 + 4)}">
-          <path d="${bgPath}" fill="none" stroke="#f0f4f8"
-            stroke-width="${f(sw)}" stroke-linecap="round"/>
-          ${fillPath ? `<path d="${fillPath}" fill="none" stroke="${clr}"
-            stroke-width="${f(sw)}" stroke-linecap="round"/>` : ''}
-        </svg>
-        <div class="home-gauge-val" style="color:${clr}">${value}%</div>
-        <div class="home-gauge-sub">Taxa de Cumprimento</div>
-      </div>`;
   }
 
   function _hBarChart(items) {
@@ -377,16 +377,19 @@
       </div>`).join('')}</div>`;
   }
 
+  // Barras agrupadas por mês: abertas (criadas) × concluídas
   function _barChart(items) {
-    const max = Math.max(...items.map(i => i.count), 1);
-    return `<div class="home-bar-chart">${items.map(it => {
-      const h = Math.max(3, (it.count / max) * 85);
-      return `<div class="home-bar-col">
-        <div class="home-bar-val">${it.count > 0 ? it.count : ''}</div>
-        <div class="home-bar-bar" style="height:${h}px"></div>
+    const max = Math.max(...items.map(i => Math.max(i.count, i.concl || 0)), 1);
+    const h = (n) => Math.max(2, (n / max) * 80);
+    return `<div class="home-bar-chart">${items.map(it => `
+      <div class="home-bar-col" title="${it.label}: ${it.count} aberta(s), ${it.concl || 0} concluída(s)">
+        <div class="home-bar-par">
+          <div class="home-bar-item"><span class="home-bar-val">${it.count || ''}</span><div class="home-bar-bar" style="height:${h(it.count)}px"></div></div>
+          <div class="home-bar-item"><span class="home-bar-val">${it.concl || ''}</span><div class="home-bar-bar concl" style="height:${h(it.concl || 0)}px"></div></div>
+        </div>
         <div class="home-bar-lbl">${it.label}</div>
-      </div>`;
-    }).join('')}</div>`;
+      </div>`).join('')}</div>
+      <div class="home-bar-legenda"><span><i></i>Abertas</span><span><i class="concl"></i>Concluídas</span></div>`;
   }
 
   // ── RENDER PRINCIPAL ─────────────────────────────────────────
@@ -394,127 +397,230 @@
     const container = document.getElementById('tab-inicio');
     if (!container) return;
     // Garante período sempre consistente com o modo atual
-    if (!_hf.dataInicio && _hf.modo !== 'geral' && _hf.modo !== 'custom') _initPeriodo();
+    _initPeriodo();
 
-    const kpis = calcKPIs();
+    const k = calcKPIs();
+    // Ocorrências entram na aba Tarefas e Ativos; CQ só vira aba quando o módulo devolve o card
+    // (permissão e dados carregados)
+    const oc = typeof ocHomePartes === 'function' ? ocHomePartes() : null;
+    const cqHTML = typeof cqRenderHomeCard === 'function'
+      ? cqRenderHomeCard({ inicio: _hf.dataInicio, fim: _hf.dataFim, label: _modoLabel(), ativa: _homeAba === 'cq' }) : '';
+    const abas = [
+      { id: 'tarefas', label: 'Tarefas e Ativos', ico: _ico.task, n: k.tarefasAtrasadas, alerta: true, tit: 'tarefa(s) com atraso' },
+      { id: 'ots', label: 'Ordens de Trabalho', ico: _ico.wrench, n: k.otsAbertasList.length, alerta: k.otsAtraso > 0, tit: 'OT(s) em aberto' },
+      cqHTML && Object.assign({ id: 'cq', label: 'Controle de Qualidade', ico: _ico.flask, tit: 'pendência(s): corridas, NC e trocas de preparo' }, _contagemCq()),
+    ].filter(Boolean);
+    if (!abas.some(a => a.id === _homeAba)) _homeAba = 'tarefas';
+
+    const corpo = _homeAba === 'ots' ? _renderAbaOTs(k)
+      : _homeAba === 'cq' ? cqHTML
+      : _renderAbaTarefas(k, oc);
 
     container.innerHTML = `
       <div class="home-dashboard">
-        ${_renderFiltros()}
-        <div class="home-grid">
-          <div class="home-main">
-            ${_renderKPIRow2(kpis)}
-            ${typeof ocRenderHomeCard === 'function' ? ocRenderHomeCard() : ''}
-            ${typeof cqRenderHomeCard === 'function' ? cqRenderHomeCard() : ''}
-            ${_renderMidCharts(kpis)}
-            ${_renderKPIRow1(kpis)}
-            ${_renderBottomCharts(kpis)}
-          </div>
-          <div class="home-sidebar">
-            ${_renderNotifPanel(kpis)}
-            ${_renderDonutOT(kpis)}
-            ${_renderDonutTipos(kpis)}
-          </div>
-        </div>
+        ${_renderFiltros(_renderAbas(abas))}
+        <div class="home-aba-corpo" data-aba="${_homeAba}">${corpo}</div>
       </div>`;
   }
 
+  // ── ABAS ─────────────────────────────────────────────────────
+  function _renderAbas(abas) {
+    return `<nav class="home-abas" role="tablist">${abas.map(a => {
+      const on = a.id === _homeAba;
+      return `<button type="button" role="tab" class="home-aba${on ? ' active' : ''}" aria-selected="${on}" onclick="homeSetAba('${a.id}')">
+        ${a.ico}<span>${a.label}</span>${a.n ? `<span class="home-aba-n${a.alerta ? ' alerta' : ''}" title="${a.n} ${a.tit}">${a.n}</span>` : ''}
+      </button>`;
+    }).join('')}</nav>`;
+  }
+
+  // Contador da aba do CQ (mesmo número do selo do menu)
+  function _contagemCq() {
+    if (typeof _cqContagens !== 'function') return { n: 0 };
+    const k = _cqContagens();
+    const tr = typeof _cqTrocasAlertasTodas === 'function' ? _cqTrocasAlertasTodas() : [];
+    return { n: k.pend + k.ncs + tr.length, alerta: k.rej > 0 || k.ncs > 0 || tr.some(a => a.tipo === 'danger') };
+  }
+
+  function _renderAbaTarefas(k, oc) {
+    const l = _listasPendentes(k);
+    const prazos = `<div class="home-prazos">
+        <span class="${k.tarefasAtrasadas ? 'alerta' : ''}"><b>${k.tarefasAtrasadas}</b>vencidas</span>
+        <span class="${k.tarefasHoje ? 'atencao' : ''}"><b>${k.tarefasHoje}</b>vencem hoje</span>
+        <span><b>${k.tarefas7d}</b>nos próximos 7 dias</span>
+      </div>`;
+    return `${_renderKPIRow2(k)}
+      <div class="home-cols home-cols-larga">
+        ${_listaCard('Tarefas pendentes', l.cntT, l.tarefas, "switchTab('rotina');switchRotinaTab('agenda');", 'Abrir agenda', prazos)}
+        <div class="home-col-stack">
+          ${_renderCumprimento(k)}
+          ${_renderAtivosParados(k)}
+        </div>
+      </div>
+      <div class="home-cols">
+        ${oc ? oc.lista : ''}
+        ${_renderUltimasPublicacoes()}
+      </div>
+      ${oc ? oc.indicadores : ''}`;
+  }
+
+  function _renderAbaOTs(k) {
+    const l = _listasPendentes(k);
+    return `<div class="home-secao">Situação atual</div>
+      ${_renderKPIRow1(k)}
+      <div class="home-cols home-cols-larga">
+        ${_listaCard('OTs em aberto', l.cntO, l.ots, "switchTab('os')", 'Ver todas')}
+        <div class="home-col-stack">
+          ${_renderSeveridade(k)}
+          ${_renderPorResponsavel(k)}
+        </div>
+      </div>
+      <div class="home-secao">No período · ${_modoLabel()}</div>
+      ${_renderKPIRowPeriodoOT(k)}
+      <div class="home-cols-3">
+        ${_renderDonutOT(k)}
+        ${_renderDonutTipos(k)}
+        ${_renderOtsPorMes(k)}
+      </div>
+      <div class="home-cols">
+        ${_renderTopCorretivas(k)}
+        ${_renderFalhaCard(k)}
+      </div>`;
+  }
+
+  function _listaCard(titulo, n, corpo, acao, rotAcao, topo) {
+    return `<div class="home-chart-card home-lista-card">
+      <div class="home-chart-header">
+        <span class="home-chart-title">${titulo}<span class="home-chart-badge">${n}</span></span>
+        <button type="button" class="hup-toggle-btn" onclick="${acao}">${rotAcao}${_ico.next}</button>
+      </div>
+      ${topo || ''}
+      <div class="home-notif-body">${corpo}</div>
+    </div>`;
+  }
+
+  // Cabeçalho padrão dos cards do Início
+  function _cardHead(titulo, extra) {
+    return `<div class="home-chart-header"><span class="home-chart-title">${titulo}</span>${extra || ''}</div>`;
+  }
+  const _vazio = (txt) => `<div class="home-chart-empty">${_ico.chart}<span>${txt}</span></div>`;
+
+  // ── TAREFAS E ATIVOS: cumprimento e ativos parados ──────────
+  function _renderCumprimento(k) {
+    const tipos = Object.entries(k.tarefasByTipo).filter(([, n]) => n > 0);
+    const cores = ['#00a8cc', '#2a9d8f', '#7c3aed', '#f4a261', '#718096'];
+    const pct = k.pctCumprimento;
+    const cls = pct >= 80 ? 'ok' : pct >= 50 ? 'atencao' : 'alerta';
+    return `<div class="home-chart-card">
+      ${_cardHead('Cumprimento das tarefas', `<span class="home-chart-sub">${_modoLabel()}</span>`)}
+      <div class="home-chart-body">
+        ${k.temBaseCumprimento ? `<div class="home-cumpr ${cls}">
+            <div class="home-cumpr-top"><span class="home-cumpr-pct">${pct}%</span>
+              <span class="home-cumpr-num"><b>${k.execsPeriodo}</b> execuções · <b>${k.tarefasVencPeriodo}</b> vencendo no período</span></div>
+            <div class="home-cumpr-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>
+          </div>`
+          : `<div class="home-cumpr-vazio">Sem execuções nem vencimentos no período</div>`}
+        ${tipos.length ? `<div class="home-mini-tit">Tarefas por tipo de rotina</div>
+          ${_hBarChart(tipos.map(([label, value], i) => ({ label: _esc(label), value, color: cores[i % cores.length] })))}` : ''}
+      </div>
+    </div>`;
+  }
+
+  function _renderAtivosParados(k) {
+    const ordens = typeof otState !== 'undefined' ? otState.ordens : [];
+    const ocs = typeof ocState !== 'undefined' ? ocState.ocorrencias || {} : {};
+    const itens = k.ativosParadosList.map(a => {
+      const idx = state.ativos.indexOf(a);
+      const motivos = [
+        ...(a.pausaOTs || []).map(id => {
+          const ot = ordens.find(o => o.id === id);
+          return ot ? `<button type="button" class="home-chip" title="Abrir OT" onclick="event.stopPropagation();otOpenView('${ot.id}')">${_esc(ot.numero || 'OT')}</button>` : '';
+        }),
+        ...(a.pausaOcorrencias || []).map(id => {
+          const oc = ocs[id];
+          return oc ? `<button type="button" class="home-chip" title="Abrir ocorrência" onclick="event.stopPropagation();ocOpenView('${oc.id}')">${_esc(oc.numero || 'Ocorrência')}</button>` : '';
+        }),
+      ].filter(Boolean).join('');
+      return `<div class="home-notif-item" onclick="visualizarAtivo(${idx})">
+        <div class="home-notif-dot" style="background:#e63946"></div>
+        <div class="home-notif-content">
+          <div class="home-notif-title">${_esc(a.nome)}</div>
+          <div class="home-notif-meta">${_esc(_orgRotuloAtivo(a))}</div>
+        </div>
+        <div class="home-chips">${motivos || '<span class="home-notif-meta">sem vínculo</span>'}</div>
+      </div>`;
+    }).join('');
+    return `<div class="home-chart-card home-lista-card">
+      ${_cardHead(`Ativos parados<span class="home-chart-badge">${k.ativosParados}</span>`)}
+      <div class="home-notif-body">${itens || `<div class="home-notif-empty">${_ico.ok}<span>Nenhum ativo parado</span></div>`}</div>
+    </div>`;
+  }
+
+  // ── ORDENS DE TRABALHO: severidade, carga, histórico ─────────
+  function _renderSeveridade(k) {
+    const sevItems = [
+      { label: 'Crítica', value: k.otBySev.critica || 0, color: '#e63946' },
+      { label: 'Alta',    value: k.otBySev.alta    || 0, color: '#f4a261' },
+      { label: 'Média',   value: k.otBySev.media   || 0, color: '#00a8cc' },
+      { label: 'Baixa',   value: k.otBySev.baixa   || 0, color: '#2a9d8f' },
+    ];
+    return `<div class="home-chart-card">
+      ${_cardHead('Severidade das abertas', `<span class="home-chart-badge">${k.otsAbertasList.length}</span>`)}
+      <div class="home-chart-body">
+        ${sevItems.some(i => i.value > 0) ? _hBarChart(sevItems) : _vazio('Nenhuma OT em aberto')}
+      </div>
+    </div>`;
+  }
+
+  function _renderPorResponsavel(k) {
+    const lista = k.otPorResp.slice(0, 6);
+    return `<div class="home-chart-card">
+      ${_cardHead('Abertas por responsável')}
+      <div class="home-chart-body">
+        ${lista.length ? _hBarChart(lista.map(r => ({ label: _esc(r.nome), value: r.n, color: '#64748b' }))) : _vazio('Nenhuma OT em aberto')}
+      </div>
+    </div>`;
+  }
+
+  function _renderOtsPorMes(k) {
+    return `<div class="home-chart-card">
+      ${_cardHead('Abertas × concluídas', '<span class="home-chart-sub">últimos 6 meses</span>')}
+      <div class="home-chart-body">
+        ${k.otPorMes.some(m => m.count || m.concl) ? _barChart(k.otPorMes) : _vazio('Sem OTs nos últimos 6 meses')}
+      </div>
+    </div>`;
+  }
+
+  function _renderTopCorretivas(k) {
+    const itens = k.topCorretivas.map(x => `
+      <div class="home-notif-item" onclick="visualizarAtivo(${x.idx})">
+        <div class="home-notif-content">
+          <div class="home-notif-title">${_esc(x.nome)}</div>
+          <div class="home-notif-meta">${_esc(x.rotulo)}</div>
+        </div>
+        <span class="home-notif-badge ${x.n > 1 ? 'notif-badge-red' : 'notif-badge-gray'}">${x.n} corretiva${x.n > 1 ? 's · reincidente' : ''}</span>
+      </div>`).join('');
+    return `<div class="home-chart-card home-lista-card">
+      ${_cardHead('Ativos com mais corretivas', `<span class="home-chart-sub">${_modoLabel()}</span>`)}
+      <div class="home-notif-body">${itens || `<div class="home-notif-empty">${_ico.ok}<span>Nenhuma corretiva no período</span></div>`}</div>
+    </div>`;
+  }
+
   // ── FILTRO DE PERÍODO ─────────────────────────────────────────
-  function _renderFiltros() {
-    const ck = (k) => _hf.modo === k
-      ? `<svg class="hpo-ck" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`
+  function _renderFiltros(abasHTML) {
+    const seletor = typeof _cqMpHTML === 'function'
+      ? _cqMpHTML('home-mp', {
+          get: () => _hf.per,
+          set: (v) => { _hf.per = v; },
+          onchange: _homePeriodoMudou,
+          rotulo: _modoLabel,
+          modos: ['geral', 'ano', 'intervalo'], atalhos: [1, 3, 6, 12], max: 60,
+        })
       : '';
-
-    // Rótulo do período atual (para pill e botão)
-    const periodoLabel = _modoLabel();
-    const rangeLabel = _hf.modo !== 'geral' && _hf.dataInicio && _hf.dataFim
-      ? `${_fmtDate(_hf.dataInicio)} — ${_fmtDate(_hf.dataFim)}`
-      : _hf.modo === 'geral' ? 'Todos os registros' : '';
-
-    // Dropdown: ao selecionar modo com picker, mostra picker inline apenas
-    // neste dropdown secundário (abre após seleção para refinar)
-    const showMesPicker  = _hf.modo === 'mes';
-    const showAnoPicker  = _hf.modo === 'ano';
-    const showCustom     = _hf.modo === 'custom';
-
     return `
       <div class="home-filter-bar" id="home-filter-bar">
-        <div class="home-period-btn-wrap">
-
-          <!-- Botão principal -->
-          <button class="home-period-btn" onclick="homeToggleDropdown(event)" id="home-period-btn">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="4" width="18" height="18" rx="2"/>
-              <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
-              <line x1="3" y1="10" x2="21" y2="10"/>
-            </svg>
-            <span class="home-period-label">${periodoLabel}</span>
-            ${rangeLabel ? `<span class="home-period-range">${rangeLabel}</span>` : ''}
-            <svg class="home-period-chevron" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-          </button>
-
-          <!-- Dropdown de seleção de modo -->
-          <div class="home-period-dropdown" id="home-period-dropdown" style="display:none"
-            onclick="event.stopPropagation()">
-
-            <div class="hpd-modes">
-              <div class="home-period-option ${_hf.modo==='geral'?'active':''}"
-                onclick="homeSetModo('geral')">
-                <div class="hpo-check">${ck('geral')}</div>
-                <div class="hpo-info">
-                  <div class="hpo-label">Geral</div>
-                  <div class="hpo-desc">Todos os registros</div>
-                </div>
-              </div>
-              <div class="home-period-option ${_hf.modo==='ano'?'active':''}"
-                onclick="homeSetModo('ano')">
-                <div class="hpo-check">${ck('ano')}</div>
-                <div class="hpo-info">
-                  <div class="hpo-label">Ano</div>
-                  <div class="hpo-desc">${_hf.modo==='ano' ? periodoLabel : 'Ano corrente'}</div>
-                </div>
-              </div>
-              <div class="home-period-option ${_hf.modo==='mes'?'active':''}"
-                onclick="homeSetModo('mes')">
-                <div class="hpo-check">${ck('mes')}</div>
-                <div class="hpo-info">
-                  <div class="hpo-label">Mês</div>
-                  <div class="hpo-desc">${_hf.modo==='mes' ? periodoLabel : 'Mês corrente'}</div>
-                </div>
-              </div>
-              <div class="home-period-option ${_hf.modo==='custom'?'active':''}"
-                onclick="homeSetModo('custom')">
-                <div class="hpo-check">${ck('custom')}</div>
-                <div class="hpo-info">
-                  <div class="hpo-label">Personalizado</div>
-                  <div class="hpo-desc">Defina o intervalo</div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Picker de mês (visível quando modo=mes) -->
-            ${showMesPicker ? `<div class="hpd-picker-sep"></div>${_renderMesPicker()}` : ''}
-
-            <!-- Picker de ano (visível quando modo=ano) -->
-            ${showAnoPicker ? `<div class="hpd-picker-sep"></div>${_renderAnoPicker()}` : ''}
-
-            <!-- Intervalo personalizado -->
-            ${showCustom ? `
-              <div class="hpd-picker-sep"></div>
-              <div class="home-period-custom">
-                <div class="home-period-custom-row">
-                  <label>De</label>
-                  <input type="date" value="${_hf.dataInicio}" class="home-custom-date"
-                    onchange="homeCustomDate('dataInicio',this.value)" max="${new Date().toISOString().split('T')[0]}">
-                  <label>Até</label>
-                  <input type="date" value="${_hf.dataFim}" class="home-custom-date"
-                    onchange="homeCustomDate('dataFim',this.value)" max="${new Date().toISOString().split('T')[0]}">
-                </div>
-              </div>` : ''}
-          </div>
-        </div>
-        <div style="display:flex;align-items:center;gap:6px;margin-left:auto;">
+        ${abasHTML}
+        <div class="home-filter-acoes">
+          ${seletor}
           <button class="home-mine-btn${_homeOnlyMine ? ' active' : ''}" onclick="homeToggleMine()" title="Mostrar apenas meus itens">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;flex-shrink:0;"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
             Meus itens
@@ -526,64 +632,17 @@
       </div>`;
   }
 
-  // ── PICKER DE MÊS ────────────────────────────────────────────
-  function _renderMesPicker() {
-    const hoje   = new Date();
-    const navAno = _hf.pickerNavAno || _hf.anoSel || hoje.getFullYear();
-    const mesSel = _hf.mesSel  || (hoje.getMonth() + 1);
-    const anoSel = _hf.anoSel  || hoje.getFullYear();
-
-    const meses = _MESES.map((nome, i) => {
-      const m = i + 1;
-      const isAtivo = m === mesSel && navAno === anoSel;
-      // Desabilita meses futuros no ano atual
-      const futuro  = navAno > hoje.getFullYear() ||
-                     (navAno === hoje.getFullYear() && m > hoje.getMonth() + 1);
-      return `<button
-        class="hpm-mes ${isAtivo ? 'sel' : ''} ${futuro ? 'dis' : ''}"
-        ${futuro ? 'disabled' : `onclick="homeSelectMes(${m},${navAno})"`}>
-        ${nome}
-      </button>`;
-    }).join('');
-
-    return `
-      <div class="home-picker-wrap" onclick="event.stopPropagation()">
-        <div class="hpm-nav">
-          <button class="hpm-nav-btn" onclick="homeNavMes(-1)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="15 18 9 12 15 6"/>
-            </svg>
-          </button>
-          <span class="hpm-ano">${navAno}</span>
-          <button class="hpm-nav-btn"
-            ${navAno >= hoje.getFullYear() ? 'disabled' : `onclick="homeNavMes(1)"`}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <polyline points="9 18 15 12 9 6"/>
-            </svg>
-          </button>
-        </div>
-        <div class="hpm-grid">${meses}</div>
-      </div>`;
-  }
-
-  // ── PICKER DE ANO ─────────────────────────────────────────────
-  function _renderAnoPicker() {
-    const hoje    = new Date();
-    const anoAtual = hoje.getFullYear();
-    const anoSel  = _hf.anoPicker || anoAtual;
-    // Mostra últimos 6 anos + ano atual
-    const anos = Array.from({ length: 7 }, (_, i) => anoAtual - 6 + i);
-
-    const btns = anos.map(a => `
-      <button class="hpa-ano ${a === anoSel ? 'sel' : ''} ${a > anoAtual ? 'dis' : ''}"
-        ${a > anoAtual ? 'disabled' : `onclick="homeSelectAno(${a})"`}>
-        ${a}
-      </button>`).join('');
-
-    return `
-      <div class="home-picker-wrap" onclick="event.stopPropagation()">
-        <div class="hpa-grid">${btns}</div>
-      </div>`;
+  // Período mudou no seletor: redesenha o Início. Se o seletor estava aberto (1º mês do
+  // intervalo escolhido, navegação de ano), reabre o menu no mesmo estado.
+  function _homePeriodoMudou() {
+    _initPeriodo();
+    const aberto = document.getElementById('home-mp')?.classList.contains('aberto');
+    renderHome();
+    if (aberto && typeof _cqMpMenuHTML === 'function') {
+      document.getElementById('home-mp')?.classList.add('aberto');
+      const menu = document.getElementById('home-mp-menu');
+      if (menu) menu.innerHTML = _cqMpMenuHTML('home-mp');
+    }
   }
 
   function _fmtDate(d) {
@@ -617,42 +676,53 @@
     empty:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M7 16l4-4 4 4 6-6"/></svg>`,
     ok:      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`,
     next:    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>`,
+    tri:     `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+    flask:   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3h6"/><path d="M10 3v6.5L4.6 18.4A1.7 1.7 0 0 0 6.1 21h11.8a1.7 1.7 0 0 0 1.5-2.6L14 9.5V3"/><line x1="7.5" y1="15" x2="16.5" y2="15"/></svg>`,
   };
 
   // ── KPI CARD ─────────────────────────────────────────────────
   function _kpi(titulo, valor, svg, cls, sub, tipo) {
-    return `<div class="home-kpi-card ${cls}" onclick="homeOpenKPI('${tipo}')">
+    return `<div class="home-kpi-card ${cls}" onclick="homeOpenKPI('${tipo}')" title="Ver detalhes">
       <div class="home-kpi-head">
-        <div class="home-kpi-badge">
-          <svg viewBox="0 0 6 6" fill="currentColor" width="6" height="6"><circle cx="3" cy="3" r="3"/></svg>
-          ${sub || titulo}
-        </div>
-        <div class="home-kpi-icon">${svg}</div>
+        <span class="home-kpi-title">${titulo}</span>
+        <span class="home-kpi-icon">${svg}</span>
       </div>
-      <div class="home-kpi-divider"></div>
-      <div class="home-kpi-body">
-        <div class="home-kpi-value">${valor}</div>
-        <div class="home-kpi-title">${titulo}</div>
-      </div>
-      <div class="home-kpi-footer">
-        Ver detalhes
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polyline points="9 18 15 12 9 6"/>
-        </svg>
+      <div class="home-kpi-value">${valor}</div>
+      <div class="home-kpi-foot">
+        <span class="home-kpi-sub">${sub || ''}</span>
+        <svg class="home-kpi-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
       </div>
     </div>`;
   }
 
   // Row 1: OTs com Atraso | OTs de Serviço Abertas | OTs Concluídas | OTs Corretivas Abertas
+  // OTs, situação atual (não depende do período)
   function _renderKPIRow1(k) {
+    const nAb = k.otsAbertasList.length, nRev = k.otsRevisaoList.length, nPri = k.otsPrioritariasList.length;
     return `<div class="home-kpi-row">
-      ${_kpi('OTs Corretivas Abertas', k.otCorretivas,  _ico.wrench,
-          'kpi-yellow', 'Corretiva em aberto', 'otCorretivas')}
-      ${_kpi('OTs de Serviço Abertas', k.otsServico,    _ico.eye,
-          'kpi-cyan', 'Serviço em aberto', 'otsServico')}
-      ${_kpi('OTs com Falha',          k.otsFalhaTotal, _ico.alert,   'kpi-red',   'Ativos com falha registrada', 'otsFalha')}
-      ${_kpi('OTs com Atraso',         k.otsAtraso,     _ico.clock,
-          'kpi-orange', 'Prazo vencido', 'otsAtraso')}
+      ${_kpi('OTs em Aberto',          nAb,         _ico.wrench,
+          nAb > 0 ? 'kpi-cyan' : 'kpi-default', `${k.otCorretivas} corretiva(s) · ${k.otsServico} serviço`, 'otsAbertas')}
+      ${_kpi('OTs com Atraso',         k.otsAtraso, _ico.clock,
+          k.otsAtraso > 0 ? 'kpi-orange' : 'kpi-default', 'Prazo vencido', 'otsAtraso')}
+      ${_kpi('Aguardando Revisão',     nRev,        _ico.eye,
+          nRev > 0 ? 'kpi-yellow' : 'kpi-default', 'Dependem de aprovação', 'otsRevisao')}
+      ${_kpi('Críticas e Altas',       nPri,        _ico.alert,
+          nPri > 0 ? 'kpi-red' : 'kpi-default', 'Severidade crítica ou alta em aberto', 'otsPrioritarias')}
+    </div>`;
+  }
+
+  // OTs no período selecionado
+  function _renderKPIRowPeriodoOT(k) {
+    const nPar = k.otsParadaList.length;
+    return `<div class="home-kpi-row">
+      ${_kpi('OTs Concluídas',         k.otConcluidas, _ico.checkC,
+          k.otConcluidas > 0 ? 'kpi-green' : 'kpi-default', 'Pela data de conclusão', 'otConcluidas')}
+      ${_kpi('Tempo Médio de Resolução', k.otTempoMedio === null ? '—' : `${k.otTempoMedio}d`, _ico.clock,
+          'kpi-default', 'Da abertura à conclusão', 'otConcluidas')}
+      ${_kpi('OTs com Falha',          k.otsFalhaTotal, _ico.alert,
+          k.otsFalhaTotal > 0 ? 'kpi-red' : 'kpi-default', 'Corretivas com falha do ativo', 'otsFalha')}
+      ${_kpi('Causaram Parada',        nPar,          _ico.pause,
+          nPar > 0 ? 'kpi-orange' : 'kpi-default', 'Ativo ficou fora de uso', 'otsParada')}
     </div>`;
   }
 
@@ -660,7 +730,7 @@
   function _renderKPIRow2(k) {
     return `<div class="home-kpi-row">
       ${_kpi('Tarefas com Atraso', k.tarefasAtrasadas,  _ico.alert,
-          'kpi-orange',
+          k.tarefasAtrasadas > 0 ? 'kpi-orange' : 'kpi-default',
           'Vencidas sem conclusão', 'tarefasAtrasadas')}
       ${_kpi('Rotinas Ativas',     k.rotinasAtivas,     _ico.refresh, 'kpi-cyan',
           'Planos ativos', 'rotinasAtivas')}
@@ -682,7 +752,11 @@
     rotinasAtivas:    { theme: 'cyan',    ico: _ico => _ico.refresh },
     ativosParados:    { theme: 'red',     ico: _ico => _ico.pause   },
     ativosEmUso:      { theme: 'green',   ico: _ico => _ico.monitor },
-    otConcluidas:     { theme: 'default', ico: _ico => _ico.checkC  },
+    otConcluidas:     { theme: 'green',   ico: _ico => _ico.checkC  },
+    otsAbertas:       { theme: 'cyan',    ico: _ico => _ico.wrench  },
+    otsRevisao:       { theme: 'yellow',  ico: _ico => _ico.eye     },
+    otsPrioritarias:  { theme: 'red',     ico: _ico => _ico.alert   },
+    otsParada:        { theme: 'orange',  ico: _ico => _ico.pause   },
     tarefasConcluidas:{ theme: 'default', ico: _ico => _ico.task    },
   };
 
@@ -855,9 +929,20 @@
     const hoje = _hoje();
 
     const _otivoInfo = (ot) => {
-      const a = ot.ativoIdx != null ? state?.ativos[ot.ativoIdx] : null;
-      return a ? `${_esc(a.nome)}<small>${_esc(_orgRotuloAtivo(a))}</small>` : _esc(_rotuloSetorItem(null, ot) || '—');
+      const m = _otAtivoMeta(ot);
+      return m.nome ? `${_esc(m.nome)}<small>${_esc(m.rotulo)}</small>` : _esc(m.rotulo);
     };
+    const _sevOrd = ['critica', 'alta', 'media', 'baixa'];
+    const _porSev = (a, b) => _sevOrd.indexOf(a.severidade) - _sevOrd.indexOf(b.severidade);
+    // Lista padrão de OTs abertas: severidade, status e prazo
+    const _otsAbertasRows = (lista) => lista.slice().sort(_porSev).map(o => ({
+      cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o), _otTipoLabel(o.tipo),
+              `<span class="hkm-badge hkm-sev-${o.severidade}">${_sevLabel(o.severidade)}</span>`,
+              `<span class="hkm-badge hkm-st-${o.status}">${_otStLabel(o.status)}</span>`,
+              o.prazo ? _fmtDate(o.prazo) : '—'],
+      fn: _fn(`otOpenView('${o.id}')`),
+    }));
+    const _colsAbertas = ['Nº', 'Título', 'Ativo / Unidade · Setor', 'Tipo', 'Severidade', 'Status', 'Prazo'];
     const _tarefaAtivo = (t) => {
       const a = t.equipamentoIdx != null ? state?.ativos[t.equipamentoIdx] : null;
       const r = state?.rotinas?.find(x => x.id === t.rotinaId);
@@ -899,10 +984,34 @@
         };
 
       case 'otConcluidas':
-        return { titulo: 'OTs Concluídas no Período', cols: ['Nº', 'Título', 'Ativo / Unidade · Setor', 'Tipo', 'Abertura'],
-          rows: k.ordensVis.filter(o => o.status === 'concluida' && _inPeriod(o.criadoEm)).map(o => ({
-            cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o),
-                    _otTipoLabel(o.tipo), _fmtDate((o.criadoEm||'').split('T')[0])],
+        return { titulo: 'OTs Concluídas no Período', cols: ['Nº', 'Título', 'Ativo / Unidade · Setor', 'Tipo', 'Abertura', 'Conclusão', 'Duração'],
+          rows: k.otConcluidasList
+            .sort((a, b) => _otDataConclusao(b).localeCompare(_otDataConclusao(a)))
+            .map(o => {
+              const ab = (o.criadoEm || '').split('T')[0];
+              const dur = o.dataConclusao && ab ? `${Math.max(0, _diasEntre(ab, o.dataConclusao))}d` : '—';
+              return {
+                cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o),
+                        _otTipoLabel(o.tipo), _fmtDate(ab), _fmtDate(_otDataConclusao(o)), dur],
+                fn: _fn(`otOpenView('${o.id}')`),
+              };
+            }),
+        };
+
+      case 'otsAbertas':
+        return { titulo: 'OTs em Aberto', cols: _colsAbertas, rows: _otsAbertasRows(k.otsAbertasList) };
+
+      case 'otsRevisao':
+        return { titulo: 'OTs Aguardando Revisão', cols: _colsAbertas, rows: _otsAbertasRows(k.otsRevisaoList) };
+
+      case 'otsPrioritarias':
+        return { titulo: 'OTs Críticas e Altas em Aberto', cols: _colsAbertas, rows: _otsAbertasRows(k.otsPrioritariasList) };
+
+      case 'otsParada':
+        return { titulo: 'OTs que Causaram Parada', cols: ['Nº', 'Título', 'Ativo / Unidade · Setor', 'Parada em', 'Status'],
+          rows: k.otsParadaList.map(o => ({
+            cells: [_esc(o.numero), _esc(o.titulo||'—'), _otivoInfo(o), o.dataParada ? _fmtDate(o.dataParada) : '—',
+                    `<span class="hkm-badge hkm-st-${o.status}">${_otStLabel(o.status)}</span>`],
             fn: _fn(`otOpenView('${o.id}')`),
           })),
         };
@@ -1149,7 +1258,7 @@
     return `<div class="hfa-card">
       <div class="hfa-header">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;flex-shrink:0;color:var(--cyan);"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-        <span class="hfa-ativo-nome">${entry.nome}</span>
+        <span class="hfa-ativo-nome">${_esc(entry.nome)}</span>
         <span class="hfa-count-badge">${entry.ots.length} OT${entry.ots.length !== 1 ? 's' : ''}</span>
       </div>
       <div class="hfa-tabs">
@@ -1183,9 +1292,8 @@
     renderHome();
   };
 
-  function _renderMidCharts(k) {
-    const entries = Object.entries(k.otsFalhaByAtivo);
-    const totalOtsFalha = entries.reduce((s, [, e]) => s + e.ots.length, 0);
+  function _renderFalhaCard(k) {
+    const entries = Object.entries(k.otsFalhaByAtivo).sort((a, b) => b[1].ots.length - a[1].ots.length);
 
     const HFA_PER_PAGE  = 3;
     const hfaTotalPages = Math.max(1, Math.ceil(entries.length / HFA_PER_PAGE));
@@ -1209,59 +1317,22 @@
         </button>
       </div>` : '';
 
-    return `<div class="home-mid-charts">
-      <div class="home-chart-card home-falha-card">
+    return `<div class="home-chart-card home-falha-card">
         <div class="home-chart-header">
-          <span class="home-chart-title">OTs de Ativos com Falha</span>
-          <span class="home-chart-badge">${totalOtsFalha}</span>
+          <span class="home-chart-title">Falhas por ativo</span>
+          <span class="home-chart-badge" title="OTs corretivas em que o ativo falhou">${k.otsFalhaTotal}</span>
         </div>
         <div class="home-chart-body home-falha-body">
           ${entries.length === 0
-            ? `<div class="home-chart-empty">${_ico.chart}<span>Nenhuma OT corretiva com dados de falha</span></div>`
+            ? `<div class="home-chart-empty">${_ico.chart}<span>Nenhuma falha de ativo no período</span></div>`
             : `<div class="hfa-grid">${entriesPage.map(([key, entry]) => _renderFalhaAtivo(key, entry)).join('')}</div>`}
         </div>
         ${hfaPagination}
-      </div>
-      ${_renderUltimasPublicacoes()}
-    </div>`;
+      </div>`;
   }
 
-  // ── BOTTOM CHARTS ────────────────────────────────────────────
-  function _renderBottomCharts(k) {
-    const sevItems = [
-      { label: 'Crítica', value: k.otBySev.critica || 0, color: '#e63946' },
-      { label: 'Alta',    value: k.otBySev.alta    || 0, color: '#f4a261' },
-      { label: 'Média',   value: k.otBySev.media   || 0, color: '#00a8cc' },
-      { label: 'Baixa',   value: k.otBySev.baixa   || 0, color: '#2a9d8f' },
-    ];
-    const hasSev = sevItems.some(i => i.value > 0);
-    const hasMes = k.otPorMes.some(m => m.count > 0);
-
-    return `<div class="home-bottom-charts">
-      <div class="home-chart-card">
-        <div class="home-chart-header">
-          <span class="home-chart-title">OTs Abertas por Mês</span>
-        </div>
-        <div class="home-chart-body">
-          ${hasMes ? _barChart(k.otPorMes)
-            : `<div class="home-chart-empty">${_ico.chart}<span>Sem dados nos últimos 6 meses</span></div>`}
-        </div>
-      </div>
-      <div class="home-chart-card">
-        <div class="home-chart-header">
-          <span class="home-chart-title">Severidade das OTs</span>
-          <span class="home-chart-badge">${k.totalOTs}</span>
-        </div>
-        <div class="home-chart-body">
-          ${hasSev ? _hBarChart(sevItems)
-            : `<div class="home-chart-empty">${_ico.chart}<span>Sem OTs cadastradas</span></div>`}
-        </div>
-      </div>
-    </div>`;
-  }
-
-  // ── PAINEL DE NOTIFICAÇÕES ────────────────────────────────────
-  function _renderNotifPanel(k) {
+  // ── LISTAS DE PENDÊNCIAS (tarefas vencidas/próximas e OTs em aberto) ──
+  function _listasPendentes(k) {
     const hoje = _hoje();
 
     // Lista de tarefas: vencidas primeiro, depois próximas
@@ -1301,64 +1372,58 @@
       });
     });
 
-    // Lista de OTs abertas (pendente + em_processo + em_revisao), ordenadas por severidade
+    // Lista de OTs abertas: vencidas primeiro, depois as que estão no aviso de prazo, depois severidade
     const sevOrd = { critica: 0, alta: 1, media: 2, baixa: 3 };
-    const otItems = k.ordensVis
-      .filter(o => !['concluida', 'cancelada'].includes(o.status))
-      .sort((a, b) => (sevOrd[a.severidade] ?? 9) - (sevOrd[b.severidade] ?? 9))
+    const stCfg = {
+      pendente:    { label: 'Pendente',    cls: 'notif-badge-gray'  },
+      em_processo: { label: 'Em Processo', cls: 'notif-badge-blue'  },
+      em_revisao:  { label: 'Em Revisão',  cls: 'notif-badge-amber' },
+    };
+    const sevDot = { critica: '#e63946', alta: '#f4a261', media: '#00a8cc', baixa: '#2a9d8f' };
+    const otItems = k.otsAbertasList
       .map(ot => {
-        const ativo = ot.ativoIdx != null ? state?.ativos[ot.ativoIdx] : null;
-        const stCfg = {
-          pendente:   { label: 'Pendente',    cls: 'notif-badge-gray'   },
-          em_processo:{ label: 'Em Processo', cls: 'notif-badge-blue'   },
-          em_revisao: { label: 'Em Revisão',  cls: 'notif-badge-amber'  },
-        };
-        const sevCfg = {
-          critica: { dot: '#e63946' },
-          alta:    { dot: '#f4a261' },
-          media:   { dot: '#00a8cc' },
-          baixa:   { dot: '#2a9d8f' },
-        };
         const sc = stCfg[ot.status] || { label: ot.status, cls: 'notif-badge-gray' };
 
-        // Flag de prazo
-        let prazoBadge = '';
+        // Flag de prazo (urg: 0 vencida/hoje, 1 dentro do aviso, 2 sem urgência)
+        let prazoBadge = '', urg = 2, diffP = Infinity;
         if (ot.prazo) {
-          const todayP = new Date(); todayP.setHours(0,0,0,0);
-          const dP = new Date(ot.prazo + 'T00:00:00');
-          const diffP = Math.ceil((dP - todayP) / 86400000);
+          diffP = Math.ceil((new Date(ot.prazo + 'T00:00:00') - hoje) / 86400000);
           let alertLimit = null;
           if (ot.prazoAlertaDias !== undefined && ot.prazoAlertaDias !== null) {
             const parsed = parseInt(ot.prazoAlertaDias, 10);
             if (!Number.isNaN(parsed) && parsed >= 0) alertLimit = parsed;
           }
           if (diffP < 0) {
-            prazoBadge = `<span class="home-notif-badge notif-badge-red" style="margin-left:4px">Vencida ${Math.abs(diffP)}d</span>`;
+            prazoBadge = `<span class="home-notif-badge notif-badge-red">Vencida ${Math.abs(diffP)}d</span>`; urg = 0;
           } else if (diffP === 0) {
-            prazoBadge = `<span class="home-notif-badge notif-badge-red" style="margin-left:4px">Vence hoje</span>`;
+            prazoBadge = `<span class="home-notif-badge notif-badge-red">Vence hoje</span>`; urg = 0;
           } else if (alertLimit !== null && diffP <= alertLimit) {
-            prazoBadge = `<span class="home-notif-badge notif-badge-amber" style="margin-left:4px">${diffP}d restante${diffP !== 1 ? 's' : ''}</span>`;
+            prazoBadge = `<span class="home-notif-badge notif-badge-amber">${diffP}d restante${diffP !== 1 ? 's' : ''}</span>`; urg = 1;
           }
         }
 
+        const m = _otAtivoMeta(ot);
+        const resp = ot.responsavelNome || 'Sem responsável';
         return {
-          id:         ot.id,
-          num:        ot.numero || ot.id,
-          titulo:     ot.titulo || ot.num,
-          meta:       ativo ? `${ativo.nome} · ${_orgRotuloAtivo(ativo)}` : (_rotuloSetorItem(null, ot) || '—'),
-          badge:      sc.label,
-          bCls:       sc.cls,
-          dot:        sevCfg[ot.severidade]?.dot || '#718096',
-          sev:        ot.severidade,
-          prazoBadge,
+          id:     ot.id,
+          num:    ot.numero || '',
+          titulo: ot.titulo || ot.numero || 'OT',
+          meta:   m.nome ? `${m.nome} · ${m.rotulo}` : m.rotulo,
+          meta2:  ot.terceirizado && ot.empresa ? `${resp} · ${ot.empresa}` : resp,
+          badge:  sc.label,
+          bCls:   sc.cls,
+          dot:    sevDot[ot.severidade] || '#718096',
+          prazoBadge, urg, diffP,
+          sev:    sevOrd[ot.severidade] ?? 9,
         };
-      });
+      })
+      .sort((a, b) => a.urg - b.urg || a.diffP - b.diffP || a.sev - b.sev);
+
 
     // Dados já chegam filtrados por _homeOnlyMine via calcKPIs
     const tarefaItemsVis = tarefaItems;
     const otItemsVis     = otItems;
 
-    const tabT = _activeNotifTab === 'tarefas';
     const cntT = tarefaItemsVis.length;
     const cntO = otItemsVis.length;
 
@@ -1390,40 +1455,15 @@
             <div class="home-notif-content">
               <div class="home-notif-title">${_esc(it.num)} — ${_esc(it.titulo)}</div>
               <div class="home-notif-meta">${_esc(it.meta)}</div>
+              <div class="home-notif-meta home-notif-resp">${_esc(it.meta2)}</div>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0">
+            <div class="home-notif-badges">
               <span class="home-notif-badge ${it.bCls}">${it.badge}</span>
               ${it.prazoBadge}
             </div>
           </div>`).join('');
 
-    return `
-      <div class="home-side-card home-notif-card">
-        <div class="home-notif-header">
-          <div class="home-notif-tabs">
-            <button class="home-notif-tab ${tabT ? 'active' : ''}"
-              onclick="homeNotifTab('tarefas')">
-              ${_ico.task}
-              Tarefas
-              ${cntT > 0 ? `<span class="home-notif-count">${cntT}</span>` : ''}
-            </button>
-            <button class="home-notif-tab ${!tabT ? 'active' : ''}"
-              onclick="homeNotifTab('ots')">
-              ${_ico.wrench}
-              OTs
-              ${cntO > 0 ? `<span class="home-notif-count cnt-blue">${cntO}</span>` : ''}
-            </button>
-          </div>
-        </div>
-        <div class="home-notif-body">
-          <div class="home-notif-panel ${tabT ? '' : 'hidden'}" id="home-notif-tarefas">
-            ${_tarefaList}
-          </div>
-          <div class="home-notif-panel ${!tabT ? '' : 'hidden'}" id="home-notif-ots">
-            ${_otList}
-          </div>
-        </div>
-      </div>`;
+    return { tarefas: _tarefaList, ots: _otList, cntT, cntO };
   }
 
   function _esc(s) {
@@ -1441,10 +1481,10 @@
     ];
     const total = segs.reduce((s, g) => s + g.value, 0);
     return `
-      <div class="home-side-card">
+      <div class="home-chart-card">
         <div class="home-chart-header">
-          <span class="home-chart-title">Ordens de Trabalho</span>
-          <span class="home-side-total">${total}</span>
+          <span class="home-chart-title">Status das OTs</span>
+          <span class="home-chart-sub">abertas no período</span>
         </div>
         <div class="home-donut-wrap">
           ${_donutChart(segs)}
@@ -1474,10 +1514,10 @@
     }));
     const total = segs.reduce((s, g) => s + g.value, 0);
     return `
-      <div class="home-side-card">
+      <div class="home-chart-card">
         <div class="home-chart-header">
           <span class="home-chart-title">Tipos de OT</span>
-          <span class="home-side-total">${total}</span>
+          <span class="home-chart-sub">abertas no período</span>
         </div>
         <div class="home-donut-wrap">
           ${_donutChart(segs)}
@@ -1496,127 +1536,24 @@
 
   // ── INICIALIZAÇÃO ─────────────────────────────────────────────
   function initHome() {
-    _initPeriodo('geral');
+    _hf.per = { modo: 'geral' };
+    _initPeriodo();
     renderHome();
-  }
-
-  // ── FECHA DROPDOWN AO CLICAR FORA ────────────────────────────
-  function _closeDropdownOutside(e) {
-    const btn  = document.getElementById('home-period-btn');
-    const drop = document.getElementById('home-period-dropdown');
-    if (!drop || !btn) return;
-    if (!btn.contains(e.target) && !drop.contains(e.target)) {
-      drop.style.display = 'none';
-    }
   }
 
   // ── API PÚBLICA ───────────────────────────────────────────────
   window.initHome   = initHome;
   window.renderHome = renderHome;
 
-  window.homeToggleDropdown = function (e) {
-    e.stopPropagation();
-    const drop = document.getElementById('home-period-dropdown');
-    if (!drop) return;
-    const visible = drop.style.display !== 'none';
-    drop.style.display = visible ? 'none' : 'block';
-    if (!visible) {
-      setTimeout(() => {
-        document.addEventListener('click', _closeDropdownOutside, { once: true });
-      }, 0);
-    }
-  };
-
-  // Mantém dropdown aberto após re-render para modos com picker inline
-  function _keepDropdown() {
-    const drop = document.getElementById('home-period-dropdown');
-    if (drop) drop.style.display = 'block';
-  }
-
-  function _closeDrop() {
-    const drop = document.getElementById('home-period-dropdown');
-    if (drop) drop.style.display = 'none';
-  }
-
-  window.homeSetModo = function (modo) {
-    _hf.modo = modo;
-    const hoje = new Date();
-    if (modo === 'mes') {
-      if (!_hf.mesSel)        _hf.mesSel        = hoje.getMonth() + 1;
-      if (!_hf.anoSel)        _hf.anoSel        = hoje.getFullYear();
-      if (!_hf.pickerNavAno)  _hf.pickerNavAno  = _hf.anoSel;
-    } else if (modo === 'ano') {
-      if (!_hf.anoPicker) _hf.anoPicker = hoje.getFullYear();
-    } else if (modo === 'custom') {
-      // não fecha — mantém aberto para digitar datas
-      _initPeriodo(modo);
-      renderHome();
-      _keepDropdown();
-      return;
-    }
-    _initPeriodo();
-    _closeDrop();
-    renderHome();
-  };
-
-  // Abre o picker inline de mês (botão de edição ao lado do pill)
-  window.homeOpenMesPicker = function (e) {
-    e.stopPropagation();
-    const drop = document.getElementById('home-period-dropdown');
-    if (!drop) return;
-    const visible = drop.style.display !== 'none';
-    drop.style.display = visible ? 'none' : 'block';
-    if (!visible) setTimeout(() => {
-      document.addEventListener('click', _closeDropdownOutside, { once: true });
-    }, 0);
-  };
-
-  // Navega ano no picker de mês
-  window.homeNavMes = function (dir) {
-    _hf.pickerNavAno = (_hf.pickerNavAno || new Date().getFullYear()) + dir;
-    renderHome();
-    _keepDropdown();
-  };
-
-  // Seleciona um mês no picker — aplica imediatamente
-  window.homeSelectMes = function (mes, ano) {
-    _hf.mesSel       = mes;
-    _hf.anoSel       = ano;
-    _hf.pickerNavAno = ano;
-    _initPeriodo();
-    _closeDrop();
-    renderHome();
-  };
-
-  // Seleciona um ano no picker — aplica imediatamente
-  window.homeSelectAno = function (ano) {
-    _hf.anoPicker = ano;
-    _initPeriodo();
-    _closeDrop();
-    renderHome();
-  };
-
-  window.homeCustomDate = function (chave, valor) {
-    _hf[chave] = valor;
-    if (_hf.dataInicio && _hf.dataFim) { _closeDrop(); renderHome(); }
-  };
-
   window.homeToggleMine = function () {
     _homeOnlyMine = !_homeOnlyMine;
     renderHome();
   };
 
-  window.homeNotifTab = function (tab) {
-    _activeNotifTab = tab;
-    // Troca apenas as classes sem re-renderizar tudo
-    document.querySelectorAll('.home-notif-tab').forEach(b => b.classList.remove('active'));
-    const btn = tab === 'tarefas'
-      ? document.querySelector('.home-notif-tab:first-child')
-      : document.querySelector('.home-notif-tab:last-child');
-    if (btn) btn.classList.add('active');
-
-    document.getElementById('home-notif-tarefas')?.classList.toggle('hidden', tab !== 'tarefas');
-    document.getElementById('home-notif-ots')?.classList.toggle('hidden', tab !== 'ots');
+  window.homeSetAba = function (aba) {
+    _homeAba = aba;
+    try { localStorage.setItem('home-aba', aba); } catch (e) { /* sem armazenamento: só não lembra */ }
+    renderHome();
   };
 
   // ── MODAL KPI PÚBLICO ────────────────────────────────────────

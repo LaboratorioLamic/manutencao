@@ -546,6 +546,10 @@ function _unlockApp() {
     if (typeof atualizarSelects    === 'function') atualizarSelects();
     if (typeof refreshTaskFlagsUI  === 'function') refreshTaskFlagsUI();
     _initTopbarSectorFilter();
+    // O Início pode ter sido desenhado antes da sessão existir: o CQ depende do usuário
+    // (Áreas de que é membro) e o filtro de setores acabou de ser definido
+    if (typeof _cqUpdateNavBadge   === 'function') _cqUpdateNavBadge();
+    if (typeof renderHome          === 'function') renderHome();
   }, 60);
 }
 

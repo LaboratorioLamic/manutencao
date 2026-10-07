@@ -768,7 +768,7 @@ function ocFiltroAtalho(tipo) {
   const st = document.getElementById('oc-filter-status');
   const sev = document.getElementById('oc-filter-sev');
   _ocFiltro.sev = tipo === 'criticas' ? 'critica' : '';
-  _ocFiltro.status = tipo === 'aguardando_eficacia' ? 'aguardando_eficacia' : 'abertas';
+  _ocFiltro.status = ['aguardando_eficacia', 'encerrada'].includes(tipo) ? tipo : 'abertas';
   _ocFiltro.periodo = 'todos';
   if (st) st.value = _ocFiltro.status;
   if (sev) sev.value = _ocFiltro.sev;
@@ -2542,8 +2542,17 @@ ${oc.trilha.map(t => `<tr><td>${_ocFmtDH(t.ts)}</td><td>${e(t.userName)}</td><td
 }
 
 // ── CARD DO INÍCIO (KPIs) ────────────────────────────────────
-function ocRenderHomeCard() {
-  if (!_ocFirebaseReady || !(typeof authCanViewTab !== 'function' || authCanViewTab('ocorrencias'))) return '';
+// Subaba da lista de ocorrências no Início: 'abertas' | 'finalizadas' (só desta sessão)
+let _ocHomeSub = 'abertas';
+function ocHomeSub(sub) {
+  _ocHomeSub = sub;
+  if (typeof renderHome === 'function') renderHome();
+}
+
+// Início (aba Tarefas e Ativos): lista das ocorrências em aberto e card de indicadores, separados
+// para o Início posicionar cada um. Sem permissão ou dados ainda não carregados → null.
+function ocHomePartes() {
+  if (!_ocFirebaseReady || !(typeof authCanViewTab !== 'function' || authCanViewTab('ocorrencias'))) return null;
   const vis = Object.values(ocState.ocorrencias).filter(_ocVisivel).filter(o => o.status !== 'cancelada');
   const k = _ocKPIs();
   const hoje = new Date();
@@ -2565,17 +2574,40 @@ function ocRenderHomeCard() {
   }));
   const top = Object.values(porAtivo).sort((a, b) => b.n - a.n).slice(0, 5);
 
-  const tile = (v, l, cls) => `<div class="oc-hk ${cls}" onclick="switchTab('ocorrencias')"><div class="oc-hk-v">${v}</div><div class="oc-hk-l">${l}</div></div>`;
-  return `<div class="home-chart-card oc-home-card">
+  // Em aberto, para agir: ações vencidas primeiro, depois severidade e prazo da próxima ação
+  const hojeS = _ocHoje();
+  const sevOrd = { critica: 0, alta: 1, media: 2, baixa: 3 };
+  const sevDot = { critica: '#e63946', alta: '#f4a261', media: '#00a8cc', baixa: '#2a9d8f' };
+  const abertas = vis.filter(_ocAberta).map(oc => {
+    const prazo = _ocProximoPrazo(oc);
+    return { oc, prazo, vencida: !!prazo && prazo < hojeS, parado: _ocParadosPendentes(oc).length > 0 };
+  }).sort((a, b) => (b.vencida - a.vencida) || ((sevOrd[a.oc.severidade] ?? 9) - (sevOrd[b.oc.severidade] ?? 9)) || (a.prazo || '9999').localeCompare(b.prazo || '9999'));
+  const LIM = 8;
+  const lista = abertas.slice(0, LIM).map(({ oc, prazo, vencida, parado }) => `
+    <div class="home-notif-item" onclick="ocOpenView('${oc.id}')">
+      <div class="home-notif-dot" style="background:${sevDot[oc.severidade] || '#718096'}" title="Severidade ${OC_SEV[oc.severidade]?.label || ''}"></div>
+      <div class="home-notif-content">
+        <div class="home-notif-title">${_ocEsc(oc.numero)} — ${_ocEsc(oc.titulo)}</div>
+        <div class="home-notif-meta">${_ocEsc(_ocNomesAtivos(oc, 1))}${oc.ativos.length > 1 ? ` +${oc.ativos.length - 1}` : ''} · ${_ocEsc(_ocPendencias(oc)[0]?.texto || 'Pronta para encerramento')}</div>
+      </div>
+      <div class="home-notif-badges">
+        ${prazo ? `<span class="home-notif-badge ${vencida ? 'notif-badge-red' : 'notif-badge-gray'}">${vencida ? 'Ação vencida' : 'Ação até ' + _ocFmtData(prazo).slice(0, 5)}</span>` : ''}
+        ${parado ? '<span class="home-notif-badge notif-badge-amber">Ativo parado</span>' : ''}
+      </div>
+    </div>`).join('');
+
+  const tile = (v, l, cls, acao = "switchTab('ocorrencias')") => `<div class="oc-hk ${cls}" onclick="${acao}"><div class="oc-hk-v">${v}</div><div class="oc-hk-l">${l}</div></div>`;
+  const indicadores = `<div class="home-chart-card oc-home-card">
     <div class="home-chart-header">
-      <span class="home-chart-title">Ocorrências de Ativos</span>
-      <span class="home-chart-badge" style="cursor:pointer;" onclick="switchTab('ocorrencias')">Ver todas</span>
+      <span class="home-chart-title">Ocorrências · indicadores</span>
+      <button type="button" class="hup-toggle-btn" onclick="switchTab('ocorrencias')">Abrir ocorrências</button>
     </div>
-    <div class="oc-hk-row">
-      ${tile(k.abertas, 'Em aberto', k.abertas ? 'cyan' : '')}
-      ${tile(k.criticas, 'Críticas em aberto', k.criticas ? 'red' : '')}
-      ${tile(k.vencidas, 'Ações vencidas', k.vencidas ? 'amber' : '')}
-      ${tile(k.eficacia, 'Aguardando eficácia', '')}
+    <div class="oc-hk-row oc-hk-6">
+      ${tile(k.abertas, 'Em aberto', k.abertas ? 'cyan' : '', "switchTab('ocorrencias');ocFiltroAtalho('abertas')")}
+      ${tile(k.criticas, 'Críticas em aberto', k.criticas ? 'red' : '', "switchTab('ocorrencias');ocFiltroAtalho('criticas')")}
+      ${tile(k.vencidas, 'Ações vencidas', k.vencidas ? 'amber' : '', "switchTab('ocorrencias');ocFiltroAtalho('abertas')")}
+      ${tile(k.parados, 'Ativos aguardando liberação', k.parados ? 'red' : '', "switchTab('ocorrencias');ocFiltroAtalho('abertas')")}
+      ${tile(k.eficacia, 'Aguardando eficácia', '', "switchTab('ocorrencias');ocFiltroAtalho('aguardando_eficacia')")}
       ${tile(tempoMedio === null ? '—' : tempoMedio + 'd', 'Tempo médio até encerrar (90d)', '')}
     </div>
     <div class="oc-hk-cols">
@@ -2587,6 +2619,39 @@ function ocRenderHomeCard() {
       </div>
     </div>
   </div>`;
+  // Finalizadas: encerradas mais recentes, com data e tempo até encerrar
+  const finalizadas = vis.filter(o => o.status === 'encerrada')
+    .sort((a, b) => (b.encerramento?.em || '').localeCompare(a.encerramento?.em || ''));
+  const listaFin = finalizadas.slice(0, LIM).map(oc => {
+    const em = oc.encerramento?.em || '';
+    const dias = em && oc.criadoEm ? Math.max(0, Math.round((new Date(em) - new Date(oc.criadoEm)) / 864e5)) : null;
+    return `<div class="home-notif-item" onclick="ocOpenView('${oc.id}')">
+      <div class="home-notif-dot" style="background:#2a9d8f"></div>
+      <div class="home-notif-content">
+        <div class="home-notif-title">${_ocEsc(oc.numero)} — ${_ocEsc(oc.titulo)}</div>
+        <div class="home-notif-meta">${_ocEsc(_ocNomesAtivos(oc, 1))}${oc.ativos.length > 1 ? ` +${oc.ativos.length - 1}` : ''}${oc.encerramento?.porNome ? ' · ' + _ocEsc(oc.encerramento.porNome) : ''}</div>
+      </div>
+      <div class="home-notif-badges">
+        ${em ? `<span class="home-notif-badge notif-badge-gray">Encerrada ${_ocFmtData(em.slice(0, 10)).slice(0, 5)}</span>` : ''}
+        ${dias !== null ? `<span class="home-notif-meta">${dias}d até encerrar</span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+
+  const fin = _ocHomeSub === 'finalizadas';
+  const total = fin ? finalizadas.length : abertas.length;
+  const subaba = (id, rot, n) => `<button type="button" class="home-subaba${_ocHomeSub === id ? ' active' : ''}" onclick="ocHomeSub('${id}')">${rot}<span>${n}</span></button>`;
+  const listaCard = `<div class="home-chart-card home-lista-card">
+    <div class="home-chart-header">
+      <span class="home-chart-title">Ocorrências</span>
+      <div class="home-subabas">${subaba('abertas', 'Em aberto', abertas.length)}${subaba('finalizadas', 'Finalizadas', finalizadas.length)}</div>
+    </div>
+    <div class="home-notif-body">${fin
+      ? (listaFin || '<div class="home-notif-empty"><span>Nenhuma ocorrência finalizada</span></div>')
+      : (lista || '<div class="home-notif-empty"><span>Nenhuma ocorrência em aberto</span></div>')}</div>
+    ${total > LIM ? `<button type="button" class="home-ver-todas" onclick="switchTab('ocorrencias');ocFiltroAtalho('${fin ? 'encerrada' : 'abertas'}')">Ver todas (${total})</button>` : ''}
+  </div>`;
+  return { indicadores, lista: listaCard };
 }
 
 // ── CATÁLOGOS (Configurações) ────────────────────────────────

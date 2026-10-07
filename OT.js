@@ -915,8 +915,8 @@ function _otRenderCalendarioSemanal(content) {
         </div>
         ${ativoNome ? `<div class="ot-sem-pill-ativo">${_escHtml(ativoNome.length > 26 ? ativoNome.slice(0,26)+'…' : ativoNome)}</div>` : ''}
         <div class="ot-sem-pill-status">
-          <span class="ot-sem-pill-tipo">${o.tipo}</span>
-          <span class="ot-sem-pill-sev" style="color:${o.severidade==='Alta'?'var(--red)':o.severidade==='Média'?'#b45309':'var(--text-muted)'};">${o.severidade||''}</span>
+          <span class="ot-sem-pill-tipo">${OT_TIPO_CFG[o.tipo]?.label || o.tipo || ''}</span>
+          <span class="ot-sem-pill-sev" style="color:${['critica','alta'].includes(o.severidade)?'var(--red)':o.severidade==='media'?'#b45309':'var(--text-muted)'};">${OT_SEV_CFG[o.severidade]?.label || ''}</span>
         </div>
       </div>`;
     }).join('');
