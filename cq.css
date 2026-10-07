@@ -1666,3 +1666,60 @@ body.dark-mode .cq-pi2-pill.amarelo { color: var(--amber); }
 .cq-reg-l { font-size: 11px; font-weight: 600; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .cq-reg-sub { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
 @media (max-width: 1400px) { .cq-reg-corpo .cq-reg-grid:last-child { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Visualização do lote: encerrar / colocar em uso como botão quadrado, ícone grande (rótulo fica no title) */
+.cq-pv-hero-sit .cq-lote-uso { width: 44px; height: 44px; padding: 0; justify-content: center; border-radius: 10px; border-width: 1.5px; }
+.cq-pv-hero-sit .cq-lote-uso span { display: none; }
+.cq-pv-hero-sit .cq-lote-uso svg { width: 20px; height: 20px; }
+.cq-pv-hero-sit .cq-lote-uso.stop { color: var(--red); border-color: rgba(230,57,70,0.45); background: rgba(230,57,70,0.06); }
+.cq-pv-hero-sit .cq-lote-uso.stop:hover { color: #fff; background: var(--red); border-color: var(--red); }
+.cq-pv-hero-sit .cq-lote-uso.play { background: rgba(42,157,143,0.08); }
+.cq-pv-hero-sit .cq-lote-uso.play:hover { color: #fff; background: var(--green); border-color: var(--green); }
+.cq-pv-hero-sit .cq-lote-uso.off { width: 44px; height: 44px; padding: 0; }
+
+/* Área › Sistemas sem equipamento: cabeçalho com ação, cartões e popover de cadastro */
+.cq-un-sis { display: flex; flex-direction: column; gap: 12px; padding-top: 14px; }
+.cq-un-sis-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 14px 16px; border-radius: 12px;
+  background: linear-gradient(135deg, var(--cyan-light), transparent 75%); border: 1px solid rgba(0,168,204,0.22); }
+.cq-un-sis-head b { display: block; font-size: 14px; color: var(--text-primary); }
+.cq-un-sis-head small { display: block; margin-top: 3px; font-size: 12px; line-height: 1.45; color: var(--text-muted); max-width: 420px; }
+.cq-un-sis-head .btn { flex: none; }
+.cq-un-sis-busca { max-width: 280px; }
+.cq-un-sis-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.cq-un-sis-card { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-card);
+  transition: border-color .15s, box-shadow .15s, transform .15s; }
+.cq-un-sis-card:hover { border-color: rgba(0,168,204,0.45); box-shadow: 0 4px 14px rgba(16,24,40,0.07); transform: translateY(-1px); }
+.cq-un-sis-card.so-uso { border-style: dashed; background: var(--bg); }
+.cq-un-sis-ico { flex: none; width: 34px; height: 34px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center;
+  color: #fff; background: linear-gradient(135deg, var(--cyan), #0e7490); box-shadow: 0 3px 10px rgba(0,168,204,0.25); }
+.cq-un-sis-card.so-uso .cq-un-sis-ico { color: var(--text-muted); background: var(--bg-card); border: 1px solid var(--border); box-shadow: none; }
+.cq-un-sis-ico svg { width: 17px; height: 17px; }
+.cq-un-sis-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cq-un-sis-txt b { font-size: 13px; color: var(--text-primary); overflow-wrap: anywhere; }
+.cq-un-sis-txt small { font-size: 11.5px; color: var(--text-muted); overflow-wrap: anywhere; }
+.cq-un-sis-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.cq-un-sis-tag { font-size: 10.5px; font-weight: 600; padding: 1px 7px; border-radius: 999px; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); }
+.cq-un-sis-tag.uso { color: var(--cyan); background: var(--cyan-light); border-color: rgba(0,168,204,0.3); }
+.cq-un-sis-tag.aviso { color: #b45309; background: rgba(244,162,97,0.12); border-color: rgba(244,162,97,0.35); }
+.cq-un-sis-acoes { flex: none; display: flex; gap: 4px; align-items: center; }
+.cq-un-sis-acoes .cq-icobtn { padding: 5px; border-radius: 8px; }
+.cq-un-sis-acoes .cq-un-sis-del:hover:not(:disabled) { color: var(--red); border-color: var(--red); }
+.cq-un-sis-acoes .cq-icobtn:disabled { opacity: .35; cursor: not-allowed; }
+.cq-un-sis-vazio { grid-column: 1 / -1; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 28px 16px; text-align: center;
+  border: 1.5px dashed var(--border); border-radius: 12px; color: var(--text-muted); }
+.cq-un-sis-vazio svg { width: 28px; height: 28px; color: var(--cyan); opacity: .7; }
+.cq-un-sis-vazio b { color: var(--text-primary); font-size: 13.5px; }
+.cq-un-sis-vazio small { font-size: 12px; margin-bottom: 6px; }
+.cq-float.cq-un-sis-float { padding: 14px; border-radius: 12px; }
+.cq-un-sis-pop { display: flex; flex-direction: column; gap: 6px; }
+.cq-un-sis-pop .field-label { margin-top: 4px; }
+.cq-un-sis-pop-tit { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 13.5px; color: var(--text-primary); }
+.cq-un-sis-pop-tit svg { width: 16px; height: 16px; color: var(--cyan); }
+.cq-un-sis-pop-pe { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+@media (max-width: 600px) { .cq-un-sis-head { flex-direction: column; } }
+
+/* Janela do preparo: botão quadrado de finalizar à esquerda da situação */
+.cq-pi-hero-sit { display: flex; align-items: center; gap: 10px; flex: none; }
+.cq-prep-parar.cq-prep-parar-lg { width: 40px; height: 40px; border-radius: 10px; border-width: 1.5px; box-shadow: 0 2px 8px rgba(230,57,70,0.18); }
+.cq-prep-parar.cq-prep-parar-lg svg { width: 18px; height: 18px; }
+.cq-prep-parar.cq-prep-parar-lg:hover { transform: none; box-shadow: 0 4px 14px rgba(230,57,70,0.35); }

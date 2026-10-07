@@ -417,6 +417,10 @@ function _cqCan(k) {
   if (_cqIsAdmin()) return true;
   return typeof authHasPermission === 'function' && authHasPermission('cq.' + k);
 }
+// Editar cadastros que já existem (dados, ativar/inativar, encerrar ou reabrir lote, situação de preparo):
+// quem tem "Cadastros e áreas de CQ" ou a permissão própria "Editar cadastros". Criar e excluir cadastros
+// e configurar áreas continuam exigindo "Cadastros e áreas de CQ" (configurar).
+function _cqPodeEditarCad(existe = true) { return _cqCan('configurar') || (existe && _cqCan('editarCadastros')); }
 function _cqEstacao() { try { return localStorage.getItem('cq-estacao') || ''; } catch (e) { return ''; } }
 function _cqLocal() { return { unidadeId: _cqUnidadeAtivaId(), estacao: _cqEstacao() || 'não informada' }; }
 
@@ -2188,7 +2192,7 @@ let _cqUnFormId = null;
 const CQ_LBL_UNIDADE = {
   sigla: 'Sigla', nome: 'Nome', cnes: 'CNES', endereco: 'Endereço', fuso: 'Fuso horário', setores: 'Setores', orgUnidadeId: 'Unidade do sistema',
   orgSetorIds: 'Setores da unidade', rtUserId: 'Responsável técnico', ativa: 'Ativa', validacao: 'Área de validação', diasOperacao: 'Dias de operação',
-  membros: 'Membros', politica: 'Política de liberação',
+  membros: 'Membros', politica: 'Política de liberação', sistemas: 'Sistemas sem equipamento',
 };
 // Setores no formulário. org: unidade do sistema escolhida; lista: setores oferecidos; sel: ids marcados;
 // legado: nomes da lista antiga (unidade sem vínculo); sugerida: unidade do sistema deduzida desses nomes
@@ -2222,6 +2226,7 @@ function cqUnidadeForm(id) {
   _orgIdsDeNomes(legado).forEach(sid => { const u = _orgUnidadeIdDoSetor(sid); if (u && orgOps.some(o => o.id === u)) contUn[u] = (contUn[u] || 0) + 1; });
   const sugerida = Object.entries(contUn).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
   _cqUnSt = { org: '', lista: [], sel: new Set(), legado, sugerida };
+  _cqUnSis = _cqArr(un?.sistemas).filter(x => x && x.nome).map(x => ({ id: x.id || _cqUid(), nome: x.nome, descricao: x.descricao || '' }));
   _cqUnSetoresIniciar(orgVinc, orgVinc ? _cqArr(un?.orgSetorIds) : null);
 
   const membros = un?.membros || {};
@@ -2310,7 +2315,7 @@ function cqUnidadeForm(id) {
         </div>`; }).join('') || '<div class="cq-ms-vazio">Nenhum usuário ativo.</div>'}
           <div class="cq-ms-vazio" id="cq-un-mb-vazio" hidden>Nenhum usuário encontrado.</div></div>
       </div>
-` }, _cqAbaTrilha(un)]),
+` }, { k: 'sistemas', rotulo: _cqUnSisRotulo(), html: `<div id="cq-un-sis-box">${_cqUnSisHTML()}</div>` }, _cqAbaTrilha(un)]),
     rodape: `${un ? `<div class="cq-rodape-esq">${_cqBtnAtivoHTML({ ids: 'cq-un-ativa', fn: 'cqUnidadeSalvar', colecao: 'unidades', id: un.id, campo: 'ativa', ativo: un.ativa !== false })}</div>` : ''}
       <button class="btn btn-outline" onclick="cqDrawerClose()">Cancelar</button>
       <button class="btn btn-primary" onclick="cqUnidadeSalvar()">${CQ_ICO.check} Salvar</button>`,
@@ -2458,6 +2463,123 @@ function cqUnMembrosFiltrar(q) {
   if (v) v.hidden = vis > 0;
 }
 
+// ── SISTEMAS SEM EQUIPAMENTO DA ÁREA ─────────────────────────
+// Bancadas, kits manuais e sistemas analíticos que não são um ativo. Ficam em unidade.sistemas
+// ([{ id, nome, descricao }]) e aparecem como sugestão no cadastro do analito. A lista da aba junta
+// os cadastrados com os que já estão em uso nos analitos e testes da área (texto livre de antes).
+// As alterações ficam no formulário e são gravadas com a área (Salvar).
+let _cqUnSis = [];
+function _cqUnSisUso(nome) {
+  const u = _cqUnFormId, k = _cqItensChave(nome);
+  if (!u) return { analitos: 0, testes: 0 };
+  return {
+    analitos: _cqDaUnidade('analitos', u).filter(a => _cqArr(a.sistemas).some(s => _cqItensChave(s) === k)).length,
+    testes: _cqTestesDaUnidade(u, { incluirInativos: true }).filter(t => !t.ativoId && _cqItensChave(t.sistemaAnalitico || 'Bancada / manual') === k).length,
+  };
+}
+// Cadastrados + em uso na área sem cadastro (estes só podem ser adicionados ao cadastro)
+function _cqUnSisLista() {
+  const cad = _cqUnSis.map(s => ({ ...s, cadastrado: true }));
+  const vistos = new Set(cad.map(s => _cqItensChave(s.nome)));
+  const soUso = [];
+  if (_cqUnFormId) {
+    const add = n => { const v = String(n || '').trim(); const k = _cqItensChave(v); if (v && !vistos.has(k)) { vistos.add(k); soUso.push({ id: '', nome: v, descricao: '', cadastrado: false }); } };
+    _cqDaUnidade('analitos', _cqUnFormId).forEach(a => _cqArr(a.sistemas).forEach(add));
+    _cqTestesDaUnidade(_cqUnFormId, { incluirInativos: true }).filter(t => !t.ativoId).forEach(t => add(t.sistemaAnalitico || 'Bancada / manual'));
+  }
+  return [...cad, ...soUso].map(s => ({ ...s, uso: _cqUnSisUso(s.nome) }))
+    .sort((a, b) => (b.cadastrado - a.cadastrado) || a.nome.localeCompare(b.nome, 'pt'));
+}
+function _cqUnSisRotulo() { const n = _cqUnSisLista().length; return `Sistemas sem equipamento${n ? ` <span class="cq-step-qtd" id="cq-un-sis-n">${n}</span>` : ''}`; }
+function _cqUnSisHTML() {
+  const lista = _cqUnSisLista();
+  const nUso = lista.filter(s => !s.cadastrado).length;
+  const card = (s, i) => {
+    const usado = s.uso.analitos + s.uso.testes > 0;
+    const usoTxt = usado ? [s.uso.analitos && `${s.uso.analitos} analito${s.uso.analitos === 1 ? '' : 's'}`, s.uso.testes && `${s.uso.testes} teste${s.uso.testes === 1 ? '' : 's'}`].filter(Boolean).join(' · ') : 'sem uso ainda';
+    const acoes = s.cadastrado
+      ? `<button type="button" class="cq-icobtn" title="Editar" onclick="cqUnSisPop(this,'${s.id}')">${CQ_ICO.edit}</button>
+         <button type="button" class="cq-icobtn cq-un-sis-del" ${usado ? 'disabled title="Em uso: não pode ser removido"' : 'title="Remover"'} onclick="cqUnSisRemover('${s.id}')">${CQ_ICO.lixo}</button>`
+      : `<button type="button" class="btn btn-outline btn-sm" onclick="cqUnSisAdotar(${i})" title="Passa a constar no cadastro da área">${CQ_ICO.plus} Cadastrar</button>`;
+    return `<div class="cq-un-sis-card${s.cadastrado ? '' : ' so-uso'}">
+      <span class="cq-un-sis-ico">${CQ_ICO.beaker}</span>
+      <div class="cq-un-sis-txt"><b>${_cqEsc(s.nome)}</b>${s.descricao ? `<small>${_cqEsc(s.descricao)}</small>` : ''}
+        <span class="cq-un-sis-tags"><span class="cq-un-sis-tag${usado ? ' uso' : ''}">${usoTxt}</span>${s.cadastrado ? '' : '<span class="cq-un-sis-tag aviso">em uso, fora do cadastro</span>'}</span></div>
+      <div class="cq-un-sis-acoes">${acoes}</div>
+    </div>`;
+  };
+  return `<div class="cq-un-sis">
+    <div class="cq-un-sis-head">
+      <div><b>Sistemas sem equipamento</b><small>Bancadas, kits manuais e sistemas que não são um ativo. Aparecem como opção no cadastro dos analitos desta área.</small></div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="cqUnSisPop(this,'')">${CQ_ICO.plus} Novo sistema</button>
+    </div>
+    ${lista.length > 6 ? `<label class="cq-ms-busca cq-un-sis-busca">${CQ_ICO.busca}<input type="text" placeholder="Buscar sistema…" autocomplete="off" oninput="cqUnSisFiltrar(this.value)"></label>` : ''}
+    ${nUso ? `<div class="cq-nota">${CQ_ICO.info} ${nUso} sistema${nUso === 1 ? '' : 's'} em uso nos analitos ou testes ainda não ${nUso === 1 ? 'consta' : 'constam'} no cadastro da área. Use <b>Cadastrar</b> para incluí-lo${nUso === 1 ? '' : 's'}.</div>` : ''}
+    <div class="cq-un-sis-grid">${lista.map(card).join('') || `<div class="cq-un-sis-vazio">${CQ_ICO.beaker}<b>Nenhum sistema cadastrado</b><small>Ex.: Bancada de microbiologia, Microscopia manual, Kit rápido.</small>
+      <button type="button" class="btn btn-outline btn-sm" onclick="cqUnSisPop(this,'')">${CQ_ICO.plus} Cadastrar o primeiro</button></div>`}</div>
+    <div class="cq-ms-vazio" id="cq-un-sis-nada" hidden>Nenhum sistema encontrado.</div>
+  </div>`;
+}
+function _cqUnSisAtualizar() {
+  _cqFloatFechar();
+  const box = document.getElementById('cq-un-sis-box');
+  if (box) box.innerHTML = _cqUnSisHTML();
+  const btn = document.querySelector('#cq-drawer .ot-modal-tab-btn[data-aba="sistemas"]');
+  if (btn) btn.innerHTML = _cqUnSisRotulo();
+}
+// Popover de cadastro/edição ancorado no botão clicado (nome bloqueado quando o sistema já está em uso)
+function cqUnSisPop(btn, id) {
+  if (_cqFloatAberto(btn)) { _cqFloatFechar(); return; }
+  const s = id ? _cqUnSis.find(x => x.id === id) : null;
+  const uso = s ? _cqUnSisUso(s.nome) : { analitos: 0, testes: 0 };
+  const travado = uso.analitos + uso.testes > 0;
+  _cqFloatAbrir(btn, `<div class="cq-un-sis-pop">
+    <div class="cq-un-sis-pop-tit">${CQ_ICO.beaker}<b>${s ? 'Editar sistema' : 'Novo sistema sem equipamento'}</b></div>
+    <label class="field-label">Nome <span class="required">*</span></label>
+    <input type="text" id="cq-un-sis-nome" class="field-input" maxlength="60" value="${_cqEsc(s?.nome || '')}" placeholder="Ex.: Bancada de microbiologia" ${travado ? 'disabled' : ''}
+      onkeydown="if(event.key==='Enter'){event.preventDefault();cqUnSisConfirmar('${id}');}">
+    ${travado ? '<div class="cq-nota">Em uso nos analitos ou testes: o nome não muda aqui.</div>' : ''}
+    <label class="field-label">Descrição</label>
+    <input type="text" id="cq-un-sis-desc" class="field-input" maxlength="120" value="${_cqEsc(s?.descricao || '')}" placeholder="Opcional — ex.: leitura visual, kit X"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();cqUnSisConfirmar('${id}');}">
+    <div class="cq-un-sis-pop-pe"><button type="button" class="btn btn-outline btn-sm" onclick="_cqFloatFechar()">Cancelar</button>
+      <button type="button" class="btn btn-primary btn-sm" onclick="cqUnSisConfirmar('${id}')">${CQ_ICO.check} ${s ? 'Aplicar' : 'Adicionar'}</button></div>
+  </div>`, { cls: 'cq-un-sis-float', largura: 320 });
+  setTimeout(() => document.getElementById(travado ? 'cq-un-sis-desc' : 'cq-un-sis-nome')?.focus(), 30);
+}
+function cqUnSisConfirmar(id) {
+  const nome = (document.getElementById('cq-un-sis-nome')?.value || '').trim().replace(/\s+/g, ' ');
+  const descricao = (document.getElementById('cq-un-sis-desc')?.value || '').trim();
+  if (!nome) { showToast('Informe o nome do sistema.', 'error'); return; }
+  const k = _cqItensChave(nome);
+  if (_cqUnSis.some(x => x.id !== id && _cqItensChave(x.nome) === k)) { showToast('Já existe um sistema com este nome na área.', 'error'); return; }
+  const s = id ? _cqUnSis.find(x => x.id === id) : null;
+  if (s) Object.assign(s, { nome, descricao });
+  else _cqUnSis.push({ id: _cqUid(), nome, descricao });
+  _cqUnSisAtualizar();
+}
+function cqUnSisAdotar(i) {
+  const s = _cqUnSisLista()[i];
+  if (!s || s.cadastrado) return;
+  _cqUnSis.push({ id: _cqUid(), nome: s.nome, descricao: '' });
+  _cqUnSisAtualizar();
+}
+function cqUnSisRemover(id) {
+  const s = _cqUnSis.find(x => x.id === id);
+  if (!s) return;
+  const uso = _cqUnSisUso(s.nome);
+  if (uso.analitos + uso.testes) { showToast('Sistema em uso nos analitos ou testes: não pode ser removido.', 'error'); return; }
+  _cqUnSis = _cqUnSis.filter(x => x.id !== id);
+  _cqUnSisAtualizar();
+}
+function cqUnSisFiltrar(q) {
+  const t = _cqNormBusca(q).trim();
+  let vis = 0;
+  document.querySelectorAll('#cq-un-sis-box .cq-un-sis-card').forEach(c => { const ok = !t || _cqNormBusca(c.textContent).includes(t); c.hidden = !ok; if (ok) vis++; });
+  const v = document.getElementById('cq-un-sis-nada');
+  if (v) v.hidden = vis > 0;
+}
+
 async function cqUnidadeSalvar() {
   if (_cqSalvando) return;
   const orgSel = _cqSelVal('cq-un-org');
@@ -2487,6 +2609,7 @@ async function cqUnidadeSalvar() {
     politica: { liberarAceitosAoSalvar: _cqChk('cq-un-pol-lib'), comentarioObrigatorioAlerta: _cqChk('cq-un-pol-com'),
                 reautenticar: _cqChk('cq-un-pol-reauth'), retroativoHoras: Math.max(0, Number(_cqVal('cq-un-pol-retro')) || 0),
                 modoCorrida: CQ_MODOS_CORRIDA[modo] ? modo : 'lote' },
+    sistemas: _cqUnSis.map(x => ({ id: x.id, nome: x.nome, ...(x.descricao ? { descricao: x.descricao } : {}) })),
   };
   // Exceções por equipamento: preserva as de equipamentos que não aparecem agora (ex.: sem testes ativos)
   const modosEquip = { ...(antes?.politica?.modoCorridaEquip || {}) };
@@ -2501,6 +2624,7 @@ async function cqUnidadeSalvar() {
     diasOperacao: v => _cqArr(v).map(i => CQ_DIAS[i]).join(', '), fuso: v => CQ_FUSOS[v] || v,
     membros: v => Object.entries(v || {}).map(([id, p]) => `${_cqNomeUsuario(id) || id} (${CQ_PAPEIS[p] || p})`).join('; '),
     politica: v => JSON.stringify(v),
+    sistemas: v => _cqArr(v).map(x => x.descricao ? `${x.nome} (${x.descricao})` : x.nome).join('; '),
   };
   const diffs = antes ? _cqDiff(antes, rec, CQ_LBL_UNIDADE, fmt) : [];
   // "Todos os setores" aparece na trilha como texto, não como vazio

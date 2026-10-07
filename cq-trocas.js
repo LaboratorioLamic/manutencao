@@ -671,8 +671,11 @@ function _cqPainelPreparosHTML(u) {
     const pct = tot ? Math.min(100, Math.max(0, Math.round(_cqPrepDias(p.data, hoje) / tot * 100))) : null;
     const sub = p ? [p.codigo || _cqFmtData(p.data), atual.i.lote ? `lote ${atual.i.lote}` : ''].filter(Boolean).join(' · ') : 'Nenhum preparo em uso';
     const pe = p ? `${_cqFmtData(p.data)}${p.responsavel ? ' · ' + p.responsavel.split(' ')[0] : ''}${p.validade ? ` → ${_cqFmtData(p.validade)}` : ''}` : 'sem preparo em uso';
-    const clique = p && !p.legado ? `cqPreparoInfo('${atual.i.id}','${p.id}')` : 'cqAbrirPreparos()';
-    return `<button type="button" class="cq-tc cq-tc-${CQ_PAINEL_PREP_TC[s.tipo]} cq-pp-tc" title="${p ? 'Ver o preparo em uso' : 'Abrir a aba Preparos'}" onclick="${clique}">
+    // Sem preparo em uso: o clique já abre o registro de um novo preparo deste produto
+    const novo = !p && _cqPodeRegistrarPreparo();
+    const clique = p && !p.legado ? `cqPreparoInfo('${atual.i.id}','${p.id}')` : novo ? `cqPrepNovoAbrir('${prod.id}')` : 'cqAbrirPreparos()';
+    const dica = p ? 'Ver o preparo em uso' : novo ? 'Registrar um novo preparo deste produto' : 'Abrir a aba Preparos';
+    return `<button type="button" class="cq-tc cq-tc-${CQ_PAINEL_PREP_TC[s.tipo]} cq-pp-tc" title="${dica}" onclick="${clique}">
       <div class="cq-tc-top"><span class="cq-tc-nome">${_cqEsc(prod.nome)}</span><span class="cq-tc-st"><i></i>${_cqEsc(s.txt)}</span></div>
       <div class="cq-tc-sub">${_cqEsc(sub)}</div>
       ${pct !== null ? `<div class="cq-pp-barra" title="${pct}% da validade de uso decorrida"><i style="width:${pct}%"></i></div>` : ''}

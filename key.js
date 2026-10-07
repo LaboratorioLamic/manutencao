@@ -1571,7 +1571,7 @@ const PERM_STRUCTURE = {
   atividades: { label: 'Atividades',       keys: ['editar','excluir','gerenciarAnexos'] },
   ot:         { label: 'OT',               keys: ['visualizar','criarOT','editarOT','excluirOT','alterarStatus','realizarPublicacoes','editarPublicacoes','excluirPublicacoes'] },
   ocorrencias:{ label: 'Ocorrências',      keys: ['visualizar','registrar','editar','tratar','liberarAtivo','encerrar','cancelar'] },
-  cq:         { label: 'Controle de Qualidade', keys: ['visualizar','lancar','liberar','configurar','definirAlvos','ceq','revisar','relatorios','invalidar'] },
+  cq:         { label: 'Controle de Qualidade', keys: ['visualizar','lancar','liberar','configurar','editarCadastros','definirAlvos','ceq','revisar','relatorios','invalidar'] },
   config:    { label: 'Configurações',    keys: ['visualizarConfig','backup','gerenciarUsuarios','gerenciarGrupos','gerenciarEmpresas'] }
 };
 
@@ -1586,7 +1586,7 @@ const PERM_LABELS = {
   excluirPublicacoes:'Excluir Publicações',
   registrar:'Registrar', tratar:'Tratar (impacto, causa, ações)', liberarAtivo:'Liberar ativo para uso',
   encerrar:'Encerrar / reabrir', cancelar:'Cancelar',
-  lancar:'Lançar corridas de controle', liberar:'Avaliar / liberar corridas', configurar:'Cadastros e áreas de CQ',
+  lancar:'Lançar corridas de controle', liberar:'Avaliar / liberar corridas', configurar:'Cadastros e áreas de CQ', editarCadastros:'Editar cadastros (situação e pausa)',
   definirAlvos:'Definir médias, DP e regras', ceq:'Controle externo (CEQ)', revisar:'Revisão mensal / análise crítica',
   relatorios:'Relatórios de CQ', invalidar:'Corrigir / invalidar resultados',
   visualizarConfig:'Visualizar configurações', backup:'Backup',
