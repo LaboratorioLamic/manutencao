@@ -85,27 +85,31 @@
   function _otSetor(ot) {
     if (ot.ativoIdx != null && typeof state !== 'undefined') {
       const a = state.ativos[ot.ativoIdx];
-      if (a) { const id = _orgSetorIdDoAtivo(a); if (id) return id; }
+      if (a) { const ids = _orgSetorIdsDoAtivo(a); if (ids.length) return ids; }
     }
     return _orgSetorIdDeRef(ot.setorId, ot.setor);
   }
 
   function _rotinaSetor(rotina) {
     if (!rotina) return '';
-    if (rotina.equipamentoIdx != null && state?.ativos[rotina.equipamentoIdx]) return _orgSetorIdDoAtivo(state.ativos[rotina.equipamentoIdx]);
+    if (rotina.equipamentoIdx != null && state?.ativos[rotina.equipamentoIdx]) return _orgSetorIdsDoAtivo(state.ativos[rotina.equipamentoIdx]);
     return _orgSetorIdDeRef(rotina.setorId, rotina.setor);
   }
 
   function _tarefaSetor(t) {
     if (t.equipamentoIdx != null && typeof state !== 'undefined') {
       const a = state.ativos[t.equipamentoIdx];
-      return a ? _orgSetorIdDoAtivo(a) : '';
+      return a ? _orgSetorIdsDoAtivo(a) : '';
     }
     return _rotinaSetor(state?.rotinas?.find(r => r.id === t.rotinaId));
   }
 
+  // setorId: um id ou a lista de setores do ativo (responsável + compartilhados)
   function _inSetor(setorId) {
-    return !setorId || _setores().includes(setorId);
+    const ids = (Array.isArray(setorId) ? setorId : [setorId]).filter(Boolean);
+    if (!ids.length) return true;
+    const vis = _setores();
+    return ids.some(id => vis.includes(id));
   }
 
   // Rótulo "Unidade · Setor" do ativo, ou do registro (OT/rotina) quando não há ativo
@@ -148,7 +152,7 @@
     }
 
     const ordensVis   = ordens.filter(o => _inSetor(_otSetor(o)) && (!_homeOnlyMine || !_uid || _isMine_ot(o)));
-    const ativosVis   = ativos.filter(a => _inSetor(_orgSetorIdDoAtivo(a)));  // ativos: sem filtro por responsável
+    const ativosVis   = ativos.filter(a => _inSetor(_orgSetorIdsDoAtivo(a)));  // ativos: sem filtro por responsável
     const rotinasVis  = rotinas.filter(r => _inSetor(_rotinaSetor(r)));
     const tarefasVis  = tarefas.filter(t => _inSetor(_tarefaSetor(t)) && (!_homeOnlyMine || !_uid || _isMine_tarefa(t)));
     const tarefasIds  = new Set(tarefasVis.map(t => t.id));

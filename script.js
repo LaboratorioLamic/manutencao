@@ -429,7 +429,7 @@
       return;
     }
     list.innerHTML = alerts.map(a => `
-      <div class="notif-item" onclick="switchRotinaTab('tarefas');openTarefaDetalhe('${a.tarefaId}');document.getElementById('notif-dropdown').classList.remove('open')">
+      <div class="notif-item" onclick="${a.isCQ ? `cqAbrirTrocaAlerta('${a.cqUnidade}')` : `switchRotinaTab('tarefas');openTarefaDetalhe('${a.tarefaId}')`};document.getElementById('notif-dropdown').classList.remove('open')">
         <div class="notif-dot ${a.tipo}"></div>
         <div class="notif-text">
           <strong>${a.rotinaNome}</strong> — ${a.equipNome}
@@ -449,7 +449,7 @@
     }
     const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
     const fCat   = (typeof categorySearchGetValue === 'function') ? categorySearchGetValue() : 'todas';
-    if (!_orgAtivoPassa(ativo, _unitSearchVal, fSetor)) return false;
+    if (!_orgAtivoPassa(ativo, _unitSearchVal, fSetor, typeof _ambSearchVal !== 'undefined' ? _ambSearchVal : '')) return false;
     if (fCat !== 'todas' && ativo.categoria !== fCat) return false;
     if (typeof _tipoSearchVal !== 'undefined' && _tipoSearchVal !== 'todos' && (ativo.tipo || 'Equipamento') !== _tipoSearchVal) return false;
     return true;
@@ -554,6 +554,9 @@
         }
       });
     }
+
+    // Trocas de preparo do Controle de Qualidade (cq-trocas.js)
+    if (context === 'rotina' && typeof window.cqNotifAlertas === 'function') alerts.push(...window.cqNotifAlertas());
 
     alerts.sort((a, b) => {
       if (a.tipo !== b.tipo) return a.tipo === 'danger' ? -1 : 1;
@@ -1102,10 +1105,10 @@
     atualizarAbaTarefaChecklist();
   }
 
-  function editTarefaChecklistItem(id) {
+  async function editTarefaChecklistItem(id) {
     const item = checklistTarefaTemp.find(i => i.id === id);
     if (!item) return;
-    const novoTexto = prompt('Editar item:', item.texto);
+    const novoTexto = await uiPrompt({ icone: 'editar', titulo: 'Editar item do checklist', valor: item.texto, placeholder: 'Texto do item' });
     if (novoTexto === null) return;
     const t = novoTexto.trim();
     if (!t) return;
@@ -1290,7 +1293,7 @@
   // Rótulos legíveis para cada campo
   const _FIELD_LABELS = {
     nome:'Nome', titulo:'Título', tipo:'Tipo', equipamentoIdx:'Equipamento',
-    setor:'Setor', categoria:'Categoria', marca:'Marca', modelo:'Modelo',
+    setor:'Setor', ambienteId:'Ambiente', setoresCompartilhados:'Setores compartilhados', categoria:'Categoria', marca:'Marca', modelo:'Modelo',
     serie:'Nº de Série', nota:'Observações',
     codigo:'Código', frequencia:'Frequência', fazerCada:'Fazer a cada',
     repetir:'Repetir', vezes:'Vezes', lembrete:'Lembrete', dataTarefa:'Data da Tarefa',
@@ -1310,6 +1313,17 @@
         const rA = anterior?.setorId ? _orgRotuloSetor(anterior.setorId) : (anterior?.setor || '');
         const rB = atual?.setorId ? _orgRotuloSetor(atual.setorId) : (atual?.setor || '');
         if (rA !== rB) diffs.push({ campo: 'Unidade · Setor', antes: rA || '—', depois: rB || '—' });
+        continue;
+      }
+      if (k === 'setoresCompartilhados') {
+        const nomes = v => (Array.isArray(v) ? v : []).map(id => _orgSetor(id)?.nome || id).sort().join(', ');
+        const rA = nomes(anterior?.[k]), rB = nomes(atual?.[k]);
+        if (rA !== rB) diffs.push({ campo: 'Setores compartilhados', antes: rA || '—', depois: rB || '—' });
+        continue;
+      }
+      if (k === 'ambienteId') {
+        const rA = _orgRotuloAmbiente(anterior?.ambienteId), rB = _orgRotuloAmbiente(atual?.ambienteId);
+        if ((anterior?.ambienteId || '') !== (atual?.ambienteId || '')) diffs.push({ campo: 'Ambiente', antes: rA || '—', depois: rB || '—' });
         continue;
       }
       const vA = JSON.stringify(anterior?.[k] ?? null);
@@ -2001,10 +2015,14 @@
     openTarefaDrawer(tarefaDetalheId);
   }
 
-  function excluirTarefaAtual() {
+  async function excluirTarefaAtual() {
     if (!_can('tarefas.excluir')) { showToast('Sem permissão para excluir tarefas.', 'error'); return; }
     if (arqTemPubs(tarefaDetalheId)) { showToast('Esta tarefa possui publicações registradas e não pode ser excluída.', 'error'); return; }
-    if (!confirm('Excluir esta tarefa? O histórico de publicações também será removido.')) return;
+    if (!(await uiConfirmar({
+      tipo: 'perigo', titulo: 'Excluir tarefa?', confirmar: 'Excluir tarefa',
+      mensagem: 'A tarefa será removida da agenda.',
+      detalhe: 'O histórico de publicações desta tarefa também será removido.',
+    }))) return;
     state.tarefas = state.tarefas.filter(t => t.id !== tarefaDetalheId);
     state.publicacoes = state.publicacoes.filter(p => p.tarefaId !== tarefaDetalheId);
     saveState();
@@ -4293,7 +4311,6 @@
         </div>
       </div>`;
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   }
 
   function _confirmarPausarRotina() {
@@ -4312,9 +4329,13 @@
     openRotinaDrawer(rotinaViewId);
   }
 
-  function confirmarDeleteRotina() {
+  async function confirmarDeleteRotina() {
     if (!_can('rotinas.excluir')) { showToast('Sem permissão para excluir rotinas.', 'error'); return; }
-    if (!confirm('Excluir esta rotina? As tarefas vinculadas também serão removidas.')) return;
+    if (!(await uiConfirmar({
+      tipo: 'perigo', titulo: 'Excluir rotina?', confirmar: 'Excluir rotina',
+      mensagem: 'A rotina deixa de gerar novas tarefas.',
+      detalhe: 'As tarefas vinculadas a ela também serão removidas.',
+    }))) return;
     state.rotinas = state.rotinas.filter(r => r.id !== rotinaViewId);
     state.tarefas = state.tarefas.filter(t => t.rotinaId !== rotinaViewId);
     saveState();
@@ -4559,6 +4580,9 @@
       document.getElementById('ativo-tipo').value = 'Equipamento';
       const si = document.getElementById('ativo-setor-input'); if (si) si.value = '';
       const ci = document.getElementById('ativo-categoria-input'); if (ci) ci.value = '';
+      document.getElementById('ativo-ambiente').value = '';
+      _formCompSel = new Set();
+      _formAmbienteSync();
       onAtivoTipoChange('Equipamento');
       _ativoStatusUI('em_uso', []);
     } else {
@@ -4571,6 +4595,9 @@
       document.getElementById('ativo-tipo').value = tipo;
       const si2 = document.getElementById('ativo-setor-input'); if (si2) si2.value = _orgSetorDoAtivo(ativo) ? _orgRotuloAtivo(ativo) : '';
       const ci2 = document.getElementById('ativo-categoria-input'); if (ci2) ci2.value = ativo.categoria || '';
+      document.getElementById('ativo-ambiente').value = ativo.ambienteId || '';
+      _formCompSel = new Set(_orgSetoresCompDoAtivo(ativo));
+      _formAmbienteSync();
       document.getElementById('ativo-marca').value = ativo.marca !== '-' ? ativo.marca : '';
       document.getElementById('ativo-modelo').value = ativo.modelo !== '-' ? ativo.modelo : '';
       document.getElementById('ativo-serie').value = ativo.serie !== '-' ? ativo.serie : '';
@@ -4592,7 +4619,7 @@
     _ativoAtivPage = 0;
     const ativo = state.ativos[index];
     document.getElementById('visualizar-title').textContent = ativo.nome;
-    document.getElementById('visualizar-subtitle').textContent = `${_orgRotuloAtivo(ativo)} · ${ativo.categoria}`;
+    document.getElementById('visualizar-subtitle').textContent = `${_orgRotuloAtivo(ativo, { ambiente: true, compartilhado: true })} · ${ativo.categoria}`;
 
     document.getElementById('visualizar-body').innerHTML = `
       <div class="view-hero">
@@ -4603,7 +4630,8 @@
         </div>
         <div class="view-badges">
           ${ativo.tipo && ativo.tipo !== 'Equipamento' ? `<span class="view-badge" style="background:rgba(99,102,241,0.1);color:#6366f1;border-color:rgba(99,102,241,0.3);">${ativo.tipo}</span>` : ''}
-          <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${_orgEsc(_orgRotuloAtivo(ativo))}</span>
+          <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>${_orgEsc(_orgRotuloAtivo(ativo, { compartilhado: true }))}</span>
+          ${ativo.ambienteId && _orgAmbiente(ativo.ambienteId) ? `<span class="view-badge" title="Ambiente"><svg style="width:11px;height:11px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M6 21V4a1 1 0 011-1h10a1 1 0 011 1v17"/><circle cx="14.5" cy="12" r=".9" fill="currentColor"/></svg>${_orgEsc(_orgRotuloAmbiente(ativo.ambienteId))}</span>` : ''}
           <span class="view-badge"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:11px;height:11px;"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>${ativo.categoria}</span>
           ${ativo.statusUso === 'em_pausa'
             ? `<span class="view-badge" style="background:rgba(244,162,97,0.12);color:#b45309;border-color:#f4a261;">
@@ -4691,7 +4719,7 @@
     return temOT || temOc;
   }
 
-  window.excluirAtivoAtual = function () {
+  window.excluirAtivoAtual = async function () {
     if (!_can('ativos.excluir')) { showToast('Sem permissão para excluir ativos.', 'error'); return; }
     const index = ativoEdicaoIndex;
     if (index === null || index === undefined) return;
@@ -4701,7 +4729,12 @@
     const temOTsPublicadas = tarefasDoAtivo.some(arqTemPubs);
     if (temOTsPublicadas) { showToast('Este ativo possui OTs publicadas e não pode ser excluído.', 'error'); return; }
     if (_ativoTemHistoricoVinculado(index)) { showToast('Este ativo possui OTs ou ocorrências registradas e não pode ser excluído.', 'error'); return; }
-    if (!confirm('Excluir este ativo? Esta ação não pode ser desfeita.')) return;
+    if (!(await uiConfirmar({
+      tipo: 'perigo', titulo: 'Excluir ativo?', confirmar: 'Excluir ativo',
+      mensagem: `O ativo <b>${uiEsc(state.ativos[index]?.nome || '')}</b> será removido do cadastro.`,
+      detalhe: 'Esta ação não pode ser desfeita.',
+    }))) return;
+    if (ativoEdicaoIndex !== index) return; // a tela mudou enquanto a janela estava aberta
     // Ajusta índices de rotinas/tarefas/OTs que referenciam ativos após o removido
     state.rotinas.forEach(r => { if (r.equipamentoIdx > index) r.equipamentoIdx--; });
     state.tarefas.forEach(t => { if (t.equipamentoIdx > index) t.equipamentoIdx--; });
@@ -5036,6 +5069,7 @@
     const setores = (typeof _getFilteredSetores === 'function') ? _getFilteredSetores() : [];
     sectorSearchSetOptions(setores);
     formSetorSetOptions(setores.filter(id => _orgSetor(id)?.ativo !== false));
+    if (document.getElementById('modal-ativo')?.classList.contains('open')) _formAmbienteSync();
     const cats = [...state.categorias].sort((a, b) => a.localeCompare(b, 'pt'));
     formCategoriaSetOptions(cats);
     atualizarFiltrosRotina();
@@ -5079,6 +5113,14 @@
     if(!nome || !codigo || !setor || !categoria) {
       showToast('Preencha os campos obrigatórios (*).', 'error'); return;
     }
+    // Ambiente: obrigatório quando o setor tem ambientes vinculados
+    const ambOpts = setorRec && !setorRec.virtual ? _formAmbienteOpts() : [];
+    const ambienteId = document.getElementById('ativo-ambiente')?.value || '';
+    if (ambOpts.length && !ambOpts.some(x => x.id === ambienteId)) {
+      showToast('Escolha o ambiente (sala) do ativo.', 'error');
+      document.getElementById('ativo-ambiente-input')?.focus();
+      return;
+    }
 
     // status de uso
     const statusUso = document.getElementById('btn-ativo-em-pausa')?.classList.contains('active') ? 'em_pausa'
@@ -5089,7 +5131,7 @@
     const pausaOcorrencias = (ativoExistente?.pausaOcorrencias || [])
       .filter(oid => typeof ocPausaResolvida !== 'function' || !ocPausaResolvida(oid, ativoExistente.id));
     if (pausaOcorrencias.length > 0 && statusUso !== 'em_pausa') {
-      showToast('Ativo retirado de uso por ocorrência. Registre a liberação na ocorrência para alterar o status.', 'error'); return;
+      showToast('Ativo retirado de uso por ocorrência. Registre o retorno ao uso ou a retirada de uso (fora de uso / desativado) na ocorrência.', 'error'); return;
     }
     const pausaOTs  = statusUso === 'em_pausa' ? _ativoGetPausaOTs() : [];
     if (statusUso === 'em_pausa' && pausaOTs.length === 0 && pausaOcorrencias.length === 0) {
@@ -5102,6 +5144,13 @@
       nome, codigo, setor, categoria, tipo,
       // Depois da organização em unidades o vínculo é pelo id (o nome fica para exibição)
       setorId: setorRec && !setorRec.virtual ? setorRec.id : undefined,
+      ambienteId: ambOpts.length ? ambienteId : undefined,
+      // Outros setores do mesmo ambiente que também usam o ativo (o responsável continua sendo setorId)
+      setoresCompartilhados: (() => {
+        if (!ambOpts.length || !ambienteId) return undefined;
+        const ids = _formCompOpts().filter(id => _formCompSel.has(id));
+        return ids.length ? ids : undefined;
+      })(),
       marca: tipo === 'Equipamento' ? (document.getElementById('ativo-marca').value.trim() || "-") : "-",
       modelo: tipo === 'Equipamento' ? (document.getElementById('ativo-modelo').value.trim() || "-") : "-",
       serie: tipo === 'Equipamento' ? (document.getElementById('ativo-serie').value.trim() || "-") : "-",
@@ -5124,6 +5173,7 @@
     document.querySelectorAll('#modal-ativo input, #modal-ativo textarea').forEach(el => el.value = '');
     document.getElementById('ativo-setor').value = '';
     document.getElementById('ativo-categoria').value = '';
+    document.getElementById('ativo-ambiente').value = '';
     const _si = document.getElementById('ativo-setor-input'); if (_si) _si.value = '';
     const _ci = document.getElementById('ativo-categoria-input'); if (_ci) _ci.value = '';
     document.getElementById('modal-ativo').classList.remove('open');
@@ -5330,6 +5380,10 @@
     if (uinp && document.activeElement !== uinp) uinp.value = _unitSearchRotulo(_unitSearchVal);
     const uwrap = document.getElementById('unit-search-wrap');
     if (uwrap) uwrap.style.display = _orgMigrado() ? '' : 'none';
+    const ainp = document.getElementById('main-amb-filter-input');
+    if (ainp && document.activeElement !== ainp) ainp.value = _ambSearchRotulo(_ambSearchVal);
+    const awrap = document.getElementById('amb-search-wrap');
+    if (awrap) awrap.style.display = _orgTemAmbientes() ? '' : 'none';
   }
 
   function sectorSearchGetValue() {
@@ -5351,6 +5405,7 @@
       document.addEventListener('mousedown', (e) => {
         if (!e.target.closest('#sector-search-wrap')) _sectorSearchClose();
         if (!e.target.closest('#unit-search-wrap')) _unitSearchClose();
+        if (!e.target.closest('#amb-search-wrap')) _ambSearchClose();
       });
       _sectorSearchClickBound = true;
     }
@@ -5396,7 +5451,7 @@
   }
 
   function _getSectorOptsFromAtivos() {
-    const setores = new Set(_ativosVisiveisParaFiltro(false).map(a => _orgSetorIdDoAtivo(a)).filter(Boolean));
+    const setores = new Set(_ativosVisiveisParaFiltro(false).flatMap(a => _orgSetorIdsDoAtivo(a)).filter(Boolean));
     // mantém apenas os que estão em _sectorSearchOpts (respeita filtro de topbar)
     return _sectorSearchOpts.filter(s => setores.has(s));
   }
@@ -5476,7 +5531,7 @@
   function _unitSearchRenderDropdown(q) {
     const dd = document.getElementById('unit-search-dropdown');
     if (!dd) return;
-    const setores = new Set(_ativosVisiveisParaFiltro(true).map(a => _orgSetorIdDoAtivo(a)).filter(Boolean));
+    const setores = new Set(_ativosVisiveisParaFiltro(true).flatMap(a => _orgSetorIdsDoAtivo(a)).filter(Boolean));
     const opts = [{ val: 'todas', label: 'Todas as unidades', sub: '' },
       ..._orgUnidadesDosSetores(_sectorSearchOpts.filter(s => setores.has(s))).map(o => ({ val: o.value, label: o.label, sub: o.sub }))];
     const filtered = q ? opts.filter(o => (o.label + ' ' + o.sub).toLowerCase().includes(q)) : opts;
@@ -5508,6 +5563,106 @@
     if (dd) dd.style.display = 'none';
   }
 
+  // ── AMBIENTE (filtro de sala na aba Ativos; restrito por unidade e setor) ──
+  let _ambSearchVal = 'todos';
+
+  function _ambSearchRotulo(val) {
+    return val === 'todos' ? '' : (val === '__sem__' ? 'Sem ambiente' : _orgRotuloAmbiente(val));
+  }
+  // Ambientes dos ativos visíveis que passam em unidade + setor (e se há ativos sem ambiente)
+  function _ambSearchOpcoes() {
+    const vis = _ativosVisiveisParaFiltro(false).filter(a => _orgAtivoPassa(a, '', _sectorSearchVal));
+    const ids = new Set();
+    let sem = false;
+    vis.forEach(a => { const x = _orgAmbienteDoAtivo(a); if (x) ids.add(x.id); else sem = true; });
+    const lista = [...ids].map(_orgAmbiente).filter(Boolean)
+      .sort((a, b) => _orgSiglaUnidade(a.unidadeId).localeCompare(_orgSiglaUnidade(b.unidadeId), 'pt-BR')
+        || (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true }))
+      .map(x => ({
+        val: x.id, label: _orgRotuloAmbiente(x.id), unidade: _orgSiglaUnidade(x.unidadeId),
+        sub: _orgSetorIdsDoAmbiente(x).map(id => _orgSetor(id)?.nome).filter(Boolean).join(', ')
+      }));
+    return { lista, sem };
+  }
+  // Valor fora das opções atuais volta para "Todos"
+  function _ambSearchValida() {
+    if (_ambSearchVal === 'todos') return;
+    const { lista, sem } = _ambSearchOpcoes();
+    if (_ambSearchVal === '__sem__' ? !sem : !lista.some(o => o.val === _ambSearchVal)) _ambSearchVal = 'todos';
+  }
+
+  function ambSearchOpen() {
+    _ambSearchRenderDropdown('');
+    const dd = document.getElementById('amb-search-dropdown');
+    if (dd) dd.style.display = '';
+    if (!_sectorSearchClickBound) sectorSearchOpen(), _sectorSearchClose();
+  }
+
+  function ambSearchToggle() {
+    const dd = document.getElementById('amb-search-dropdown');
+    if (!dd) return;
+    if (dd.style.display === 'none' || !dd.style.display) {
+      document.getElementById('main-amb-filter-input')?.focus();
+      ambSearchOpen();
+    } else {
+      _ambSearchClose();
+    }
+  }
+
+  function ambSearchFilter(q) {
+    if (!q.trim() && _ambSearchVal !== 'todos') ambSearchSelect('todos', null);
+    _ambSearchRenderDropdown(q.toLowerCase());
+    const dd = document.getElementById('amb-search-dropdown');
+    if (dd) dd.style.display = '';
+  }
+
+  function ambSearchKey(e) {
+    if (e.key === 'Escape') { _ambSearchClose(); e.target.blur(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#amb-search-dropdown .sector-dd-item');
+      if (first) first.dispatchEvent(new MouseEvent('mousedown'));
+    }
+  }
+
+  function _ambSearchRenderDropdown(q) {
+    const dd = document.getElementById('amb-search-dropdown');
+    if (!dd) return;
+    const { lista, sem } = _ambSearchOpcoes();
+    const opts = [{ val: 'todos', label: 'Todos os ambientes', sub: '', unidade: null }, ...lista,
+      ...(sem ? [{ val: '__sem__', label: 'Sem ambiente', sub: '', unidade: null }] : [])];
+    const filtered = q ? opts.filter(o => (o.label + ' ' + o.sub).toLowerCase().includes(q)) : opts;
+    const agrupar = _unitSearchVal === 'todas' && new Set(lista.map(o => o.unidade)).size > 1;
+    let grupo = null;
+    dd.innerHTML = filtered.length === 0
+      ? `<div class="sector-dd-empty">Nenhum ambiente encontrado</div>`
+      : filtered.map(o => {
+          const head = agrupar && o.unidade && o.unidade !== grupo ? `<div class="sector-dd-group">${_orgEsc(o.unidade)}</div>` : '';
+          if (o.unidade) grupo = o.unidade;
+          return head + `<div class="sector-dd-item${_ambSearchVal === o.val ? ' active' : ''}"
+          onmousedown="ambSearchSelect('${_orgJsAttr(o.val)}',event)">${_orgEsc(o.label)}${o.sub ? ` <small style="color:var(--text-muted)">${_orgEsc(o.sub)}</small>` : ''}</div>`;
+        }).join('');
+  }
+
+  function ambSearchSelect(val, event) {
+    if (event) event.preventDefault();
+    _ambSearchVal = val;
+    _ambSearchClose();
+    document.getElementById('main-amb-filter-input')?.blur();
+    _sectorSearchSyncInputs();
+    if (_categorySearchVal !== 'todas' && !_getCategoryOptsFromAtivos().includes(_categorySearchVal)) {
+      _categorySearchVal = 'todas';
+      const cinp = document.getElementById('main-category-filter-input');
+      if (cinp) cinp.value = '';
+    }
+    renderCards();
+    if (typeof updateNotifBadge === 'function') updateNotifBadge();
+  }
+
+  function _ambSearchClose() {
+    const dd = document.getElementById('amb-search-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+
   // ── CATEGORY SEARCH (filtro digitável de categoria na aba Ativos) ──
   let _categorySearchClickBound = false;
 
@@ -5519,7 +5674,7 @@
       if (_ativosSubtab === 'em_desuso') { if (a.statusUso !== 'em_desuso') return false; }
       else { if (a.statusUso === 'em_desuso') return false; }
       if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(a)) return false;
-      if (!_orgAtivoPassa(a, _unitSearchVal, fSetor)) return false;
+      if (!_orgAtivoPassa(a, _unitSearchVal, fSetor, _ambSearchVal)) return false;
       return true;
     });
     const cats = [...new Set(visible.map(a => a.categoria).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt'));
@@ -5726,6 +5881,143 @@
     document.getElementById('ativo-setor').value = val;
     document.getElementById('ativo-setor-input').value = _orgRotuloSetor(val);
     _formSetorClose();
+    _formAmbienteSync();
+  }
+
+  // ── FORM AMBIENTE (sala do ativo; opções = ambientes vinculados ao setor escolhido) ──
+  let _formAmbienteClickBound = false;
+
+  // Ambientes do setor do formulário (inativo só se já é o do ativo)
+  function _formAmbienteOpts() {
+    const setorId = document.getElementById('ativo-setor')?.value || '';
+    const atual = document.getElementById('ativo-ambiente')?.value || '';
+    return _orgAmbientesDoSetor(setorId, { todos: true }).filter(x => x.ativo !== false || x.id === atual);
+  }
+
+  // Mostra/oculta o campo conforme o setor; um ambiente só → já selecionado
+  function _formAmbienteSync() {
+    const row = document.getElementById('ativo-ambiente-row');
+    const hid = document.getElementById('ativo-ambiente');
+    const inp = document.getElementById('ativo-ambiente-input');
+    if (!row || !hid || !inp) return;
+    const opts = _formAmbienteOpts();
+    if (hid.value && !opts.some(x => x.id === hid.value)) hid.value = '';
+    if (!hid.value && opts.length === 1) hid.value = opts[0].id;
+    row.style.display = opts.length ? '' : 'none';
+    if (document.activeElement !== inp) inp.value = hid.value ? _orgRotuloAmbiente(hid.value) : '';
+    const s = _orgSetor(document.getElementById('ativo-setor')?.value);
+    const hint = document.getElementById('ativo-ambiente-hint');
+    if (hint) hint.textContent = s && opts.length > 1 ? `${opts.length} salas de ${s.nome}` : '';
+    _formCompSync();
+  }
+
+  // ── COMPARTILHAR COM (outros setores do ambiente escolhido) ──
+  let _formCompSel = new Set();
+
+  // Setores do ambiente além do responsável (inativo só se já marcado)
+  function _formCompOpts() {
+    const amb = _orgAmbiente(document.getElementById('ativo-ambiente')?.value || '');
+    const principal = document.getElementById('ativo-setor')?.value || '';
+    if (!amb) return [];
+    return _orgSetorIdsDoAmbiente(amb).filter(id => {
+      const s = orgState.setores?.[id];
+      return s && id !== principal && (s.ativo !== false || _formCompSel.has(id));
+    });
+  }
+
+  function _formCompSync() {
+    const row = document.getElementById('ativo-comp-row');
+    const box = document.getElementById('ativo-comp-chips');
+    if (!row || !box) return;
+    const opts = _formCompOpts();
+    row.style.display = opts.length ? '' : 'none';
+    box.innerHTML = opts.map(id => {
+      const on = _formCompSel.has(id);
+      return `<button type="button" class="comp-chip${on ? ' on' : ''}" aria-pressed="${on}" onclick="formCompToggle(this,'${_orgJsAttr(id)}')">
+        <span class="org-toggle-chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>${_orgEsc(_orgSetor(id)?.nome || id)}</button>`;
+    }).join('');
+  }
+
+  function formCompToggle(btn, id) {
+    const on = !_formCompSel.has(id);
+    if (on) _formCompSel.add(id); else _formCompSel.delete(id);
+    btn.classList.toggle('on', on);
+    btn.setAttribute('aria-pressed', on);
+  }
+
+  function formAmbienteOpen() {
+    _formAmbienteRenderDropdown(document.getElementById('ativo-ambiente-input')?.value?.toLowerCase() || '');
+    const dd = document.getElementById('form-ambiente-dropdown');
+    if (dd) dd.style.display = '';
+    if (!_formAmbienteClickBound) {
+      document.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('#form-ambiente-wrap')) _formAmbienteClose();
+      });
+      _formAmbienteClickBound = true;
+    }
+  }
+
+  function formAmbienteToggle() {
+    const dd = document.getElementById('form-ambiente-dropdown');
+    if (!dd) return;
+    if (dd.style.display === 'none' || !dd.style.display) {
+      document.getElementById('ativo-ambiente-input')?.focus();
+      formAmbienteOpen();
+    } else {
+      _formAmbienteClose();
+    }
+  }
+
+  function formAmbienteFilter(q) {
+    _formAmbienteRenderDropdown(q.toLowerCase());
+    const dd = document.getElementById('form-ambiente-dropdown');
+    if (dd) dd.style.display = '';
+    document.getElementById('ativo-ambiente').value = '';
+  }
+
+  function formAmbienteKey(e) {
+    if (e.key === 'Escape') { _formAmbienteClose(); e.target.blur(); }
+    if (e.key === 'Enter') {
+      const first = document.querySelector('#form-ambiente-dropdown .sector-dd-item');
+      if (first) first.dispatchEvent(new MouseEvent('mousedown'));
+    }
+  }
+
+  function _formAmbienteRenderDropdown(q) {
+    const dd = document.getElementById('form-ambiente-dropdown');
+    if (!dd) return;
+    const setorId = document.getElementById('ativo-setor')?.value || '';
+    const curVal = document.getElementById('ativo-ambiente').value;
+    const opts = _formAmbienteOpts().map(x => ({
+      val: x.id, label: _orgRotuloAmbiente(x.id),
+      // Outros setores que dividem a sala
+      tambem: _orgSetorIdsDoAmbiente(x).filter(id => id !== setorId).map(id => _orgSetor(id)?.nome).filter(Boolean)
+    }));
+    const filtered = q ? opts.filter(o => o.label.toLowerCase().includes(q)) : opts;
+    dd.innerHTML = filtered.length === 0
+      ? `<div class="sector-dd-empty">Nenhum ambiente encontrado</div>`
+      : filtered.map(o => `<div class="sector-dd-item amb-dd-item${curVal === o.val ? ' active' : ''}"
+          onmousedown="formAmbienteSelect('${_orgJsAttr(o.val)}',event)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M6 21V4a1 1 0 011-1h10a1 1 0 011 1v17"/><circle cx="14.5" cy="12" r=".9" fill="currentColor"/></svg><span>${_orgEsc(o.label)}${o.tambem.length ? `<small>também: ${_orgEsc(o.tambem.join(', '))}</small>` : ''}</span></div>`).join('');
+  }
+
+  function formAmbienteSelect(val, event) {
+    if (event) event.preventDefault();
+    document.getElementById('ativo-ambiente').value = val;
+    document.getElementById('ativo-ambiente-input').value = _orgRotuloAmbiente(val);
+    _formAmbienteClose();
+    _formCompSync();
+  }
+
+  function _formAmbienteClose() {
+    const dd = document.getElementById('form-ambiente-dropdown');
+    if (dd) dd.style.display = 'none';
+  }
+
+  // Abre a janela da unidade do setor escolhido, na aba Ambientes
+  function formAmbienteGerenciar() {
+    const un = _orgUnidadeIdDoSetor(document.getElementById('ativo-setor')?.value || '');
+    if (un && typeof orgAbrirAmbientes === 'function') orgAbrirAmbientes(un);
+    else openSetorModal();
   }
 
   function _formSetorClose() {
@@ -5838,6 +6130,7 @@
     const fSetor = (typeof sectorSearchGetValue === 'function') ? sectorSearchGetValue() : 'todos';
     const fCat = (typeof categorySearchGetValue === 'function') ? categorySearchGetValue() : 'todas';
     const fBusca = _normalizeSearch(document.getElementById('ativos-search-input')?.value);
+    _ambSearchValida();
 
     // Atualizar visibilidade do filtro de tipo (só mostra se existir mais de 1 tipo nos ativos visíveis)
     const tiposUsados = [...new Set(state.ativos.filter(a => {
@@ -5858,7 +6151,7 @@
           if (item.statusUso === 'em_desuso') return false;
         }
         if (typeof _userCanSeeAtivo === 'function' && !_userCanSeeAtivo(item)) return false;
-        const matchSetor = _orgAtivoPassa(item, _unitSearchVal, fSetor);
+        const matchSetor = _orgAtivoPassa(item, _unitSearchVal, fSetor, _ambSearchVal);
         const matchCat = fCat === 'todas' || item.categoria === fCat;
         const matchTipo = _tipoSearchVal === 'todos' || (item.tipo || 'Equipamento') === _tipoSearchVal;
         if (!matchSetor || !matchCat || !matchTipo) return false;
@@ -5913,9 +6206,12 @@
       <div class="asset-card ${alertCls}" onclick="visualizarAtivo(${index})">
         <div class="asset-header">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
-            <div>
+            <div style="min-width:0;">
               <div class="asset-title">${a.nome}</div>
-              <div class="asset-code">${a.codigo}</div>
+              <div class="asset-sub">
+                <span class="asset-code">${a.codigo}</span>
+                ${a.categoria ? `<span class="asset-cat" title="Categoria: ${_orgEsc(a.categoria)}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 01-2.83 0L2 12V2h10l8.59 8.59a2 2 0 010 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg><span>${_orgEsc(a.categoria)}</span></span>` : ''}
+              </div>
             </div>
             ${flagHtml}
           </div>
@@ -5926,13 +6222,26 @@
           <div class="asset-row"><span class="asset-label">Modelo</span><span class="asset-val">${a.modelo}</span></div>
           <div class="asset-row"><span class="asset-label">Nº Série</span><span class="asset-val">${a.serie}</span></div>
         </div>` : a.nota ? `<div class="asset-body"><div class="asset-row" style="flex-direction:column;align-items:flex-start;gap:2px;"><span class="asset-label">Observações</span><span class="asset-val" style="font-weight:400;color:var(--text-secondary);font-size:12px;white-space:pre-line;max-height:52px;overflow:hidden;">${a.nota}</span></div></div>` : `<div class="asset-body" style="min-height:32px;"></div>`}
-        <div class="asset-badges">
-          ${a.tipo && a.tipo !== 'Equipamento' ? `<span class="badge" style="background:rgba(99,102,241,0.1);color:#6366f1;border-color:rgba(99,102,241,0.3);">${a.tipo}</span>` : ''}
-          <span class="badge">${_orgEsc(_orgRotuloAtivo(a))}</span>
-          <span class="badge">${a.categoria}</span>
-        </div>
+        ${_assetLocHTML(a)}
       </div>`;
     }).join('');
+  }
+
+  // Rodapé do card: trilha "[NTO] Setor › Sala" em uma linha (rótulo completo no title)
+  function _assetLocHTML(a) {
+    const s = _orgSetorDoAtivo(a);
+    const un = s?.unidadeId ? _orgUnidade(s.unidadeId) : null;
+    const setor = s?.nome || a.setor || '—';
+    const amb = _orgAmbienteDoAtivo(a);
+    const tipo = a.tipo && a.tipo !== 'Equipamento' ? a.tipo : '';
+    const comp = _orgSetoresCompDoAtivo(a).map(id => orgState.setores[id].nome);
+    return `<div class="asset-loc" title="${_orgEsc(_orgRotuloAtivo(a, { ambiente: true, compartilhado: true }))}">
+      ${un ? `<span class="asset-loc-un" style="--org-cor:${_orgCor(un)}">${_orgEsc(un.sigla)}</span>` : ''}
+      <span class="asset-loc-setor${amb ? '' : ' so'}">${_orgEsc(setor)}</span>
+      ${comp.length ? `<span class="asset-loc-mais" title="Compartilhado com: ${_orgEsc(comp.join(', '))}">+${comp.length}</span>` : ''}
+      ${amb ? `<span class="asset-loc-sep">›</span><span class="asset-loc-amb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M6 21V4a1 1 0 011-1h10a1 1 0 011 1v17"/><circle cx="14.5" cy="12" r=".9" fill="currentColor"/></svg><span>${_orgEsc(_orgRotuloAmbiente(amb.id))}</span></span>` : ''}
+      ${tipo ? `<span class="asset-loc-tipo">${_orgEsc(tipo)}</span>` : ''}
+    </div>`;
   }
 
   function openAtivoAlertasResumo(equipamentoIdx) {
@@ -5965,6 +6274,7 @@
       ['Publicações', nPubsArq ? `${nPubs} + ${nPubsArq} arquivadas` : nPubs],
       ...(_orgMigrado() ? [['Unidades', nUnidades]] : []),
       ['Setores', nSetores],
+      ...(_orgTemAmbientes() ? [['Ambientes', _orgAmbientes().length]] : []),
       ['Categorias', nCats],
       ['Tamanho do banco', sizeKb + ' KB'],
       ['Chave de armazenamento', STORAGE_KEY],

@@ -1156,6 +1156,19 @@
               </span>
               <div id="sector-search-dropdown" class="sector-search-dropdown" style="display:none;"></div>
             </div>
+            <div class="sector-search-wrap" id="amb-search-wrap" style="position:relative;display:none;">
+              <span class="amb-input-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M6 21V4a1 1 0 011-1h10a1 1 0 011 1v17"/><circle cx="14.5" cy="12" r=".9" fill="currentColor"/></svg></span>
+              <input id="main-amb-filter-input" type="text" class="field-input sector-search-input amb-input"
+                placeholder="Ambiente (Todos)" autocomplete="off"
+                oninput="ambSearchFilter(this.value)"
+                onfocus="ambSearchOpen()"
+                onkeydown="ambSearchKey(event)"
+                style="min-width:170px;height:36px;font-size:13px;padding-right:28px;">
+              <span class="sector-search-caret" onclick="ambSearchToggle()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;"><polyline points="6 9 12 15 18 9"/></svg>
+              </span>
+              <div id="amb-search-dropdown" class="sector-search-dropdown" style="display:none;"></div>
+            </div>
             <button id="btn-editar-setor-toolbar" class="btn btn-outline btn-icon" onclick="openSetorModal()" title="Unidades e setores">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
@@ -1407,7 +1420,7 @@
 </div>
 
 <!-- ══════════ DRAWER BACKDROP ══════════ -->
-<div id="drawer-backdrop" class="drawer-backdrop" onclick="closeAllDrawers()"></div>
+<div id="drawer-backdrop" class="drawer-backdrop"></div>
 
 <!-- ══════════ DRAWER DIREITO — ROTINA ══════════ -->
 <div id="right-drawer" class="right-drawer">
@@ -2473,6 +2486,36 @@
             </div>
           </div>
         </div>
+        <!-- Ambiente (sala): aparece quando o setor escolhido tem ambientes vinculados (org.js) -->
+        <div class="form-row" id="ativo-ambiente-row" style="display:none;">
+          <div class="form-field">
+            <label class="field-label">Ambiente <span class="required">*</span> <span class="amb-hint" id="ativo-ambiente-hint"></span></label>
+            <div class="input-with-btn">
+              <div class="sector-search-wrap" id="form-ambiente-wrap" style="position:relative;flex:1;">
+                <span class="amb-input-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M6 21V4a1 1 0 011-1h10a1 1 0 011 1v17"/><circle cx="14.5" cy="12" r=".9" fill="currentColor"/></svg></span>
+                <input id="ativo-ambiente-input" type="text" class="field-input sector-search-input amb-input"
+                  placeholder="Selecione a sala..." autocomplete="off"
+                  oninput="formAmbienteFilter(this.value)"
+                  onfocus="formAmbienteOpen()"
+                  onkeydown="formAmbienteKey(event)"
+                  style="width:100%;height:36px;font-size:13px;padding-right:28px;">
+                <span class="sector-search-caret" onclick="formAmbienteToggle()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px;"><polyline points="6 9 12 15 18 9"/></svg>
+                </span>
+                <div id="form-ambiente-dropdown" class="sector-search-dropdown" style="display:none;"></div>
+                <input type="hidden" id="ativo-ambiente">
+              </div>
+              <button class="btn btn-outline btn-icon" onclick="formAmbienteGerenciar()" title="Ambientes da unidade"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
+            </div>
+          </div>
+        </div>
+        <!-- Setores compartilhados: outros setores do mesmo ambiente que também usam o ativo (org.js) -->
+        <div class="form-row" id="ativo-comp-row" style="display:none;">
+          <div class="form-field">
+            <label class="field-label">Compartilhar com <span class="amb-hint">outros setores deste ambiente — o setor acima continua responsável</span></label>
+            <div class="comp-chips" id="ativo-comp-chips"></div>
+          </div>
+        </div>
       </div>
 
       <div class="form-section" id="ativo-especificacoes-section">
@@ -2579,7 +2622,7 @@
 </div>
 
 <!-- Janela da unidade: setores em chips (org.js) -->
-<div class="modal-overlay" id="modal-org-unidade" onclick="if(event.target===this)orgFecharUnidade()">
+<div class="modal-overlay" id="modal-org-unidade">
   <div class="modal org-det-modal">
     <div class="modal-header">
       <div class="modal-header-left">
@@ -3254,6 +3297,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <script src="bd.js"></script>
+<script src="dialogo.js"></script>
 <script src="key.js"></script>
 <script src="upload.js"></script>
 <script src="script.js"></script>
@@ -3265,6 +3309,7 @@
 <script src="cq-engine.js"></script>
 <script src="cq.js"></script>
 <script src="cq-cadastros.js"></script>
+<script src="cq-trocas.js"></script>
 <script src="cq-lancamento.js"></script>
 <script src="cq-esterilizacao.js"></script>
 <script src="cq-graficos.js"></script>

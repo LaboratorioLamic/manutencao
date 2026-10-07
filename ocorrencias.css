@@ -237,6 +237,7 @@ body.dark-mode .oc-tipo-alerta { color: var(--text-secondary); }
 }
 .oc-liberado > svg { width: 20px; height: 20px; flex-shrink: 0; }
 .oc-liberado .oc-info-val { color: var(--text-primary); }
+.oc-liberado.oc-retirado { background: var(--bg-secondary, rgba(120,120,120,0.06)); border-color: var(--border); color: var(--text-secondary); }
 .oc-hist { font-size: 12.5px; color: var(--text-secondary); padding: 6px 0; border-bottom: 1px dashed var(--border); }
 
 /* Trilha */
@@ -395,6 +396,94 @@ body.dark-mode .oc-tipo-alerta { color: var(--text-secondary); }
 .oc-cat-chip button { border: none; background: none; cursor: pointer; color: var(--text-muted); font-size: 14px; line-height: 1; padding: 0 2px; }
 .oc-cat-chip button:hover { color: var(--red); }
 .oc-cat-add { display: flex; gap: 8px; max-width: 460px; }
+
+/* Modal de prompt: subtítulo pode ser longo (ex.: descrição da ação) */
+#modal-oc-prompt .modal-header { height: auto; min-height: 68px; padding-top: 14px; padding-bottom: 14px; gap: 16px; }
+#modal-oc-prompt .modal-header-left { min-width: 0; }
+#modal-oc-prompt .modal-header-left > div:last-child { min-width: 0; }
+#modal-oc-prompt .modal-subtitle {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  overflow: hidden; overflow-wrap: anywhere; line-height: 1.4; margin-top: 2px;
+}
+
+/* Popover de seleção (ativos / desfecho) */
+.oc-pop-wrap { position: relative; }
+.oc-pop-trigger {
+  width: 100%; min-height: 42px; display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px 6px 10px; background: var(--bg); color: var(--text-primary);
+  border: 1.5px solid var(--border); border-radius: 8px;
+  font: inherit; font-size: 13px; text-align: left; cursor: pointer; transition: var(--transition);
+}
+.oc-pop-trigger:hover { border-color: #c4cfe0; }
+.oc-pop-trigger[aria-expanded="true"] { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0,168,204,0.12); }
+.oc-pop-val { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.oc-pop-ph { color: var(--text-muted); padding-left: 4px; }
+.oc-pop-chip {
+  display: inline-flex; align-items: center; max-width: 100%;
+  padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600;
+  background: var(--cyan-light); color: var(--cyan);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.oc-pop-count { font-size: 11px; font-weight: 600; color: var(--text-muted); }
+.oc-pop-chev {
+  width: 8px; height: 8px; flex-shrink: 0; margin: -3px 2px 0 0;
+  border-right: 2px solid var(--text-muted); border-bottom: 2px solid var(--text-muted);
+  transform: rotate(45deg); transition: transform .18s ease;
+}
+.oc-pop-trigger[aria-expanded="true"] .oc-pop-chev { transform: rotate(-135deg); margin-top: 4px; }
+
+.oc-pop {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 50;
+  min-width: 280px; max-height: 340px; overflow-y: auto; padding: 6px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  opacity: 0; visibility: hidden; transform: translateY(-4px) scale(.98); transform-origin: top center;
+  transition: opacity .15s ease, transform .15s ease, visibility .15s;
+}
+.oc-pop.open { opacity: 1; visibility: visible; transform: none; }
+.oc-pop-head {
+  display: flex; align-items: center; gap: 10px; padding: 4px 8px 8px;
+  margin-bottom: 4px; border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted);
+}
+.oc-pop-head span { flex: 1; }
+.oc-pop-link { border: none; background: none; padding: 2px 4px; font: inherit; color: var(--cyan); cursor: pointer; text-transform: none; letter-spacing: 0; font-size: 12px; }
+.oc-pop-link:hover { text-decoration: underline; }
+
+.oc-pop-opt {
+  --opt-cor: var(--cyan);
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px; margin: 2px 0;
+  border: 1.5px solid transparent; border-radius: var(--radius); cursor: pointer; transition: var(--transition);
+}
+.oc-pop-opt:hover { background: var(--bg); }
+.oc-pop-opt input { position: absolute; opacity: 0; pointer-events: none; }
+.oc-pop-opt:has(input:focus-visible) { border-color: var(--opt-cor); }
+.oc-pop-opt:has(input:checked) { border-color: var(--opt-cor); background: color-mix(in srgb, var(--opt-cor) 8%, transparent); }
+.oc-pop-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.oc-pop-txt b { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.oc-pop-txt small { display: flex; align-items: center; gap: 4px; font-size: 11.5px; color: var(--text-muted); line-height: 1.35; }
+.oc-pop-txt small svg { width: 11px; height: 11px; flex-shrink: 0; }
+.oc-pop-mark {
+  width: 18px; height: 18px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; color: #fff; background: var(--opt-cor); opacity: 0; transform: scale(.6); transition: var(--transition);
+}
+.oc-pop-mark svg { width: 11px; height: 11px; }
+.oc-pop-opt:has(input:checked) .oc-pop-mark { opacity: 1; transform: none; }
+/* Multi-seleção: caixinha sempre visível, preenchida quando marcada */
+.oc-pop-mark-check { border-radius: 5px; background: transparent; border: 1.5px solid #c4cfe0; opacity: 1; transform: none; }
+.oc-pop-mark-check svg { opacity: 0; }
+.oc-pop-opt:has(input:checked) .oc-pop-mark-check { background: var(--opt-cor); border-color: var(--opt-cor); }
+.oc-pop-opt:has(input:checked) .oc-pop-mark-check svg { opacity: 1; }
+.oc-pop-ico {
+  width: 32px; height: 32px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  border-radius: var(--radius); color: var(--opt-cor); background: color-mix(in srgb, var(--opt-cor) 12%, transparent);
+}
+.oc-pop-ico svg { width: 16px; height: 16px; }
+.oc-pop-trigger .oc-pop-ico { width: 26px; height: 26px; }
+.oc-pop-trigger .oc-pop-ico svg { width: 14px; height: 14px; }
+.oc-desf-retorno { --opt-cor: var(--green); }
+.oc-desf-desuso  { --opt-cor: #d97706; }
+.oc-desf-baixa   { --opt-cor: var(--red); }
 
 /* ── Responsividade ── */
 @media (max-width: 900px) {

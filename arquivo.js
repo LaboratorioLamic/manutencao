@@ -379,9 +379,12 @@ async function arqExecutarArquivamento() {
   const corte = _arqDataCorte();
   const plano = _arqPlanejar(state.publicacoes, corte);
   if (!plano.qtd) { showToast('Nenhuma publicação anterior ao corte para arquivar.', 'info'); arqRenderPainel(); return; }
-  if (!confirm(`Arquivar ${plano.qtd} publicação(ões) realizadas antes de ${formatDate(corte)}?\n\n` +
-    'Os registros não são apagados: passam para o arquivo compactado, ficam somente leitura ' +
-    'e são carregados sob demanda ao consultar histórico antigo.')) return;
+  if (!(await uiConfirmar({
+    tipo: 'info', titulo: 'Arquivar histórico?', confirmar: 'Arquivar',
+    mensagem: `<b>${plano.qtd} publicação(ões)</b> realizadas antes de <b>${formatDate(corte)}</b> serão arquivadas.`,
+    detalhe: 'Os registros não são apagados: passam para o arquivo compactado, ficam somente leitura e são carregados sob demanda ao consultar histórico antigo.',
+  }))) return;
+  if (_arqEmExecucao) return;
 
   _arqEmExecucao = true;
   arqRenderPainel();

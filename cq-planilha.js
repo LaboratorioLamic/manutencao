@@ -14,25 +14,25 @@ const CQ_XLSX_SRI = 'sha512-r22gChDnGvBylk90+2e/ycr3RVrDi8DIOkIGNhJlKfuyQM4tIRAI
 const CQ_PL_HORA_PADRAO = '08:00';
 
 const CQ_PL_COLS = {
-  'Unidades': ['Sigla', 'Nome', 'CNES', 'Fuso horário', 'Ativa'],
-  'Setores': ['Unidade', 'Setor', 'Ativo'],
+  'Áreas': ['Sigla', 'Nome', 'CNES', 'Fuso horário', 'Ativa'],
+  'Setores': ['Área', 'Setor', 'Ativo'],
   'Analitos': ['Código', 'Nome', 'Tipo', 'Unidade de medida', 'Casas decimais', 'Especialidade', 'ETa', 'Tipo do ETa', 'Fonte do ETa', 'Referência do ETa',
-    'Resultados possíveis', 'Tolerância (categorias)', 'Equipamentos', 'Sistemas sem equipamento', 'Ativo', 'Unidades'],
+    'Resultados possíveis', 'Tolerância (categorias)', 'Equipamentos', 'Sistemas sem equipamento', 'Ativo', 'Áreas'],
   'Materiais': ['Nome', 'Fabricante', 'Tipo', 'Fornecedor', 'Registro ANVISA', 'Código de referência', 'Matriz', 'Estabilidade após abertura (dias)', 'Armazenamento', 'Níveis',
-    'Equipamentos / sistemas', 'Analitos', 'Ativo', 'Unidades'],
-  'Lotes de controle': ['Material', 'Fabricante', 'Lote', 'Validade', 'Níveis', 'Situação', 'Link da bula', 'Observações', 'Unidades'],
-  'Insumos': ['Tipo', 'Produto', 'Lote', 'Validade', 'Fabricante', 'Registro ANVISA', 'Situação', 'Equipamentos / sistemas', 'Analitos', 'Unidades'],
-  'Testes': ['Unidade', 'Setor', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Níveis', 'Material',
+    'Equipamentos / sistemas', 'Analitos', 'Ativo', 'Áreas'],
+  'Lotes de controle': ['Material', 'Fabricante', 'Lote', 'Validade', 'Níveis', 'Situação', 'Link da bula', 'Observações', 'Áreas'],
+  'Insumos': ['Tipo', 'Produto', 'Lote', 'Validade', 'Fabricante', 'Registro ANVISA', 'Situação', 'Equipamentos / sistemas', 'Analitos', 'Áreas'],
+  'Testes': ['Área', 'Setor', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Níveis', 'Material',
     'Lote N1', 'Lote N2', 'Lote N3', 'Conjunto de regras', 'Regras', 'Frequência', 'Vezes ao dia', 'Início de uso',
     'N1 rótulo', 'N1 material', 'N1 esperado', 'N2 rótulo', 'N2 material', 'N2 esperado', 'N3 rótulo', 'N3 material', 'N3 esperado',
     'Insumo controlado', 'Produto do insumo', 'Exigir lote do insumo', 'Ativo'],
-  'Alvos': ['Unidade', 'Setor', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Lote', 'Nível', 'Média', 'DP', 'CV (%)',
+  'Alvos': ['Área', 'Setor', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Lote', 'Nível', 'Média', 'DP', 'CV (%)',
     'Origem', 'Vigente desde', 'N pontos', 'Justificativa'],
-  'Resultados': ['Unidade', 'Setor', 'Data/hora', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Nível', 'Valor', 'Resultado',
+  'Resultados': ['Área', 'Setor', 'Data/hora', 'Analito', 'Unidade de medida', 'Equipamento / sistema', 'Código do equipamento', 'Método', 'Nível', 'Valor', 'Resultado',
     'Lote do controle', 'Lote do reagente / insumo', 'Lote do calibrador', 'Decisão', 'Comentário da decisão', 'Operador',
     'Nº da corrida', 'Esperado', 'Média', 'DP', 'z', 'Situação', 'Regras violadas', 'Lançado por', 'Lançado em', 'Invalidado'],
-  'Corridas': ['Unidade', 'Setor', 'Nº', 'Data/hora', 'Equipamento / sistema', 'Situação', 'Operador', 'Lançado por', 'Lançado em', 'Estação', 'Testes', 'Observação'],
-  'Não conformidades': ['Unidade', 'Setor', 'Número', 'Situação', 'Tipo', 'Teste', 'Corrida', 'Data da corrida', 'Violações', 'Causa', 'Investigação', 'Ações',
+  'Corridas': ['Área', 'Setor', 'Nº', 'Data/hora', 'Equipamento / sistema', 'Situação', 'Operador', 'Lançado por', 'Lançado em', 'Estação', 'Testes', 'Observação'],
+  'Não conformidades': ['Área', 'Setor', 'Número', 'Situação', 'Tipo', 'Teste', 'Corrida', 'Data da corrida', 'Violações', 'Causa', 'Investigação', 'Ações',
     'Impacto em pacientes', 'Conclusão', 'Aberta em', 'Aberta por'],
 };
 // Abas lidas na importação (as demais são só de consulta)
@@ -45,10 +45,10 @@ const CQ_PL_INSTRUCOES = [
   ['Mantenha os nomes das abas e os títulos das colunas. Linhas em branco são ignoradas.'],
   ['Registros que já existem no sistema são ignorados (não são alterados). Para alterar um cadastro use o formulário do sistema.'],
   ['A importação é tudo ou nada: se houver qualquer erro, nada é gravado e a lista de erros é exibida.'],
-  ['Unidades não são importadas: cadastre-as em Configurações › Controle de Qualidade e use a sigla na coluna Unidade.'],
+  ['Áreas não são importadas: cadastre-as em Configurações › Controle de Qualidade e use a sigla na coluna Área.'],
   ['Testes › Setor: nome do setor dentro da unidade (Ativos › Unidades e setores). Vazio: o setor do equipamento. Nas demais abas a coluna Setor é apenas consulta.'],
-  ['Analitos, Materiais, Lotes de controle e Insumos › Unidades: siglas das unidades que usam o cadastro, separadas por ";". Vazio: unidades dos testes importados que o usam ou, sem uso, a unidade ativa.'],
-  ['Cadastro existente com outra unidade na coluna Unidades (ou usado por teste/resultado de outra unidade) recebe a associação a essa unidade.'],
+  ['Analitos, Materiais, Lotes de controle e Insumos › Áreas: siglas das áreas que usam o cadastro, separadas por ";". Vazio: áreas dos testes importados que o usam ou, sem uso, a área ativa.'],
+  ['Cadastro existente com outra área na coluna Áreas (ou usado por teste/resultado de outra área) recebe a associação a essa área.'],
   [''],
   ['Datas: dd/mm/aaaa ou células de data do Excel. Data/hora: dd/mm/aaaa hh:mm (sem hora, assume ' + CQ_PL_HORA_PADRAO + ').'],
   ['Listas: separe por ";" (ex.: Níveis "1;2"; Analitos "Glicose;Ureia"; Resultados possíveis "Positivo;Negativo").'],
@@ -59,10 +59,10 @@ const CQ_PL_INSTRUCOES = [
   ['Analitos › Equipamentos: códigos (ou nomes) de ativos, separados por ";". Materiais e Insumos › Equipamentos / sistemas: códigos ou nomes de ativos e/ou nomes de sistemas sem equipamento dos analitos, separados por ";" (vazio = qualquer).'],
   ['O equipamento/sistema de um teste deve estar vinculado ao analito; se não estiver, a importação acrescenta o vínculo ao analito.'],
   [''],
-  ['Resultados: cada linha é um nível de um teste. Linhas com a mesma unidade, data/hora e equipamento formam uma corrida.'],
+  ['Resultados: cada linha é um nível de um teste. Linhas com a mesma área, data/hora e equipamento formam uma corrida.'],
   ['Quantitativos usam a coluna Valor; qualitativos, a coluna Resultado. Lote do controle vazio = lote em uso no teste; sem lote em uso (ou lote não cadastrado) o resultado entra sem alvo, com observação na corrida.'],
   ['As regras são aplicadas na ordem cronológica, considerando o histórico já gravado. Resultados já existentes (mesmo teste e data/hora) são ignorados.'],
-  ['Decisão (opcional): Liberado, Rejeitado ou Liberado com justificativa. Vazio: aceitos são liberados conforme a política da unidade; os demais ficam aguardando avaliação.'],
+  ['Decisão (opcional): Liberado, Rejeitado ou Liberado com justificativa. Vazio: aceitos são liberados conforme a política da área; os demais ficam aguardando avaliação.'],
   ['Decisões de rejeição importadas não abrem não conformidade automaticamente; registre-as no sistema se necessário.'],
   ['Colunas Nº da corrida, Esperado, Média, DP, z, Situação, Regras violadas, Lançado por/em e Invalidado são apenas de consulta.'],
 ];
@@ -211,8 +211,8 @@ function cqPlanilhaExportarForm() {
   const ini = CQEngine.mesesAnteriores(mesAtual.replace('-', ''), 12).pop();
   _cqPrompt({
     titulo: 'Exportar dados do CQ para Excel', subtitulo: 'Cadastros, alvos, corridas, resultados e não conformidades',
-    corpo: `<div class="form-field"><label class="field-label">Unidade</label><select id="cq-pl-un" class="field-select">
-        <option value="">Todas as unidades visíveis</option>${uns.map(u => `<option value="${u.id}">${_cqEsc(u.sigla)} — ${_cqEsc(u.nome)}</option>`).join('')}</select></div>
+    corpo: `<div class="form-field"><label class="field-label">Área</label><select id="cq-pl-un" class="field-select">
+        <option value="">Todas as áreas visíveis</option>${uns.map(u => `<option value="${u.id}">${_cqEsc(u.sigla)} — ${_cqEsc(u.nome)}</option>`).join('')}</select></div>
       <div class="form-row"><div class="form-field"><label class="field-label">Corridas de (mês)</label><input type="month" id="cq-pl-de" class="field-input" value="${ini.slice(0, 4)}-${ini.slice(4)}"></div>
         <div class="form-field"><label class="field-label">até</label><input type="month" id="cq-pl-ate" class="field-input" value="${mesAtual}"></div></div>
       <div class="cq-nota">Cadastros e alvos são exportados por completo; o período limita corridas, resultados e não conformidades.</div>`,
@@ -224,7 +224,7 @@ function cqPlanilhaExportarForm() {
       try {
         const XLSX = await _cqXlsx();
         const dados = await _cqPlExportarDados({ unidades: uid ? [uid] : uns.map(u => u.id), de, ate });
-        _cqPlEscrever(XLSX, dados, `cq-dados-${uid ? cqState.config.unidades[uid]?.sigla || 'unidade' : 'todas'}-${de}-${ate}.xlsx`);
+        _cqPlEscrever(XLSX, dados, `cq-dados-${uid ? cqState.config.unidades[uid]?.sigla || 'area' : 'todas'}-${de}-${ate}.xlsx`);
         showToast('Planilha exportada.', 'success');
         return true;
       } catch (err) {
@@ -272,15 +272,15 @@ async function _cqPlExportarDados({ unidades, de, ate }) {
   const ins = id => cfg.insumos[id];
   const setorNome = id => id ? (_orgSetor(id)?.nome || '') : '';
   const refTeste = t => ({
-    'Unidade': un(t.unidadeId), 'Setor': setorNome(_cqSetorDoTeste(t)), 'Analito': an(t.analitoId)?.nome || '', 'Unidade de medida': an(t.analitoId)?.unidadeMedida || '',
+    'Área': un(t.unidadeId), 'Setor': setorNome(_cqSetorDoTeste(t)), 'Analito': an(t.analitoId)?.nome || '', 'Unidade de medida': an(t.analitoId)?.unidadeMedida || '',
     'Equipamento / sistema': _cqEquipTeste(t), 'Código do equipamento': t.ativoId ? (_cqPlAtivo(t.ativoId)?.codigo || t.ativoSnap?.codigo || '') : '', 'Método': t.metodo || '',
   });
   const ordenar = (arr, f) => arr.sort((a, b) => f(a).localeCompare(f(b)));
   const d = {};
 
-  d['Unidades'] = ordenar(Object.values(cfg.unidades).filter(u => unidades.includes(u.id)), u => u.sigla || '')
+  d['Áreas'] = ordenar(Object.values(cfg.unidades).filter(u => unidades.includes(u.id)), u => u.sigla || '')
     .map(u => ({ 'Sigla': u.sigla, 'Nome': u.nome, 'CNES': u.cnes || '', 'Fuso horário': u.fuso || '', 'Ativa': _cqPlSN(u.ativa) }));
-  d['Setores'] = unidades.flatMap(u => _cqSetoresDaUnidade(u).map(s => ({ 'Unidade': un(u), 'Setor': s.nome, 'Ativo': _cqPlSN(s.ativo) })));
+  d['Setores'] = unidades.flatMap(u => _cqSetoresDaUnidade(u).map(s => ({ 'Área': un(u), 'Setor': s.nome, 'Ativo': _cqPlSN(s.ativo) })));
   // Cadastros das unidades exportadas (os antigos sem unidade entram sempre)
   const noEscopo = r => !_cqUnidadesRec(r).length || _cqUnidadesRec(r).some(u => unidades.includes(u));
   const siglas = r => _cqUnidadesRec(r).map(un).join('; ');
@@ -289,20 +289,20 @@ async function _cqPlExportarDados({ unidades, de, ate }) {
     'Casas decimais': a.tipo && a.tipo !== 'quantitativo' ? '' : (a.decimais ?? 0), 'Especialidade': a.especialidade || '',
     'ETa': a.eta?.valor ?? '', 'Tipo do ETa': a.eta ? (a.eta.tipo === 'abs' ? 'absoluto' : '%') : '', 'Fonte do ETa': a.eta?.fonte || '', 'Referência do ETa': a.eta?.referencia || '',
     'Resultados possíveis': _cqArr(a.escala).join('; '), 'Tolerância (categorias)': a.toleranciaPassos ?? '',
-    'Equipamentos': _cqArr(a.ativoIds).map(_cqPlRefAtivo).filter(Boolean).join('; '), 'Sistemas sem equipamento': _cqArr(a.sistemas).join('; '), 'Ativo': _cqPlSN(a.ativo), 'Unidades': siglas(a),
+    'Equipamentos': _cqArr(a.ativoIds).map(_cqPlRefAtivo).filter(Boolean).join('; '), 'Sistemas sem equipamento': _cqArr(a.sistemas).join('; '), 'Ativo': _cqPlSN(a.ativo), 'Áreas': siglas(a),
   }));
   d['Materiais'] = ordenar(Object.values(cfg.materiais).filter(noEscopo), m => m.nome || '').map(m => ({
     'Nome': m.nome, 'Fabricante': m.fabricante || '', 'Tipo': CQ_TIPOS_MATERIAL[m.tipo] || m.tipo || '', 'Fornecedor': m.fornecedor || '', 'Registro ANVISA': m.regAnvisa || '',
     'Código de referência': m.codigoReferencia || '', 'Matriz': m.matriz || '', 'Estabilidade após abertura (dias)': m.estabilidadeAbertoDias ?? '', 'Armazenamento': m.armazenamento || '',
-    'Níveis': Object.entries(m.niveis || {}).map(([n, x]) => x?.nome ? `${n}:${x.nome}` : n).join('; '), 'Equipamentos / sistemas': _cqPlRefsEquip(m.equips), 'Analitos': _cqArr(m.analitoIds).map(a => an(a)?.nome || a).join('; '), 'Ativo': _cqPlSN(m.ativo), 'Unidades': siglas(m),
+    'Níveis': Object.entries(m.niveis || {}).map(([n, x]) => x?.nome ? `${n}:${x.nome}` : n).join('; '), 'Equipamentos / sistemas': _cqPlRefsEquip(m.equips), 'Analitos': _cqArr(m.analitoIds).map(a => an(a)?.nome || a).join('; '), 'Ativo': _cqPlSN(m.ativo), 'Áreas': siglas(m),
   }));
   d['Lotes de controle'] = ordenar(Object.values(cfg.lotesControle).filter(noEscopo), l => `${mat(l.materialId)?.nome || ''}|${l.lote}`).map(l => ({
     'Material': mat(l.materialId)?.nome || '', 'Fabricante': mat(l.materialId)?.fabricante || '', 'Lote': l.lote, 'Validade': _cqPlFmtData(l.validade),
-    'Níveis': _cqArr(l.niveis).join(';'), 'Situação': CQ_STATUS_LOTE[l.status || 'em_uso']?.label || l.status, 'Link da bula': l.bulaUrl || '', 'Observações': l.observacoes || '', 'Unidades': siglas(l),
+    'Níveis': _cqArr(l.niveis).join(';'), 'Situação': CQ_STATUS_LOTE[l.status || 'em_uso']?.label || l.status, 'Link da bula': l.bulaUrl || '', 'Observações': l.observacoes || '', 'Áreas': siglas(l),
   }));
   d['Insumos'] = ordenar(Object.values(cfg.insumos).filter(noEscopo), i => `${i.nome}|${i.lote}`).map(i => ({
     'Tipo': CQ_TIPOS_INSUMO[i.tipo] || i.tipo, 'Produto': i.nome, 'Lote': i.lote, 'Validade': _cqPlFmtData(i.validade), 'Fabricante': i.fabricante || '',
-    'Registro ANVISA': i.regAnvisa || '', 'Situação': CQ_STATUS_LOTE[i.status || 'em_uso']?.label || i.status, 'Equipamentos / sistemas': _cqPlRefsEquip(_cqEquipsInsumo(i)), 'Analitos': _cqArr(i.analitoIds).map(a => an(a)?.nome || a).join('; '), 'Unidades': siglas(i),
+    'Registro ANVISA': i.regAnvisa || '', 'Situação': CQ_STATUS_LOTE[i.status || 'em_uso']?.label || i.status, 'Equipamentos / sistemas': _cqPlRefsEquip(_cqEquipsInsumo(i)), 'Analitos': _cqArr(i.analitoIds).map(a => an(a)?.nome || a).join('; '), 'Áreas': siglas(i),
   }));
   const testes = ordenar(Object.values(cfg.testes).filter(t => unidades.includes(t.unidadeId)), t => `${un(t.unidadeId)}|${_cqEquipTeste(t)}|${_cqNomeTeste(t)}`);
   d['Testes'] = testes.map(t => {
@@ -343,7 +343,7 @@ async function _cqPlExportarDados({ unidades, de, ate }) {
     porMes.forEach(({ m, corr, res }) => {
       Object.entries(corr).sort(([a], [b]) => a.localeCompare(b)).forEach(([ck, c]) => {
         if (!c || typeof c !== 'object') return;
-        d['Corridas'].push({ 'Unidade': un(u), 'Setor': [...new Set(_cqSetoresDeRegistro(c).filter(Boolean))].map(setorNome).join('; '), 'Nº': c.numero || '', 'Data/hora': _cqPlFmtDH(c.dataHora), 'Equipamento / sistema': c.ativoSnap?.nome || c.sistemaAnalitico || '',
+        d['Corridas'].push({ 'Área': un(u), 'Setor': [...new Set(_cqSetoresDeRegistro(c).filter(Boolean))].map(setorNome).join('; '), 'Nº': c.numero || '', 'Data/hora': _cqPlFmtDH(c.dataHora), 'Equipamento / sistema': c.ativoSnap?.nome || c.sistemaAnalitico || '',
           'Situação': CQ_CORRIDA_STATUS[c.status]?.label || c.status || '', 'Operador': c.operadorNome || '', 'Lançado por': c.lancadoPorNome || '', 'Lançado em': _cqPlFmtDH(c.lancadoEm),
           'Estação': c.estacao || '', 'Testes': Object.keys(c.testes || {}).map(tid => cfg.testes[tid] ? _cqNomeTeste(cfg.testes[tid]) : tid).join('; '),
           'Observação': [c.importacao ? `Importada de ${c.importacao.arquivo}` : '', c.retroativo?.justificativa ? `Retroativo: ${c.retroativo.justificativa}` : '', c.repeticaoDe ? 'Repetição' : '', c.observacao || ''].filter(Boolean).join(' · ') });
@@ -369,7 +369,7 @@ async function _cqPlExportarDados({ unidades, de, ate }) {
       const ncs = (await window.dbGet(`${CQ_KEYS.acoes}/${u}/${ano}`)) || {};
       Object.values(ncs).filter(nc => nc && nc.mes >= de && nc.mes <= ate).sort((a, b) => (a.numero || '').localeCompare(b.numero || '')).forEach(nc => {
         const i = nc.impacto || {};
-        d['Não conformidades'].push({ 'Unidade': un(u), 'Setor': setorNome(_cqSetorDoTeste(cfg.testes[nc.testeId])), 'Número': nc.numero, 'Situação': CQ_NC_STATUS[nc.status]?.label || nc.status, 'Tipo': CQ_NC_TIPO[nc.tipo] || nc.tipo,
+        d['Não conformidades'].push({ 'Área': un(u), 'Setor': setorNome(_cqSetorDoTeste(cfg.testes[nc.testeId])), 'Número': nc.numero, 'Situação': CQ_NC_STATUS[nc.status]?.label || nc.status, 'Tipo': CQ_NC_TIPO[nc.tipo] || nc.tipo,
           'Teste': nc.testeNome || '', 'Corrida': nc.corridaNumero || '', 'Data da corrida': _cqPlFmtDH(nc.dataHoraCorrida), 'Violações': _cqArr(nc.violacoes).join('; '),
           'Causa': nc.causa || '', 'Investigação': nc.investigacao?.texto || '', 'Ações': Object.values(nc.acoes || {}).map(a => a.tipo + (a.descricao ? ` — ${a.descricao}` : '')).join('; '),
           'Impacto em pacientes': [i.reprocessadas ? `reprocessadas: ${CQ_SNNA[i.reprocessadas] || i.reprocessadas}` : '', i.laudosAfetados ? `laudos afetados: ${CQ_SNNA[i.laudosAfetados] || i.laudosAfetados}` : '', i.justificativa || ''].filter(Boolean).join(' · '),
@@ -483,6 +483,9 @@ async function _cqPlPlanejar(abas, { arquivo }) {
   const linhasDe = aba => (abas[aba] || []).map((row, i) => {
     const o = {};
     Object.entries(row).forEach(([k, v]) => { o[_cqPlNorm(k)] = v; });
+    // Planilhas exportadas antes da troca de "Unidade" por "Área" continuam valendo
+    if (o.area === undefined && o.unidade !== undefined) o.area = o.unidade;
+    if (o.areas === undefined && o.unidades !== undefined) o.areas = o.unidades;
     return { n: i + 2, g: h => o[_cqPlNorm(h)], vazia: !Object.values(row).some(v => _cqPlTxt(v) !== '') };
   }).filter(l => !l.vazia);
 
@@ -491,9 +494,9 @@ async function _cqPlPlanejar(abas, { arquivo }) {
   // Coluna Unidades dos cadastros compartilháveis (siglas separadas por ";")
   const lerUnidades = (l, aba) => {
     const ids = [];
-    for (const sg of _cqPlLista(l.g('Unidades'))) {
+    for (const sg of _cqPlLista(l.g('Áreas'))) {
       const u = unidadePor(sg);
-      if (!u) { erro(aba, l.n, `Unidade "${sg}" não encontrada ou sem acesso.`); return null; }
+      if (!u) { erro(aba, l.n, `Área "${sg}" não encontrada ou sem acesso.`); return null; }
       if (!ids.includes(u.id)) ids.push(u.id);
     }
     return ids;
@@ -532,8 +535,8 @@ async function _cqPlPlanejar(abas, { arquivo }) {
   };
   // Teste a partir das colunas de referência (Unidade, Analito, Equipamento / sistema, Código, Método)
   const testePor = (l, aba) => {
-    const u = unidadePor(l.g('Unidade'));
-    if (!u) { erro(aba, l.n, `Unidade "${_cqPlTxt(l.g('Unidade'))}" não encontrada ou sem acesso.`); return null; }
+    const u = unidadePor(l.g('Área'));
+    if (!u) { erro(aba, l.n, `Área "${_cqPlTxt(l.g('Área'))}" não encontrada ou sem acesso.`); return null; }
     const a = analitoPor(l.g('Analito'), l.g('Unidade de medida'));
     if (!a || a === 'ambiguo') { erro(aba, l.n, a ? `Analito "${_cqPlTxt(l.g('Analito'))}" ambíguo: informe a unidade de medida.` : `Analito "${_cqPlTxt(l.g('Analito'))}" não encontrado.`); return null; }
     const equip = _cqPlTxt(l.g('Equipamento / sistema')), cod = _cqPlTxt(l.g('Código do equipamento')), met = _cqPlNorm(l.g('Método'));
@@ -681,8 +684,8 @@ async function _cqPlPlanejar(abas, { arquivo }) {
   // ── Testes
   linhasDe('Testes').forEach(l => {
     const A = 'Testes';
-    const u = unidadePor(l.g('Unidade'));
-    if (!u) return erro(A, l.n, `Unidade "${_cqPlTxt(l.g('Unidade'))}" não encontrada ou sem acesso.`);
+    const u = unidadePor(l.g('Área'));
+    if (!u) return erro(A, l.n, `Área "${_cqPlTxt(l.g('Área'))}" não encontrada ou sem acesso.`);
     const a = analitoPor(l.g('Analito'), l.g('Unidade de medida'));
     if (!a || a === 'ambiguo') return erro(A, l.n, a ? 'Analito ambíguo: informe a unidade de medida.' : `Analito "${_cqPlTxt(l.g('Analito'))}" não encontrado.`);
     const equip = _cqPlTxt(l.g('Equipamento / sistema')), cod = _cqPlTxt(l.g('Código do equipamento'));
@@ -701,9 +704,9 @@ async function _cqPlPlanejar(abas, { arquivo }) {
     let setorId = '';
     const setorTxt = _cqPlTxt(l.g('Setor'));
     if (setorTxt) {
-      if (!_cqSetoresDaUnidade(u.id).length) return erro(A, l.n, `A unidade ${u.sigla} não tem setores cadastrados (Ativos › Unidades e setores).`);
+      if (!_cqSetoresDaUnidade(u.id).length) return erro(A, l.n, `A área ${u.sigla} não tem setores cadastrados (Ativos › Unidades e setores).`);
       const ss = _orgSetoresPorNome(setorTxt, u.id);
-      if (!ss.length) return erro(A, l.n, `Setor "${setorTxt}" não encontrado na unidade ${u.sigla}.`);
+      if (!ss.length) return erro(A, l.n, `Setor "${setorTxt}" não encontrado na área ${u.sigla}.`);
       // Igual ao do equipamento: não grava (segue o equipamento)
       if (!at || _orgSetorDoAtivo(at)?.id !== ss[0].id) setorId = ss[0].id;
     }
@@ -831,7 +834,7 @@ async function _cqPlPlanejar(abas, { arquivo }) {
   CQ_COLECOES_UNIDADE.forEach(c => Object.values(plano.novos[c]).forEach(rec => { if (!_cqUnidadesRec(rec).length && uAtiva) rec.unidadeIds = [uAtiva]; }));
   Object.values(plano.novos.insumos).forEach(rec => _cqUnidadesRec(rec).forEach(u => garantirUnidade('insumoProdutos', rec.produtoId, u)));
   const nVincU = Object.keys(plano.vincUnidades).length;
-  if (nVincU) plano.avisos.push(`${nVincU} cadastro(s) existente(s) serão associados a outra(s) unidade(s): ${Object.values(plano.vincUnidades).slice(0, 8).map(v => `${_cqResumoCadastro(v.col, W[v.col][v.id])} → ${_cqSiglasUnidades(v.add)}`).join('; ')}${nVincU > 8 ? '…' : ''}.`);
+  if (nVincU) plano.avisos.push(`${nVincU} cadastro(s) existente(s) serão associados a outra(s) área(s): ${Object.values(plano.vincUnidades).slice(0, 8).map(v => `${_cqResumoCadastro(v.col, W[v.col][v.id])} → ${_cqSiglasUnidades(v.add)}`).join('; ')}${nVincU > 8 ? '…' : ''}.`);
   return plano;
 }
 
@@ -1026,7 +1029,7 @@ async function _cqPlGravar(plano, motivo) {
   Object.values(plano.vincUnidades || {}).forEach(v => {
     const p = `${CQ_KEYS.config}/${v.col}/${v.id}`;
     updates[`${p}/unidadeIds`] = v.unidadeIds;
-    updates[`${p}/trilha/${_cqTk()}${v.id.slice(-3)}`] = _cqTrilhaEntry('edicao', `Associado à(s) unidade(s) ${_cqSiglasUnidades(v.add)} pela importação da planilha ${plano.arquivo}`);
+    updates[`${p}/trilha/${_cqTk()}${v.id.slice(-3)}`] = _cqTrilhaEntry('edicao', `Associado à(s) área(s) ${_cqSiglasUnidades(v.add)} pela importação da planilha ${plano.arquivo}`);
   });
   plano.alvos.forEach(({ u, testeId, alvo }) => {
     alvo.importacao = { ...alvo.importacao, motivo };
@@ -1108,7 +1111,7 @@ async function _cqPlGravar(plano, motivo) {
     const ms = [...new Set(plano.corridas.map(c => c.mes))].sort();
     onde = ` Período: ${_cqFmtMes(ms[0])}${ms.length > 1 ? ` a ${_cqFmtMes(ms[ms.length - 1])}` : ''}.`;
     const outras = [...new Set(plano.corridas.filter(c => c.u !== uAtiva).map(c => cqState.config.unidades[c.u]?.sigla || c.u))];
-    if (outras.length) onde += ` Corridas de outra(s) unidade(s): ${outras.join(', ')} — selecione-a(s) para ver.`;
+    if (outras.length) onde += ` Corridas de outra(s) área(s): ${outras.join(', ')} — selecione-a(s) para ver.`;
   }
   showToast(`Importação concluída: ${nCad} cadastro(s), ${plano.alvos.length} alvo(s), ${plano.corridas.length} corrida(s).${onde}`, 'success');
   _cqPlPlano = null;

@@ -87,7 +87,7 @@ function _cqGrafTesteHTML(testes, t) {
     <div class="cq-sitpop-menu cq-tp-menu">
       <div class="cq-tp-busca">${CQ_ICO.busca}<input type="text" id="cq-tp-busca" placeholder="Buscar analito, meio ou equipamento…" oninput="cqGrafTesteFiltrar(this.value)" autocomplete="off"></div>
       <div class="cq-tp-lista">${Object.entries(grupos).map(([g, ts]) => `<div class="cq-tp-grupo"><div class="cq-tp-grupo-tit">${CQ_ICO.ativo}${_cqEsc(g)}<span>${ts.length}</span></div>${ts.map(item).join('')}</div>`).join('')
-        || '<div class="cq-ms-vazio">Nenhum teste nesta unidade.</div>'}<div class="cq-ms-vazio cq-tp-nada" hidden>Nenhum teste encontrado.</div></div>
+        || '<div class="cq-ms-vazio">Nenhum teste nesta área.</div>'}<div class="cq-ms-vazio cq-tp-nada" hidden>Nenhum teste encontrado.</div></div>
     </div>
   </div>`;
 }
@@ -366,7 +366,7 @@ function cqImprimirGrafico() {
   if (!w) { showToast('Permita pop-ups para imprimir.', 'error'); return; }
   w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${titulo} — ${_cqEsc(_cqNomeTeste(t))}</title><style>${css}${cssQ}</style></head><body>
     <h1>${titulo} — ${_cqEsc(_cqNomeTeste(t))} · ${_cqEsc(_cqEquipTeste(t))}</h1>
-    <div>Unidade ${_cqEsc(un?.sigla)}${_cqSetorDoTeste(t) ? ' · setor ' + _cqEsc(_cqRotuloSetor(_cqSetorDoTeste(t))) : ''} · período ${_cqFmtMes(_cqGraf.dados?.de)} a ${_cqFmtMes(_cqGraf.dados?.ate)} · emitido em ${_cqFmtDH(_cqAgora())} por ${_cqEsc(_cqSess().nome)}</div>
+    <div>Área ${_cqEsc(un?.sigla)}${_cqSetorDoTeste(t) ? ' · setor ' + _cqEsc(_cqRotuloSetor(_cqSetorDoTeste(t))) : ''} · período ${_cqFmtMes(_cqGraf.dados?.de)} a ${_cqFmtMes(_cqGraf.dados?.ate)} · emitido em ${_cqFmtDH(_cqAgora())} por ${_cqEsc(_cqSess().nome)}</div>
     ${area.innerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
   w.document.close();
 }

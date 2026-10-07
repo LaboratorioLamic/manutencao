@@ -10,15 +10,24 @@
 // e setores cada um é movido para uma unidade (vira setor dela) ou transformado
 // em unidade; o vínculo fica em `legado`, então ativos, permissões, OT e
 // ocorrências que guardam o nome antigo passam a apontar para o setor novo.
-// O vínculo com o Controle de Qualidade é feito no CQ (unidade.orgUnidadeId).
+// O vínculo com o Controle de Qualidade é feito no CQ (área.orgUnidadeId; várias áreas por unidade).
+//
+// Setor compartilhado: o ativo tem um setor responsável (setorId) e pode ser
+// compartilhado com outros setores do mesmo ambiente (ativo.setoresCompartilhados).
+// Quem é de qualquer um desses setores vê e opera o ativo; OT/CQ/histórico seguem o principal.
+//
+// Ambientes: salas físicas da unidade (ex.: Sala de Coleta, Sala Analítica 01).
+// Ligação N:N com os setores da mesma unidade, guardada só em ambiente.setorIds.
+// O ativo fica em um ambiente (ativo.ambienteId), escolhido entre os do setor.
 // ═══════════════════════════════════════════════════════════════
 
 const ORG_KEY = 'gestao-org-v1';
 
 // { unidades: { id: { id, sigla, nome, ativa } },
 //   setores:  { id: { id, nome, unidadeId, ativo } },
+//   ambientes:{ id: { id, nome, unidadeId, setorIds: [], ativo } },
 //   legado:   { k: { nome, setorId, unidadeId, em, porNome } } }   ← nome antigo → setor novo ('' = sem setor)
-let orgState = { unidades: {}, setores: {}, legado: {} };
+let orgState = { unidades: {}, setores: {}, ambientes: {}, legado: {} };
 let _orgReady = false;
 let _orgMapaLegado = new Map();   // nome antigo normalizado → setorId ('' = tratado sem setor)
 
@@ -28,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
       _orgReady = true;
       const d = (data && typeof data === 'object') ? data : {};
       const obj = v => (v && typeof v === 'object') ? v : {};
-      orgState = { unidades: obj(d.unidades), setores: obj(d.setores), legado: obj(d.legado) };
+      orgState = { unidades: obj(d.unidades), setores: obj(d.setores), ambientes: obj(d.ambientes), legado: obj(d.legado) };
       _orgMapaLegado = new Map(Object.values(orgState.legado).filter(x => x && x.nome).map(x => [_orgNorm(x.nome), x.setorId || '']));
       _orgAoMudar();
     });
@@ -109,7 +118,49 @@ function _orgSetorIdDoAtivo(a) {
   return a?.setor ? 'n:' + a.setor : '';
 }
 function _orgUnidadeIdDoAtivo(a) { return _orgSetorDoAtivo(a)?.unidadeId || ''; }
+// Setores com que o ativo é compartilhado (só setores existentes da unidade do principal)
+function _orgSetoresCompDoAtivo(a) {
+  const v = a?.setoresCompartilhados;
+  const lista = Array.isArray(v) ? v : (v && typeof v === 'object' ? Object.values(v) : []);
+  if (!lista.length) return [];
+  const p = _orgSetorDoAtivo(a);
+  if (!p || p.virtual) return [];
+  return [...new Set(lista)].filter(id => id && id !== p.id && orgState.setores?.[id]?.unidadeId === p.unidadeId);
+}
+// Setor responsável + compartilhados (filtros, permissões e contagens)
+function _orgSetorIdsDoAtivo(a) {
+  const p = _orgSetorIdDoAtivo(a);
+  return p ? [p, ..._orgSetoresCompDoAtivo(a)] : [];
+}
 function _orgUnidadeIdDoSetor(setorId) { return _orgSetor(setorId)?.unidadeId || ''; }
+
+// ── AMBIENTES ────────────────────────────────────────────────
+// Setores ligados ao ambiente (lista gravada pode vir como objeto do banco)
+function _orgSetorIdsDoAmbiente(amb) {
+  const v = amb?.setorIds;
+  return Array.isArray(v) ? v.filter(Boolean) : (v && typeof v === 'object' ? Object.values(v).filter(Boolean) : []);
+}
+// Ambientes, ordenados por nome. unidadeId: undefined = todos. opts.todos inclui inativos.
+function _orgAmbientes(unidadeId, opts = {}) {
+  return Object.values(orgState.ambientes || {})
+    .filter(x => x && (opts.todos || x.ativo !== false) && (unidadeId === undefined || x.unidadeId === unidadeId))
+    .sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR', { numeric: true }));
+}
+function _orgAmbiente(id) { return id ? (orgState.ambientes?.[id] || null) : null; }
+function _orgTemAmbientes() { return Object.values(orgState.ambientes || {}).some(Boolean); }
+// Ambientes ligados ao setor (opts.todos inclui inativos)
+function _orgAmbientesDoSetor(setorId, opts = {}) {
+  if (!setorId) return [];
+  return _orgAmbientes(undefined, opts).filter(x => _orgSetorIdsDoAmbiente(x).includes(setorId));
+}
+function _orgAmbienteDoAtivo(a) { return _orgAmbiente(a?.ambienteId); }
+// "Sala Analítica 01" (+ " (inativo)")
+function _orgRotuloAmbiente(id) {
+  const x = _orgAmbiente(id);
+  return x ? x.nome + (x.ativo === false ? ' (inativo)' : '') : '';
+}
+// Rótulo a partir de um par gravado (ambienteId, nome) — OT e ocorrências
+function _orgRotuloAmbienteRef(id, nome) { return _orgRotuloAmbiente(id) || nome || ''; }
 
 // "NTO · Hematologia" (opts.semUnidade: só o nome)
 function _orgRotuloSetor(id, opts = {}) {
@@ -118,11 +169,17 @@ function _orgRotuloSetor(id, opts = {}) {
   const sig = opts.semUnidade ? '' : _orgSiglaUnidade(s.unidadeId);
   return sig ? `${sig} · ${s.nome}` : s.nome;
 }
-// Rótulo do setor de um ativo (cai no nome gravado no ativo)
+// Rótulo do setor de um ativo (cai no nome gravado no ativo). opts.ambiente acrescenta a sala;
+// opts.compartilhado acrescenta os setores compartilhados ("NTO · Microbiologia + Parasitologia").
 function _orgRotuloAtivo(a, opts = {}) {
   const s = _orgSetorDoAtivo(a);
-  if (s) return _orgRotuloSetor(s.id, opts);
-  return a?.setor || '';
+  let base = s ? _orgRotuloSetor(s.id, opts) : (a?.setor || '');
+  if (opts.compartilhado) {
+    const comp = _orgSetoresCompDoAtivo(a).map(id => orgState.setores[id].nome);
+    if (comp.length) base += ' + ' + comp.join(' + ');
+  }
+  const amb = opts.ambiente ? _orgRotuloAmbiente(a?.ambienteId) : '';
+  return amb ? (base ? `${base} · ${amb}` : amb) : base;
 }
 // Id de setor a partir de um par gravado (setorId, nome) — OT/ocorrência/rotina antigas
 function _orgSetorIdDeRef(setorId, nome) {
@@ -150,7 +207,9 @@ function _orgSetoresDasUnidades(unidadeIds) {
 // Referência de setor para gravar em OT/ocorrência (histórico)
 function _orgRefDoAtivo(a) {
   const s = _orgSetorDoAtivo(a);
-  return { setor: s?.nome || a?.setor || '', setorId: s && !s.virtual ? s.id : '', unidadeId: s?.unidadeId || '' };
+  const amb = _orgAmbienteDoAtivo(a);
+  return { setor: s?.nome || a?.setor || '', setorId: s && !s.virtual ? s.id : '', unidadeId: s?.unidadeId || '',
+           ambienteId: amb?.id || '', ambiente: amb?.nome || '', setorIdsCompartilhados: _orgSetoresCompDoAtivo(a) };
 }
 
 // ── FILTROS EM PAR (Unidade + Setor) ─────────────────────────
@@ -176,11 +235,15 @@ function _orgOpcoesSetores(setorIds, unidadeFiltro, opts = {}) {
     .map(id => ({ value: id, label: _orgRotuloSetor(id, { semUnidade: !!unidadeFiltro || opts.semUnidade }) || id, unidade: _orgSiglaUnidade(_orgUnidadeIdDoSetor(id)) }))
     .sort((a, b) => (a.unidade || '').localeCompare(b.unidade || '', 'pt-BR') || a.label.localeCompare(b.label, 'pt-BR'));
 }
-// Ativo passa nos filtros de unidade e setor? ('', 'todas'/'todos' = sem filtro)
-function _orgAtivoPassa(a, unidadeFiltro, setorFiltro) {
+// Ativo passa nos filtros de unidade, setor e ambiente? ('', 'todas'/'todos' = sem filtro; ambiente '__sem__' = sem ambiente)
+function _orgAtivoPassa(a, unidadeFiltro, setorFiltro, ambienteFiltro) {
   const id = _orgSetorIdDoAtivo(a);
-  if (setorFiltro && setorFiltro !== 'todos' && id !== setorFiltro) return false;
+  if (setorFiltro && setorFiltro !== 'todos' && !_orgSetorIdsDoAtivo(a).includes(setorFiltro)) return false;
   if (unidadeFiltro && unidadeFiltro !== 'todas' && !_orgSetorNaUnidade(id, unidadeFiltro)) return false;
+  if (ambienteFiltro && ambienteFiltro !== 'todos') {
+    const amb = _orgAmbienteDoAtivo(a)?.id || '';
+    if (ambienteFiltro === '__sem__' ? amb : amb !== ambienteFiltro) return false;
+  }
   return true;
 }
 // Chave de ordenação "unidade › setor" de um ativo
@@ -214,7 +277,8 @@ let _orgEdit = null;          // { tipo: 'unidade'|'setor'|'tornar', id }
 let _orgNovaUnidade = false;  // card "Nova unidade" aberto como formulário
 let _orgDetalheId = null;     // unidade aberta na janela de setores
 let _orgBusca = '';           // filtro dos cards de unidade
-let _orgBuscaSetor = '';      // filtro dos chips de setor na janela
+let _orgBuscaSetor = '';      // filtro dos chips/cards da aba aberta na janela
+let _orgAba = 'setores';      // aba da janela da unidade: 'setores' | 'ambientes'
 
 function _orgPodeEditar() {
   return typeof authHasPermission === 'function' && authHasPermission('ativos.editarSetor');
@@ -245,7 +309,7 @@ function _orgAlvoGerenciador() {
 }
 
 function _orgContarAtivos(setorId) {
-  return (typeof state !== 'undefined' ? state.ativos : []).filter(a => a && _orgSetorIdDoAtivo(a) === setorId).length;
+  return (typeof state !== 'undefined' ? state.ativos : []).filter(a => a && _orgSetorIdsDoAtivo(a).includes(setorId)).length;
 }
 function _orgContarAtivosNome(nome) {
   return (typeof state !== 'undefined' ? state.ativos : []).filter(a => a && !a.setorId && a.setor === nome).length;
@@ -259,18 +323,25 @@ function _orgPermissoesComNome(nome) {
 
 // Ativos e OTs abertas por setor — uma passada só por renderização
 function _orgContagens() {
-  const ativos = new Map(), ots = new Map();
+  const ativos = new Map(), ots = new Map(), ambientes = new Map(), ativosUn = new Map();
   const inc = (m, k) => { if (k) m.set(k, (m.get(k) || 0) + 1); };
-  (typeof state !== 'undefined' ? state.ativos || [] : []).forEach(a => { if (a) inc(ativos, _orgSetorIdDoAtivo(a)); });
+  (typeof state !== 'undefined' ? state.ativos || [] : []).forEach(a => {
+    if (!a) return;
+    _orgSetorIdsDoAtivo(a).forEach(id => inc(ativos, id));   // conta em cada setor (responsável e compartilhados)
+    inc(ativosUn, _orgUnidadeIdDoAtivo(a));                  // na unidade, uma vez só
+    inc(ambientes, _orgAmbienteDoAtivo(a)?.id);
+  });
   (typeof otState !== 'undefined' ? otState.ordens || [] : []).forEach(o => {
     if (o && !['concluida', 'cancelada'].includes(o.status)) inc(ots, _orgSetorIdDeRef(o.setorId, o.setor));
   });
-  return { ativos, ots };
+  return { ativos, ots, ambientes, ativosUn };
 }
 function _orgResumoUnidade(u, cont) {
   const setores = _orgSetores(u.id, { todos: true });
   const soma = m => setores.reduce((t, s) => t + (m.get(s.id) || 0), 0);
-  return { setores, setoresAtivos: setores.filter(s => s.ativo !== false).length, ativos: soma(cont.ativos), ots: soma(cont.ots) };
+  const ambientes = _orgAmbientes(u.id, { todos: true });
+  return { setores, setoresAtivos: setores.filter(s => s.ativo !== false).length, ativos: cont.ativosUn.get(u.id) || 0, ots: soma(cont.ots),
+           ambientes, ambientesAtivos: ambientes.filter(x => x.ativo !== false).length };
 }
 
 // Cor fixa por unidade (derivada da sigla) para identificar o card e a janela
@@ -311,6 +382,8 @@ const _ORG_ICO = {
   setor:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
   ativo:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>',
   ot:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>',
+  ambiente: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M6 21V4a1 1 0 011-1h10a1 1 0 011 1v17"/><circle cx="14.5" cy="12" r=".9" fill="currentColor"/></svg>',
+  info:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>',
   cq:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6"/><path d="M10 3v6l-5 9a2 2 0 001.8 3h10.4a2 2 0 001.8-3l-5-9V3"/><path d="M7.5 15h9"/></svg>'
 };
 
@@ -357,13 +430,13 @@ function _orgCardHTML(u, r, cont) {
   const ativos = r.setores.filter(s => s.ativo !== false)
     .sort((a, b) => (cont.ativos.get(b.id) || 0) - (cont.ativos.get(a.id) || 0));
   const prev = ativos.slice(0, 5);
-  const busca = _orgBuscaNorm([u.sigla, u.nome, ...r.setores.map(s => s.nome)].join(' '));
+  const busca = _orgBuscaNorm([u.sigla, u.nome, ...r.setores.map(s => s.nome), ...r.ambientes.map(x => x.nome)].join(' '));
   const abrir = `orgAbrirUnidade('${_orgJsAttr(u.id)}')`;
   const vinculoCQ = _orgUnidadesCQ(u.id).length > 0;
   return `<div class="org-card${inativa ? ' org-inativo' : ''}" style="--org-cor:${_orgCor(u)}" role="button" tabindex="0"
       data-busca="${_orgEsc(busca)}" onclick="${abrir}"
       onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();${abrir}}"
-      title="Abrir os setores de ${_orgEsc(u.sigla)}">
+      title="Abrir setores e ambientes de ${_orgEsc(u.sigla)}">
     <div class="org-card-top">
       <span class="org-sigla-badge">${_orgEsc(u.sigla)}</span>
       <div class="org-card-tit">
@@ -372,8 +445,9 @@ function _orgCardHTML(u, r, cont) {
       </div>
       <span class="org-card-seta">${_ORG_ICO.seta}</span>
     </div>
-    <div class="org-card-nums">
+    <div class="org-card-nums org-card-nums4">
       <div><b>${r.setoresAtivos}</b><span>${_orgPl(r.setoresAtivos, 'setor', 'setores')}</span></div>
+      <div><b>${r.ambientesAtivos}</b><span>${_orgPl(r.ambientesAtivos, 'ambiente', 'ambientes')}</span></div>
       <div><b>${r.ativos}</b><span>${_orgPl(r.ativos, 'ativo', 'ativos')}</span></div>
       <div class="${r.ots ? 'org-num-alerta' : ''}"><b>${r.ots}</b><span>${_orgPl(r.ots, 'OT aberta', 'OTs abertas')}</span></div>
     </div>
@@ -429,6 +503,9 @@ function orgFiltrarUnidades(txt) {
 function orgAbrirUnidade(id) {
   _orgDetalheId = id;
   _orgBuscaSetor = '';
+  _orgAba = 'setores';
+  _orgNovoAmbSel = new Set();
+  _orgPop = '';
   if (_orgEdit?.tipo !== 'tornar') _orgEdit = null;
   if (typeof openModal === 'function') openModal('modal-org-unidade');
   // Chips entram animados só na abertura (não a cada atualização do banco)
@@ -436,7 +513,14 @@ function orgAbrirUnidade(id) {
   el?.classList.add('org-anim');
   setTimeout(() => el?.classList.remove('org-anim'), 500);
   _orgRenderDetalhe();
-  if (_orgPodeEditar() && !_orgSetores(id, { todos: true }).length) setTimeout(() => document.getElementById('org-novo-setor')?.focus(), 150);
+  if (_orgPodeEditar() && !_orgSetores(id, { todos: true }).length) setTimeout(() => document.getElementById('org-novo-item')?.focus(), 150);
+}
+
+// Abre a janela da unidade direto na aba Ambientes (atalho do cadastro de ativo)
+function orgAbrirAmbientes(id) {
+  orgAbrirUnidade(id);
+  orgTrocarAba('ambientes');
+  if (_orgPodeEditar()) setTimeout(() => document.getElementById('org-novo-item')?.focus(), 150);
 }
 
 function orgFecharUnidade() {
@@ -447,9 +531,10 @@ function orgFecharUnidade() {
 }
 
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Escape' || _orgConfirmAberto || !_orgDetalheId || !document.getElementById('modal-org-unidade')?.classList.contains('open')) return;
+  if (e.key !== 'Escape' || uiDialogoAberto() || !_orgDetalheId || !document.getElementById('modal-org-unidade')?.classList.contains('open')) return;
   e.preventDefault();
-  if (_orgEdit) orgCancelar(); else orgFecharUnidade();
+  if (_orgPop) { const k = _orgPop; orgPopFechar(); document.getElementById('org-pop-btn-' + k)?.focus(); }
+  else if (_orgEdit) orgCancelar(); else orgFecharUnidade();
 });
 
 function _orgRenderDetalhe() {
@@ -463,49 +548,179 @@ function _orgRenderDetalhe() {
   const inativa = u.ativa === false;
   const cont = _orgContagens();
   const r = _orgResumoUnidade(u, cont);
-  // Ativos primeiro; dentro de cada grupo segue a ordem alfabética de _orgSetores
-  const setores = [...r.setores].sort((a, b) => (a.ativo === false) - (b.ativo === false));
+  const abaAmb = _orgAba === 'ambientes';
+  // Ativos primeiro; dentro de cada grupo segue a ordem alfabética
+  const porAtivo = lista => [...lista].sort((a, b) => (a.ativo === false) - (b.ativo === false));
+  const setores = porAtivo(r.setores);
+  const ambientes = porAtivo(r.ambientes);
   const testes = new Map(setores.map(s => [s.id, _orgTestesCQDoSetor(s.id).length]));
   const nTestes = [...testes.values()].reduce((t, n) => t + n, 0);
-  const nInativos = setores.length - r.setoresAtivos;
+  // Ambientes ativos de cada setor (pela lista do ambiente)
+  const ambsDoSetor = new Map();
+  ambientes.filter(x => x.ativo !== false).forEach(x => _orgSetorIdsDoAmbiente(x).forEach(sid => {
+    if (!ambsDoSetor.has(sid)) ambsDoSetor.set(sid, []);
+    ambsDoSetor.get(sid).push(x);
+  }));
   const uid = _orgJsAttr(u.id);
   const editando = _orgEdit?.tipo === 'unidade' && _orgEdit.id === u.id;
   const cqs = _orgUnidadesCQ(u.id);
 
   if (tit) tit.textContent = `${u.sigla} — ${u.nome}`;
-  if (sub) sub.textContent = inativa ? 'Unidade inativa' : 'Setores da unidade';
+  if (sub) sub.textContent = inativa ? 'Unidade inativa' : 'Setores e ambientes da unidade';
   el.style.setProperty('--org-cor', _orgCor(u));
 
-  const opcoesUn = atual => _orgUnidades({ todas: true }).map(x => `<option value="${_orgEsc(x.id)}"${x.id === atual ? ' selected' : ''}>${_orgEsc(x.sigla)} — ${_orgEsc(x.nome)}</option>`).join('');
+  const caret = '<svg class="org-pop-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="6 9 12 15 18 9"/></svg>';
+  const busca = (k, n) => n > 7 ? `<label class="org-busca org-pop-busca">${_ORG_ICO.busca}
+          <input type="search" id="org-pop-busca-${k}" placeholder="Buscar…" value="${_orgPop === k ? _orgEsc(_orgPopBusca) : ''}" oninput="orgPopFiltrar('${k}', this.value)" onkeydown="if(event.key==='Enter')event.preventDefault()">
+        </label>` : '';
+  // Botão + popover com a lista de vínculos (setor ↔ ambiente); marca na seleção da chave sem redesenhar
+  const vincPop = (opcoes, cfg) => {
+    const k = cfg.k || 'vinc';
+    const sel = _orgPopSel(k);
+    const n = sel?.size || 0;
+    if (cfg.desab) {
+      return `<div class="org-pop-wrap"><button type="button" class="org-pop-btn vazio" disabled title="${_orgEsc(cfg.desab)}">
+        ${cfg.ico}<span class="org-pop-rot">${_orgEsc(cfg.desab)}</span></button></div>`;
+    }
+    const itens = opcoes.map(o => {
+      const on = sel?.has(o.id);
+      return `<button type="button" class="org-pop-item${on ? ' on' : ''}" role="menuitemcheckbox" aria-checked="${on ? 'true' : 'false'}"
+        data-busca="${_orgEsc(_orgBuscaNorm(o.nome))}" onclick="orgToggleVinculo(this,'${_orgJsAttr(o.id)}','${k}')">
+        <span class="org-toggle-chk">${_ORG_ICO.on}</span><span class="org-pop-nome">${_orgEsc(o.nome)}</span>${o.off ? '<small>inativo</small>' : ''}</button>`;
+    }).join('');
+    return `<div class="org-pop-wrap${cfg.cls ? ' ' + cfg.cls : ''}" id="org-pop-${k}" data-vazio="${_orgEsc(cfg.vazio)}">
+      <button type="button" class="org-pop-btn${n ? '' : ' vazio'}" id="org-pop-btn-${k}" onclick="orgPopAlternar('${k}')" aria-haspopup="true" aria-expanded="${_orgPop === k ? 'true' : 'false'}" title="${_orgEsc(cfg.titulo)}">
+        ${cfg.ico}<span class="org-pop-rot" id="org-pop-rot-${k}">${_orgEsc(_orgPopRotulo(cfg.vazio, k))}</span>
+        <b class="org-aba-n" id="org-pop-n-${k}">${n}</b>${caret}
+      </button>
+      <div class="org-pop${_orgPop === k ? ' open' : ''}" role="menu">
+        <div class="org-pop-head"><b>${_orgEsc(cfg.titulo)}</b><button type="button" class="org-pop-limpar" onclick="orgPopLimpar('${k}')">Limpar</button></div>
+        ${busca(k, opcoes.length)}
+        <div class="org-pop-lista">${itens || `<i class="org-amb-sem">${_orgEsc(cfg.semOpcoes)}</i>`}</div>
+        <div class="org-pop-pe"><button type="button" class="btn btn-primary btn-sm" onclick="orgPopFechar()">Concluir</button></div>
+      </div>
+    </div>`;
+  };
+  // Botão + popover de unidade do setor (escolher outra move o setor); valor no input oculto org-setor-unidade
+  const unPop = atual => {
+    const cur = _orgEdit?.un || atual;
+    const uc = _orgUnidade(cur);
+    const lista = _orgUnidades({ todas: true });
+    const badge = (x, id = '') => `<span class="org-sigla-badge sm"${id ? ` id="${id}"` : ''} style="--org-cor:${_orgCor(x)}">${_orgEsc(x?.sigla || '?')}</span>`;
+    const itens = lista.map(x => {
+      const on = x.id === cur;
+      return `<button type="button" class="org-pop-item org-pop-un${on ? ' on' : ''}" role="menuitemradio" aria-checked="${on ? 'true' : 'false'}"
+        data-busca="${_orgEsc(_orgBuscaNorm(x.sigla + ' ' + x.nome))}" onclick="orgUnidadeEscolher('${_orgJsAttr(x.id)}')">
+        ${badge(x)}<span class="org-pop-nome">${_orgEsc(x.nome)}</span>
+        ${x.id === atual ? '<small>atual</small>' : x.ativa === false ? '<small>inativa</small>' : ''}
+        <span class="org-pop-radio">${_ORG_ICO.on}</span></button>`;
+    }).join('');
+    return `<div class="org-pop-wrap org-pop-wrap-un" id="org-pop-un">
+      <input type="hidden" id="org-setor-unidade" value="${_orgEsc(cur)}">
+      <button type="button" class="org-pop-btn org-pop-btn-un" id="org-pop-btn-un" onclick="orgPopAlternar('un')" aria-haspopup="true" aria-expanded="${_orgPop === 'un' ? 'true' : 'false'}" title="Unidade do setor — escolher outra move o setor">
+        ${badge(uc)}<span class="org-pop-rot">${_orgEsc(uc?.nome || 'Unidade')}</span>
+        ${cur !== atual ? '<em class="org-pill org-pill-off">mover</em>' : ''}${caret}
+      </button>
+      <div class="org-pop${_orgPop === 'un' ? ' open' : ''}" role="menu">
+        <div class="org-pop-head"><b>Unidade do setor</b><small>outra unidade move o setor</small></div>
+        ${busca('un', lista.length)}
+        <div class="org-pop-lista">${itens}</div>
+      </div>
+    </div>`;
+  };
+  const nomeEdit = padrao => _orgEsc(_orgEdit?.nome ?? padrao);
+
   const chip = s => {
     const sid = _orgJsAttr(s.id);
+    const ambsS = ambsDoSetor.get(s.id) || [];
     if (_orgEdit?.tipo === 'setor' && _orgEdit.id === s.id) {
+      // Ambientes da unidade (inativos só se já ligados ao setor)
+      const opAmb = ambientes.filter(x => x.ativo !== false || _orgEdit.sel?.has(x.id));
       return `<div class="org-schip editing">
-        <input type="text" id="org-setor-nome" class="field-input" value="${_orgEsc(s.nome)}" placeholder="Nome do setor" onkeydown="if(event.key==='Enter')orgSetorSalvar('${sid}')">
-        <select id="org-setor-unidade" class="field-input" title="Unidade (mover o setor)">${opcoesUn(s.unidadeId)}</select>
+        <input type="text" id="org-setor-nome" class="field-input" value="${nomeEdit(s.nome)}" placeholder="Nome do setor"
+          oninput="_orgEdit&&(_orgEdit.nome=this.value)" onkeydown="if(event.key==='Enter')orgSetorSalvar('${sid}')">
+        ${unPop(s.unidadeId)}
+        ${opAmb.length ? vincPop(opAmb.map(x => ({ id: x.id, nome: x.nome, off: x.ativo === false })),
+          { ico: _ORG_ICO.ambiente, titulo: 'Ambientes onde o setor atua', vazio: 'Vincular ambientes', semOpcoes: '',
+            desab: (_orgEdit.un || s.unidadeId) !== s.unidadeId ? `Sai dos ambientes de ${u.sigla}` : '' }) : ''}
         <button class="btn btn-outline btn-sm" onclick="orgCancelar()">Cancelar</button>
         <button class="btn btn-primary btn-sm" onclick="orgSetorSalvar('${sid}')">Salvar</button>
       </div>`;
     }
     const off = s.ativo === false;
-    const na = cont.ativos.get(s.id) || 0, no = cont.ots.get(s.id) || 0, nt = testes.get(s.id) || 0;
+    const na = cont.ativos.get(s.id) || 0, no = cont.ots.get(s.id) || 0, nt = testes.get(s.id) || 0, nam = ambsS.length;
     return `<div class="org-schip${off ? ' org-inativo' : ''}" data-busca="${_orgEsc(_orgBuscaNorm(s.nome))}">
       <span class="org-schip-ini">${_orgEsc((s.nome || '?').trim().charAt(0).toUpperCase())}</span>
       <div class="org-schip-body">
         <div class="org-schip-nome" title="${_orgEsc(s.nome)}"><span>${_orgEsc(s.nome)}</span>${off ? ' <em class="org-pill org-pill-off">Inativo</em>' : ''}</div>
         <div class="org-schip-meta">
           <span class="${na ? '' : 'org-zero'}" title="${na} ${_orgPl(na, 'ativo', 'ativos')} no setor">${_ORG_ICO.ativo}${na}</span>
+          <span class="${nam ? '' : 'org-zero'}" title="${nam ? 'Ambientes: ' + _orgEsc(ambsS.map(x => x.nome).join(', ')) : 'Nenhum ambiente vinculado'}">${_ORG_ICO.ambiente}${nam}</span>
           <span class="${no ? 'org-meta-alerta' : 'org-zero'}" title="${no} ${_orgPl(no, 'OT aberta', 'OTs abertas')}">${_ORG_ICO.ot}${no}</span>
           <span class="${nt ? '' : 'org-zero'}" title="${nt} ${_orgPl(nt, 'teste', 'testes')} de Controle de Qualidade">${_ORG_ICO.cq}${nt}</span>
         </div>
       </div>
       ${pode && !s.virtual ? `<span class="org-schip-acoes">
-        <button onclick="orgEditar('setor','${sid}')" title="Renomear ou mover para outra unidade">${_ORG_ICO.edit}</button>
+        <button onclick="orgEditar('setor','${sid}')" title="Renomear, mover ou vincular ambientes">${_ORG_ICO.edit}</button>
         <button onclick="orgSetorAtivar('${sid}', ${off})" title="${off ? 'Reativar' : 'Inativar'}">${off ? _ORG_ICO.on : _ORG_ICO.off}</button>
         <button class="org-perigo" onclick="orgSetorExcluir('${sid}')" title="Excluir">${_ORG_ICO.del}</button>
       </span>` : ''}
     </div>`;
   };
+
+  const ambCard = x => {
+    const aid = _orgJsAttr(x.id);
+    const ligados = _orgSetorIdsDoAmbiente(x).map(id => orgState.setores?.[id]).filter(Boolean)
+      .sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt-BR'));
+    if (_orgEdit?.tipo === 'ambiente' && _orgEdit.id === x.id) {
+      const opSet = setores.filter(s => !s.virtual && (s.ativo !== false || _orgEdit.sel?.has(s.id)));
+      return `<div class="org-amb editing">
+        <div class="org-amb-edit-nome">
+          <span class="org-amb-ico">${_ORG_ICO.ambiente}</span>
+          <input type="text" id="org-amb-nome" class="field-input" value="${nomeEdit(x.nome)}" placeholder="Nome do ambiente (ex.: Sala de Coleta)"
+            oninput="_orgEdit&&(_orgEdit.nome=this.value)" onkeydown="if(event.key==='Enter')orgAmbienteSalvar('${aid}')">
+          ${vincPop(opSet.map(s => ({ id: s.id, nome: s.nome, off: s.ativo === false })),
+            { ico: _ORG_ICO.setor, titulo: 'Setores que usam este ambiente', vazio: 'Vincular setores', semOpcoes: 'Cadastre setores nesta unidade para vincular.' })}
+          <button class="btn btn-outline btn-sm" onclick="orgCancelar()">Cancelar</button>
+          <button class="btn btn-primary btn-sm" onclick="orgAmbienteSalvar('${aid}')">Salvar</button>
+        </div>
+      </div>`;
+    }
+    const off = x.ativo === false;
+    const na = cont.ambientes.get(x.id) || 0;
+    const busca = _orgBuscaNorm([x.nome, ...ligados.map(s => s.nome)].join(' '));
+    return `<div class="org-amb${off ? ' org-inativo' : ''}" data-busca="${_orgEsc(busca)}">
+      <div class="org-amb-top">
+        <span class="org-amb-ico">${_ORG_ICO.ambiente}</span>
+        <div class="org-amb-tit">
+          <b title="${_orgEsc(x.nome)}">${_orgEsc(x.nome)}</b>
+          <small>${off ? '<em class="org-pill org-pill-off">Inativo</em> ' : ''}<span class="${na ? '' : 'org-zero'}">${_ORG_ICO.ativo}${na} ${_orgPl(na, 'ativo', 'ativos')}</span></small>
+        </div>
+        ${pode ? `<span class="org-schip-acoes">
+          <button onclick="orgEditar('ambiente','${aid}')" title="Renomear ou vincular setores">${_ORG_ICO.edit}</button>
+          <button onclick="orgAmbienteAtivar('${aid}', ${off})" title="${off ? 'Reativar' : 'Inativar'}">${off ? _ORG_ICO.on : _ORG_ICO.off}</button>
+          <button class="org-perigo" onclick="orgAmbienteExcluir('${aid}')" title="Excluir">${_ORG_ICO.del}</button>
+        </span>` : ''}
+      </div>
+      <div class="org-amb-setores">
+        ${ligados.map(s => `<span class="org-tag${s.ativo === false ? ' org-inativo' : ''}">${_orgEsc(s.nome)}</span>`).join('')
+          || `<i class="org-amb-sem">Nenhum setor vinculado${pode ? ` — <a href="#" onclick="event.preventDefault();orgEditar('ambiente','${aid}')">vincular setores</a>` : ''}</i>`}
+      </div>
+    </div>`;
+  };
+
+  const nSetAtivos = r.setoresAtivos, nAmbAtivos = r.ambientesAtivos;
+  const lista = abaAmb ? ambientes : setores;
+  const aba = (k, ico, rot, n, total) => `<button type="button" role="tab" class="org-aba${_orgAba === k ? ' on' : ''}" aria-selected="${_orgAba === k}"
+      onclick="orgTrocarAba('${k}')" title="${n} ${rot.toLowerCase()} ${_orgPl(n, 'ativo', 'ativos')}${total > n ? ` · ${total - n} ${_orgPl(total - n, 'inativo', 'inativos')}` : ''}">
+      ${ico}<span>${rot}</span><b class="org-aba-n">${n}</b></button>`;
+  const addPh = abaAmb
+    ? `Novo ambiente em ${_orgEsc(u.sigla)} (ex.: Sala de Coleta) — vários: separe por ;`
+    : `Novo setor em ${_orgEsc(u.sigla)} — vários: separe por ; (ex.: Hematologia; Bioquímica)`;
+  const addFn = abaAmb ? `orgAmbientesAdicionar('${uid}')` : `orgSetoresAdicionar('${uid}')`;
+  const vazio = abaAmb
+    ? `<div class="org-vazio org-vazio-grande">${_ORG_ICO.ambiente}<span>Nenhum ambiente nesta unidade${pode && !inativa ? ' — cadastre o primeiro acima' : ''}.</span><small>Ex.: Sala de Triagem, Sala de Coleta, Sala Analítica 01.</small></div>`
+    : `<div class="org-vazio org-vazio-grande">${_ORG_ICO.setor}<span>Nenhum setor nesta unidade${pode && !inativa ? ' — cadastre o primeiro acima' : ''}.</span></div>`;
 
   _orgPintar(el, `
     <div class="org-det-head">
@@ -519,7 +734,7 @@ function _orgRenderDetalhe() {
         <div class="org-det-tit">
           <b>${_orgEsc(u.nome)}</b>
           <span>${inativa ? '<em class="org-pill org-pill-off">Inativa</em>' : '<em class="org-pill org-pill-on">Ativa</em>'}
-            ${cqs.length ? `<em class="org-pill" title="Unidade(s) do Controle de Qualidade vinculada(s)">CQ · ${cqs.map(c => _orgEsc(c.sigla || c.nome || '')).join(', ')}</em>` : ''}</span>
+            ${cqs.length ? `<em class="org-pill" title="Área(s) do Controle de Qualidade vinculada(s)">CQ · ${cqs.map(c => _orgEsc(c.sigla || c.nome || '')).join(', ')}</em>` : ''}</span>
         </div>
         ${pode ? `<div class="org-det-acoes">
           <button class="btn btn-outline btn-sm" onclick="orgEditar('unidade','${uid}')">${_ORG_ICO.edit} Editar</button>
@@ -529,35 +744,147 @@ function _orgRenderDetalhe() {
     </div>
 
     <div class="org-card-nums org-det-nums">
-      <div><b>${r.setoresAtivos}</b><span>${_orgPl(r.setoresAtivos, 'setor ativo', 'setores ativos')}</span></div>
+      <div><b>${nSetAtivos}</b><span>${_orgPl(nSetAtivos, 'setor ativo', 'setores ativos')}</span></div>
+      <div><b>${nAmbAtivos}</b><span>${_orgPl(nAmbAtivos, 'ambiente', 'ambientes')}</span></div>
       <div><b>${r.ativos}</b><span>${_orgPl(r.ativos, 'ativo', 'ativos')}</span></div>
       <div class="${r.ots ? 'org-num-alerta' : ''}"><b>${r.ots}</b><span>${_orgPl(r.ots, 'OT aberta', 'OTs abertas')}</span></div>
       <div><b>${nTestes}</b><span>${_orgPl(nTestes, 'teste de CQ', 'testes de CQ')}</span></div>
     </div>
 
-    ${pode && !inativa ? `<div class="org-det-add">
-      <span class="org-det-add-ico">${_ORG_ICO.plus}</span>
-      <input type="text" id="org-novo-setor" placeholder="Novo setor em ${_orgEsc(u.sigla)} — vários: separe por ; (ex.: Hematologia; Bioquímica)"
-        onkeydown="if(event.key==='Enter')orgSetoresAdicionar('${uid}')">
-      <button class="btn btn-primary btn-sm" onclick="orgSetoresAdicionar('${uid}')">Adicionar</button>
-    </div>` : inativa ? '<div class="org-det-aviso">Unidade inativa — reative para cadastrar setores.</div>' : ''}
-
     <div class="org-det-bar">
-      <div><b>Setores</b> <small>${r.setoresAtivos} ${_orgPl(r.setoresAtivos, 'ativo', 'ativos')}${nInativos ? ` · ${nInativos} ${_orgPl(nInativos, 'inativo', 'inativos')}` : ''}</small></div>
-      ${setores.length > 6 ? `<label class="org-busca org-busca-sm">${_ORG_ICO.busca}
-        <input type="search" id="org-busca-setor" placeholder="Filtrar setores…" value="${_orgEsc(_orgBuscaSetor)}" oninput="orgFiltrarSetores(this.value)">
+      <div class="org-abas" role="tablist">
+        ${aba('setores', _ORG_ICO.setor, 'Setores', nSetAtivos, setores.length)}
+        ${aba('ambientes', _ORG_ICO.ambiente, 'Ambientes', nAmbAtivos, ambientes.length)}
+      </div>
+      ${lista.length > 6 ? `<label class="org-busca org-busca-sm">${_ORG_ICO.busca}
+        <input type="search" id="org-busca-setor" placeholder="Filtrar ${abaAmb ? 'ambientes' : 'setores'}…" value="${_orgEsc(_orgBuscaSetor)}" oninput="orgFiltrarSetores(this.value)">
       </label>` : ''}
     </div>
-    <div class="org-schips">${setores.map(chip).join('') || `<div class="org-vazio org-vazio-grande">${_ORG_ICO.setor}<span>Nenhum setor nesta unidade${pode && !inativa ? ' — cadastre o primeiro acima' : ''}.</span></div>`}</div>
-    <div class="org-vazio org-schip-sem" hidden>Nenhum setor encontrado.</div>`);
+
+    ${pode && !inativa ? `<div class="org-det-add">
+      <span class="org-det-add-ico">${_ORG_ICO.plus}</span>
+      <input type="text" id="org-novo-item" placeholder="${addPh}" onkeydown="if(event.key==='Enter')${addFn}">
+      ${abaAmb ? vincPop(setores.filter(s => !s.virtual && s.ativo !== false).map(s => ({ id: s.id, nome: s.nome })),
+        { k: 'novo', cls: 'org-pop-wrap-add', ico: _ORG_ICO.setor, titulo: 'Setores que usam o ambiente', vazio: 'Setores',
+          semOpcoes: 'Cadastre setores nesta unidade para vincular.' }) : ''}
+      <button class="btn btn-primary btn-sm" onclick="${addFn}">Adicionar</button>
+    </div>` : inativa ? `<div class="org-det-aviso">Unidade inativa — reative para cadastrar ${abaAmb ? 'ambientes' : 'setores'}.</div>` : ''}
+    ${abaAmb ? `<div class="org-dica">${_ORG_ICO.info}<span><b>Ambiente</b> é o local físico (sala). Um ambiente pode atender vários setores — ex.: Bioquímica e Imuno-Hormônios na Sala Analítica 01 — e um setor pode ocupar vários ambientes.</span></div>` : ''}
+
+    <div class="${abaAmb ? 'org-ambs' : 'org-schips'} org-lista">${(abaAmb ? ambientes.map(ambCard) : setores.map(chip)).join('') || vazio}</div>
+    <div class="org-vazio org-schip-sem" hidden>Nenhum ${abaAmb ? 'ambiente' : 'setor'} encontrado.</div>`);
   if (_orgBuscaSetor) orgFiltrarSetores(_orgBuscaSetor);
 }
+
+function orgTrocarAba(aba) {
+  if (_orgAba === aba) return;
+  _orgAba = aba;
+  _orgBuscaSetor = '';
+  _orgPop = '';
+  if (_orgEdit && _orgEdit.tipo !== 'tornar' && _orgEdit.tipo !== 'unidade') _orgEdit = null;
+  const el = document.getElementById('org-detalhe');
+  el?.classList.add('org-anim');
+  setTimeout(() => el?.classList.remove('org-anim'), 500);
+  _orgRenderDetalhe();
+}
+
+// ── POPOVERS DO FORMULÁRIO EM EDIÇÃO: vínculos (setor ↔ ambiente) e unidade do setor ──
+let _orgPop = '';           // popover aberto: '' | 'vinc' | 'un' | 'novo'
+let _orgPopBusca = '';      // filtro da lista do popover aberto
+let _orgNovoAmbSel = new Set();  // setores marcados na barra "Novo ambiente"
+
+// Seleção de cada popover de vínculo: 'novo' = barra de novo ambiente; 'vinc' = formulário em edição
+function _orgPopSel(k) { return k === 'novo' ? _orgNovoAmbSel : _orgEdit?.sel; }
+
+// Nomes marcados ("Bioquímica, Imuno-Hormonios") ou o texto de vazio
+function _orgPopRotulo(vazio, k = 'vinc') {
+  const nomes = [...(_orgPopSel(k) || [])].map(id => orgState.setores?.[id]?.nome || orgState.ambientes?.[id]?.nome).filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  return nomes.length ? nomes.join(', ') : vazio;
+}
+function _orgPopAtualizarBotao(k = 'vinc') {
+  const sel = _orgPopSel(k);
+  const rot = document.getElementById('org-pop-rot-' + k);
+  if (rot) rot.textContent = _orgPopRotulo(document.getElementById('org-pop-' + k)?.dataset.vazio || '', k);
+  const n = document.getElementById('org-pop-n-' + k);
+  if (n) n.textContent = sel?.size || 0;
+  document.getElementById('org-pop-btn-' + k)?.classList.toggle('vazio', !sel?.size);
+}
+
+function orgToggleVinculo(btn, id, k = 'vinc') {
+  const sel = _orgPopSel(k);
+  if (!sel) return;
+  const on = !sel.has(id);
+  if (on) sel.add(id); else sel.delete(id);
+  btn.classList.toggle('on', on);
+  btn.setAttribute('aria-checked', on ? 'true' : 'false');
+  _orgPopAtualizarBotao(k);
+}
+
+// Unidade escolhida no popover: redesenha (mostra "mover" e trava os ambientes da unidade atual)
+function orgUnidadeEscolher(id) {
+  if (!_orgEdit || _orgEdit.tipo !== 'setor') return;
+  const nome = document.getElementById('org-setor-nome');
+  if (nome) _orgEdit.nome = nome.value;
+  _orgEdit.un = id;
+  _orgPop = '';
+  _orgPopBusca = '';
+  _orgRenderDetalhe();
+  document.getElementById('org-pop-btn-un')?.focus();
+}
+
+function orgPopAlternar(k) {
+  const aberto = _orgPop;
+  if (aberto) orgPopFechar();
+  if (aberto !== k) orgPopAbrir(k);
+}
+function orgPopAbrir(k) {
+  const wrap = document.getElementById('org-pop-' + k);
+  const pop = wrap?.querySelector('.org-pop');
+  if (!pop) return;
+  _orgPop = k;
+  // Abre para cima quando não cabe abaixo do botão na janela
+  const corpo = document.getElementById('org-detalhe')?.getBoundingClientRect();
+  const btn = wrap.getBoundingClientRect();
+  const baixo = (corpo ? corpo.bottom : window.innerHeight) - btn.bottom;
+  const cima = btn.top - (corpo ? corpo.top : 0);
+  pop.classList.toggle('cima', baixo < 300 && cima > baixo);
+  pop.classList.add('open');
+  document.getElementById('org-pop-btn-' + k)?.setAttribute('aria-expanded', 'true');
+  setTimeout(() => (document.getElementById('org-pop-busca-' + k) || pop.querySelector('.org-pop-item.on') || pop.querySelector('.org-pop-item'))?.focus(), 30);
+}
+function orgPopFechar() {
+  const k = _orgPop;
+  _orgPop = '';
+  _orgPopBusca = '';
+  if (!k) return;
+  document.querySelector(`#org-pop-${k} .org-pop`)?.classList.remove('open');
+  const b = document.getElementById('org-pop-busca-' + k);
+  if (b) { b.value = ''; orgPopFiltrar(k, ''); }
+  document.getElementById('org-pop-btn-' + k)?.setAttribute('aria-expanded', 'false');
+}
+function orgPopFiltrar(k, txt) {
+  _orgPopBusca = txt || '';
+  const q = _orgBuscaNorm(_orgPopBusca);
+  document.querySelectorAll(`#org-pop-${k} .org-pop-item`).forEach(i => { i.hidden = !!q && !i.dataset.busca.includes(q); });
+}
+function orgPopLimpar(k = 'vinc') {
+  const sel = _orgPopSel(k);
+  if (!sel) return;
+  sel.clear();
+  document.querySelectorAll(`#org-pop-${k} .org-pop-item`).forEach(i => { i.classList.remove('on'); i.setAttribute('aria-checked', 'false'); });
+  _orgPopAtualizarBotao(k);
+}
+// Clique fora fecha o popover
+document.addEventListener('mousedown', e => {
+  if (_orgPop && !e.target.closest('#org-pop-' + _orgPop)) orgPopFechar();
+});
 
 function orgFiltrarSetores(txt) {
   _orgBuscaSetor = txt || '';
   const q = _orgBuscaNorm(_orgBuscaSetor);
   let n = 0;
-  document.querySelectorAll('#org-detalhe .org-schip[data-busca]').forEach(c => {
+  document.querySelectorAll('#org-detalhe .org-lista > [data-busca]').forEach(c => {
     const ok = !q || c.dataset.busca.includes(q);
     c.hidden = !ok;
     if (ok) n++;
@@ -617,10 +944,15 @@ let _orgPendLista = [];
 
 function orgEditar(tipo, id) {
   _orgEdit = { tipo, id: tipo === 'tornar' ? _orgPendLista[id] : id };
+  _orgPop = '';
+  _orgPopBusca = '';
+  // Vínculos setor ↔ ambiente marcados no formulário (gravados só ao salvar)
+  if (tipo === 'setor') _orgEdit.sel = new Set(_orgAmbientesDoSetor(id, { todos: true }).map(x => x.id));
+  if (tipo === 'ambiente') _orgEdit.sel = new Set(_orgSetorIdsDoAmbiente(_orgAmbiente(id)));
   orgRenderGerenciador();
-  document.getElementById({ setor: 'org-setor-nome', unidade: 'org-un-nome', tornar: 'org-tornar-sigla' }[tipo])?.focus();
+  document.getElementById({ setor: 'org-setor-nome', unidade: 'org-un-nome', tornar: 'org-tornar-sigla', ambiente: 'org-amb-nome' }[tipo])?.focus();
 }
-function orgCancelar() { _orgEdit = null; orgRenderGerenciador(); }
+function orgCancelar() { _orgEdit = null; _orgPop = ''; _orgPopBusca = ''; orgRenderGerenciador(); }
 
 // "01 - Unidade NTO" → { nome: 'Unidade NTO', curto: 'NTO' }
 function _orgParseUnidade(txt) {
@@ -637,62 +969,9 @@ function _orgPodeGravar() {
   if (!_orgReady || window._dbConnected === false) { showToast('Sem conexão com o banco. Tente novamente.', 'error'); return false; }
   return true;
 }
-// ── CONFIRMAÇÃO (janela própria no lugar do confirm() do navegador) ──
-// tipo: 'perigo' (excluir) | 'aviso' (inativar) | 'info' (mover). mensagem/detalhe aceitam HTML já escapado.
-// Resolve true ao confirmar; false ao cancelar, clicar fora ou Esc.
-let _orgConfirmAberto = null;
-const _ORG_CONF_ICO = {
-  perigo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>',
-  aviso:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
-  info:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 014-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg>'
-};
-function _orgConfirmar({ tipo = 'aviso', titulo, mensagem, detalhe = '', confirmar = 'Confirmar', cancelar = 'Cancelar' }) {
-  if (_orgConfirmAberto) _orgConfirmAberto(false);
-  return new Promise(resolve => {
-    const el = document.createElement('div');
-    el.className = `org-conf org-conf-${tipo}`;
-    el.setAttribute('role', 'alertdialog');
-    el.setAttribute('aria-modal', 'true');
-    el.innerHTML = `<div class="org-conf-box">
-      <div class="org-conf-ico">${_ORG_CONF_ICO[tipo] || _ORG_CONF_ICO.aviso}</div>
-      <div class="org-conf-tit" id="org-conf-tit">${_orgEsc(titulo)}</div>
-      <div class="org-conf-msg">${mensagem}</div>
-      ${detalhe ? `<div class="org-conf-det">${detalhe}</div>` : ''}
-      <div class="org-conf-acoes">
-        <button type="button" class="btn btn-outline" data-r="0">${_orgEsc(cancelar)}</button>
-        <button type="button" class="btn org-conf-ok" data-r="1">${_orgEsc(confirmar)}</button>
-      </div>
-    </div>`;
-    el.setAttribute('aria-labelledby', 'org-conf-tit');
-    const anterior = document.activeElement;
-    const tecla = e => {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fechar(false); }
-      else if (e.key === 'Tab') {
-        // Foco preso entre os dois botões
-        const [b0, b1] = el.querySelectorAll('button');
-        if (e.shiftKey && document.activeElement === b0) { e.preventDefault(); b1.focus(); }
-        else if (!e.shiftKey && document.activeElement === b1) { e.preventDefault(); b0.focus(); }
-      }
-    };
-    const fechar = r => {
-      if (_orgConfirmAberto !== fechar) return;
-      _orgConfirmAberto = null;
-      document.removeEventListener('keydown', tecla, true);
-      el.classList.remove('aberto');
-      setTimeout(() => el.remove(), 180);
-      try { anterior?.focus?.(); } catch (e) { /* elemento já saiu da tela */ }
-      resolve(r);
-    };
-    _orgConfirmAberto = fechar;
-    el.addEventListener('mousedown', e => { if (e.target === el) fechar(false); });
-    el.querySelectorAll('button').forEach(b => b.addEventListener('click', () => fechar(b.dataset.r === '1')));
-    document.addEventListener('keydown', tecla, true);
-    document.body.appendChild(el);
-    requestAnimationFrame(() => el.classList.add('aberto'));
-    // Excluir começa no "Cancelar" (Enter não apaga por engano); os demais, no botão de ação
-    el.querySelector(tipo === 'perigo' ? '[data-r="0"]' : '[data-r="1"]').focus();
-  });
-}
+// ── CONFIRMAÇÃO: janela própria do sistema (dialogo.js) ──
+// tipo: 'perigo' (excluir) | 'aviso' (inativar) | 'info' (mover).
+const _orgConfirmar = opts => uiConfirmar(opts);
 
 function _orgCarimbo() {
   return { atualizadoEm: new Date().toISOString(), atualizadoPor: (typeof currentSession !== 'undefined' && currentSession?.nomeCompleto) || '' };
@@ -715,7 +994,7 @@ async function orgUnidadeSalvar(id) {
   if (id) { orgRenderGerenciador(); return; }
   _orgNovaUnidade = false;
   orgAbrirUnidade(novoId);
-  setTimeout(() => document.getElementById('org-novo-setor')?.focus(), 150);
+  setTimeout(() => document.getElementById('org-novo-item')?.focus(), 150);
 }
 
 async function orgUnidadeAtivar(id, ativar) {
@@ -730,7 +1009,7 @@ async function orgUnidadeAtivar(id, ativar) {
   await window.dbUpdate({ [`${ORG_KEY}/unidades/${id}/ativa`]: !!ativar, [`${ORG_KEY}/unidades/${id}/atualizadoEm`]: new Date().toISOString() });
 }
 
-// Unidades do CQ vinculadas a esta unidade do sistema
+// Áreas do CQ vinculadas a esta unidade do sistema
 function _orgUnidadesCQ(id) {
   return typeof cqState !== 'undefined' ? Object.values(cqState.config?.unidades || {}).filter(c => c && c.orgUnidadeId === id) : [];
 }
@@ -740,6 +1019,7 @@ async function orgUnidadeExcluir(id) {
   const u = _orgUnidade(id);
   if (!u) return;
   if (Object.values(orgState.setores).some(s => s && s.unidadeId === id)) { showToast('Não é possível excluir: a unidade tem setores. Mova ou exclua os setores antes (ou inative a unidade).', 'error'); return; }
+  if (_orgAmbientes(id, { todos: true }).length) { showToast('Não é possível excluir: a unidade tem ambientes. Exclua os ambientes antes (ou inative a unidade).', 'error'); return; }
   if (_orgUnidadesCQ(id).length) { showToast('Não é possível excluir: a unidade está vinculada ao Controle de Qualidade. Inative-a.', 'error'); return; }
   if (typeof authState !== 'undefined' && (authState.groups || []).some(g => (g.unidadeIdsPermitidas || []).includes(id))) { showToast('Não é possível excluir: há grupos de usuários com acesso a esta unidade.', 'error'); return; }
   if (!(await _orgConfirmar({
@@ -765,7 +1045,7 @@ function _orgTestesCQDoSetor(setorId) {
 // Adiciona um ou vários setores (separados por ;) à unidade
 async function orgSetoresAdicionar(unidadeId) {
   if (!_orgPodeGravar()) return;
-  const inp = document.getElementById('org-novo-setor');
+  const inp = document.getElementById('org-novo-item');
   const nomes = [...new Set(String(inp?.value || '').split(/[;\n]/).map(s => s.trim()).filter(Boolean))];
   if (!nomes.length) { showToast('Informe o nome do setor.', 'error'); return; }
   const ja = nomes.filter(n => Object.values(orgState.setores).some(s => s && s.unidadeId === unidadeId && _orgNorm(s.nome) === _orgNorm(n)));
@@ -778,7 +1058,7 @@ async function orgSetoresAdicionar(unidadeId) {
   });
   if (!(await window.dbUpdate(up))) { showToast('Falha ao salvar os setores.', 'error'); return; }
   showToast(`${novos.length} setor(es) adicionado(s)${ja.length ? ` · já existiam: ${ja.join(', ')}` : ''}.`, 'success');
-  const campo = document.getElementById('org-novo-setor');
+  const campo = document.getElementById('org-novo-item');
   if (campo) { campo.value = ''; campo.focus(); }
 }
 
@@ -791,18 +1071,40 @@ async function orgSetorSalvar(id) {
   if (!nome) { showToast('Informe o nome do setor.', 'error'); return; }
   if (!_orgUnidade(un)) { showToast('Escolha a unidade do setor.', 'error'); return; }
   if (Object.values(orgState.setores).some(s => s && s.id !== id && s.unidadeId === un && _orgNorm(s.nome) === _orgNorm(nome))) { showToast(`Já existe o setor "${nome}" em ${_orgSiglaUnidade(un)}.`, 'error'); return; }
+  const up = {};
+  const ambsDaUnidade = _orgAmbientes(atual.unidadeId, { todos: true });
   if (atual.unidadeId !== un) {
+    // Ambientes são da unidade: o setor só muda de unidade sem ativos alocados em salas da unidade atual
+    const emAmbiente = _orgAtivosDoSetorEmAmbiente(id);
+    if (emAmbiente.length) { showToast(`Não é possível mover: ${emAmbiente.length} ativo(s) deste setor estão em ambientes de ${_orgSiglaUnidade(atual.unidadeId)}. Retire o ambiente deles antes.`, 'error'); return; }
+    ambsDaUnidade.filter(x => _orgSetorIdsDoAmbiente(x).includes(id))
+      .forEach(x => _orgUpSetoresDoAmbiente(up, x, _orgSetorIdsDoAmbiente(x).filter(s => s !== id)));
     // Mover de unidade muda a unidade de todos os ativos do setor
     const testes = _orgTestesCQDoSetor(id).filter(t => _orgUnidadeCQDoTeste(t) && _orgUnidadeCQDoTeste(t) !== un);
     if (testes.length) { showToast(`Não é possível mover: ${testes.length} teste(s) de CQ de outra unidade usam este setor.`, 'error'); return; }
     const nAt = _orgContarAtivos(id);
     if (!(await _orgConfirmar({
-      tipo: 'info', titulo: 'Mover setor?', confirmar: 'Mover setor',
+      tipo: 'info', icone: 'mover', titulo: 'Mover setor?', confirmar: 'Mover setor',
       mensagem: `O setor <b>${_orgEsc(atual.nome)}</b> sai de <b>${_orgEsc(_orgSiglaUnidade(atual.unidadeId))}</b> e passa para <b>${_orgEsc(_orgSiglaUnidade(un))}</b>.`,
       detalhe: nAt ? `${nAt} ativo(s) deste setor passam a pertencer a essa unidade.` : 'O setor não tem ativos vinculados.'
     }))) return;
+  } else if (_orgEdit?.tipo === 'setor' && _orgEdit.id === id && _orgEdit.sel) {
+    // Vínculos com os ambientes marcados no formulário
+    const bloq = [];
+    ambsDaUnidade.forEach(x => {
+      const ids = _orgSetorIdsDoAmbiente(x);
+      const tem = ids.includes(id), quer = _orgEdit.sel.has(x.id);
+      if (tem === quer) return;
+      if (tem) {
+        const n = _orgAtivosNoAmbiente(x.id, id).length;
+        if (n) { bloq.push(`${x.nome} (${n} ativo${n === 1 ? '' : 's'})`); return; }
+      }
+      _orgUpSetoresDoAmbiente(up, x, quer ? [...ids, id] : ids.filter(s => s !== id));
+    });
+    if (bloq.length) { showToast(`Não é possível desvincular: há ativos de ${atual.nome} em ${bloq.join(', ')}. Mude o ambiente deles antes.`, 'error'); return; }
   }
-  const ok = await window.dbUpdate({ [`${ORG_KEY}/setores/${id}`]: { ...atual, nome, unidadeId: un, ..._orgCarimbo() } });
+  up[`${ORG_KEY}/setores/${id}`] = { ...atual, nome, unidadeId: un, ..._orgCarimbo() };
+  const ok = await window.dbUpdate(up);
   if (!ok) { showToast('Falha ao salvar o setor.', 'error'); return; }
   // Renomeado: atualiza o nome de exibição gravado nos ativos
   if (atual.nome !== nome) {
@@ -851,7 +1153,107 @@ async function orgSetorExcluir(id) {
     mensagem: `O setor <b>${_orgEsc(s.nome)}</b> (${_orgEsc(_orgSiglaUnidade(s.unidadeId))}) será excluído.`,
     detalhe: 'Esta ação não pode ser desfeita.'
   }))) return;
-  await window.dbUpdate({ [`${ORG_KEY}/setores/${id}`]: null });
+  const up = { [`${ORG_KEY}/setores/${id}`]: null };
+  _orgAmbientesDoSetor(id, { todos: true }).forEach(x => _orgUpSetoresDoAmbiente(up, x, _orgSetorIdsDoAmbiente(x).filter(s => s !== id)));
+  await window.dbUpdate(up);
+}
+
+// ── AMBIENTES ────────────────────────────────────────────────
+// Ativos alocados no ambiente (opcional: só os do setor informado)
+function _orgAtivosNoAmbiente(ambienteId, setorId) {
+  return (typeof state !== 'undefined' ? state.ativos || [] : [])
+    .filter(a => a && a.ambienteId === ambienteId && (!setorId || _orgSetorIdsDoAtivo(a).includes(setorId)));
+}
+function _orgAtivosDoSetorEmAmbiente(setorId) {
+  return (typeof state !== 'undefined' ? state.ativos || [] : []).filter(a => a && a.ambienteId && _orgSetorIdsDoAtivo(a).includes(setorId));
+}
+// Acrescenta ao update a nova lista de setores do ambiente
+function _orgUpSetoresDoAmbiente(up, amb, ids) {
+  up[`${ORG_KEY}/ambientes/${amb.id}/setorIds`] = [...new Set(ids)];
+  up[`${ORG_KEY}/ambientes/${amb.id}/atualizadoEm`] = new Date().toISOString();
+}
+
+// Adiciona um ou vários ambientes (separados por ;) à unidade, já ligados aos setores marcados na barra
+async function orgAmbientesAdicionar(unidadeId) {
+  if (!_orgPodeGravar()) return;
+  const inp = document.getElementById('org-novo-item');
+  const nomes = [...new Set(String(inp?.value || '').split(/[;\n]/).map(s => s.trim()).filter(Boolean))];
+  if (!nomes.length) { showToast('Informe o nome do ambiente.', 'error'); inp?.focus(); return; }
+  const setorIds = [..._orgNovoAmbSel].filter(id => orgState.setores?.[id]?.unidadeId === unidadeId);
+  const temSetores = _orgSetores(unidadeId).some(s => !s.virtual && s.ativo !== false);
+  if (temSetores && !setorIds.length) { showToast('Selecione os setores que usam o ambiente.', 'error'); orgPopAbrir('novo'); return; }
+  const existentes = _orgAmbientes(unidadeId, { todos: true });
+  const ja = nomes.filter(n => existentes.some(x => _orgNorm(x.nome) === _orgNorm(n)));
+  const novos = nomes.filter(n => !ja.includes(n));
+  if (!novos.length) { showToast(`Já existe(m) em ${_orgSiglaUnidade(unidadeId)}: ${ja.join(', ')}.`, 'error'); return; }
+  const up = {}, ids = [];
+  novos.forEach(nome => {
+    const id = _orgUid('amb_');
+    ids.push(id);
+    up[`${ORG_KEY}/ambientes/${id}`] = { id, nome, unidadeId, setorIds, ativo: true, criadoEm: new Date().toISOString(), ..._orgCarimbo() };
+  });
+  if (!(await window.dbUpdate(up))) { showToast('Falha ao salvar os ambientes.', 'error'); return; }
+  // Reseta o campo: nome e setores marcados
+  const nomesSet = setorIds.map(id => orgState.setores?.[id]?.nome).filter(Boolean).join(', ');
+  _orgNovoAmbSel = new Set();
+  orgPopFechar();
+  const campo = document.getElementById('org-novo-item');
+  if (campo) campo.value = '';
+  _orgRenderDetalhe();
+  showToast(`${novos.length === 1 ? `Ambiente "${novos[0]}" adicionado` : `${novos.length} ambientes adicionados`}${nomesSet ? ` · ${nomesSet}` : ''}${ja.length ? ` · já existiam: ${ja.join(', ')}` : ''}.`, 'success');
+  document.getElementById('org-novo-item')?.focus();
+}
+
+async function orgAmbienteSalvar(id) {
+  if (!_orgPodeGravar()) return;
+  const atual = orgState.ambientes?.[id];
+  if (!atual) return;
+  const nome = (document.getElementById('org-amb-nome')?.value || '').trim();
+  if (!nome) { showToast('Informe o nome do ambiente.', 'error'); return; }
+  if (_orgAmbientes(atual.unidadeId, { todos: true }).some(x => x.id !== id && _orgNorm(x.nome) === _orgNorm(nome))) { showToast(`Já existe o ambiente "${nome}" em ${_orgSiglaUnidade(atual.unidadeId)}.`, 'error'); return; }
+  const antes = _orgSetorIdsDoAmbiente(atual);
+  const sel = _orgEdit?.tipo === 'ambiente' && _orgEdit.id === id && _orgEdit.sel ? _orgEdit.sel : new Set(antes);
+  // Só setores da própria unidade
+  const ids = [...sel].filter(sid => orgState.setores?.[sid]?.unidadeId === atual.unidadeId);
+  // Desvincular um setor com ativos neste ambiente deixaria o ativo numa sala fora do setor
+  const bloq = antes.filter(sid => !ids.includes(sid))
+    .map(sid => ({ s: orgState.setores?.[sid], n: _orgAtivosNoAmbiente(id, sid).length }))
+    .filter(x => x.n);
+  if (bloq.length) { showToast(`Não é possível desvincular: ${bloq.map(x => `${x.n} ativo(s) de ${x.s?.nome || 'setor'}`).join(', ')} estão neste ambiente. Mude o ambiente deles antes.`, 'error'); return; }
+  const ok = await window.dbUpdate({ [`${ORG_KEY}/ambientes/${id}`]: { ...atual, nome, setorIds: ids, ..._orgCarimbo() } });
+  if (!ok) { showToast('Falha ao salvar o ambiente.', 'error'); return; }
+  _orgEdit = null;
+  orgRenderGerenciador();
+  showToast(ids.length ? 'Ambiente salvo!' : 'Ambiente salvo — sem setores vinculados ele não aparece no cadastro de ativos.', ids.length ? 'success' : 'info');
+}
+
+async function orgAmbienteAtivar(id, ativar) {
+  if (!_orgPodeGravar()) return;
+  const x = orgState.ambientes?.[id];
+  if (!x) return;
+  const n = _orgAtivosNoAmbiente(id).length;
+  if (!ativar && !(await _orgConfirmar({
+    tipo: 'aviso', titulo: 'Inativar ambiente?', confirmar: 'Inativar',
+    mensagem: `O ambiente <b>${_orgEsc(x.nome)}</b> (${_orgEsc(_orgSiglaUnidade(x.unidadeId))}) deixa de ser oferecido no cadastro de ativos.`,
+    detalhe: n ? `${n} ativo(s) continuam registrados nele. Você pode reativá-lo quando quiser.` : 'Você pode reativá-lo quando quiser.'
+  }))) return;
+  await window.dbUpdate({ [`${ORG_KEY}/ambientes/${id}/ativo`]: !!ativar, [`${ORG_KEY}/ambientes/${id}/atualizadoEm`]: new Date().toISOString() });
+}
+
+async function orgAmbienteExcluir(id) {
+  if (!_orgPodeGravar()) return;
+  const x = orgState.ambientes?.[id];
+  if (!x) return;
+  const n = _orgAtivosNoAmbiente(id).length;
+  if (n) { showToast(`Não é possível excluir: ${n} ativo(s) estão neste ambiente. Mude o ambiente deles ou inative-o.`, 'error'); return; }
+  const nOT = (typeof otState !== 'undefined' ? otState.ordens || [] : []).filter(o => o && o.ambienteId === id).length;
+  if (nOT) { showToast(`Não é possível excluir: ${nOT} OT(s) registram este ambiente. Inative-o.`, 'error'); return; }
+  if (!(await _orgConfirmar({
+    tipo: 'perigo', titulo: 'Excluir ambiente?', confirmar: 'Excluir ambiente',
+    mensagem: `O ambiente <b>${_orgEsc(x.nome)}</b> (${_orgEsc(_orgSiglaUnidade(x.unidadeId))}) será excluído.`,
+    detalhe: 'Esta ação não pode ser desfeita.'
+  }))) return;
+  await window.dbUpdate({ [`${ORG_KEY}/ambientes/${id}`]: null });
 }
 
 // ── LISTA ANTIGA ─────────────────────────────────────────────
@@ -940,4 +1342,4 @@ async function orgLegadoExcluir(i) {
 }
 
 // ── BACKUP ───────────────────────────────────────────────────
-function _orgParaBackup() { return { unidades: orgState.unidades, setores: orgState.setores, legado: orgState.legado }; }
+function _orgParaBackup() { return { unidades: orgState.unidades, setores: orgState.setores, ambientes: orgState.ambientes, legado: orgState.legado }; }

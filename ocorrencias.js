@@ -22,6 +22,7 @@ const OC_CATALOGOS_PADRAO = {
   causasRaiz:         ['Desgaste natural', 'Falha de componente', 'Falta de manutenção', 'Erro operacional', 'Falha de treinamento', 'Causa externa (energia, clima, transporte)', 'Defeito de fabricação', 'Fim de vida útil', 'Procedimento inadequado', 'Não identificada'],
   metodosDetec:       ['Inspeção visual', 'Alarme do equipamento', 'Relato do operador', 'Monitoramento de temperatura', 'Controle de qualidade', 'Manutenção preventiva', 'Comunicado do fabricante'],
   criteriosLiberacao: ['Teste funcional aprovado', 'Controle de qualidade aprovado', 'Calibração / verificação aprovada', 'Qualificação pelo fornecedor', 'Laudo técnico de terceiro'],
+  motivosRetirada:    ['Conserto inviável técnica ou economicamente', 'Fim de vida útil / obsolescência', 'Substituído por outro equipamento', 'Aguardando peça ou reparo sem previsão', 'Aguardando decisão da gestão', 'Devolvido ao fornecedor / comodato encerrado'],
 };
 
 let ocState = {
@@ -69,6 +70,20 @@ const OC_METODO_CAUSA = { '5porques': '5 Porquês', ishikawa: 'Ishikawa (6M)', o
 const OC_ISHIKAWA = { metodo: 'Método', maquina: 'Máquina', material: 'Material', maoDeObra: 'Mão de obra', meioAmbiente: 'Meio ambiente', medicao: 'Medição' };
 const OC_DESTINOS = { anvisa_notivisa: 'ANVISA (NOTIVISA / tecnovigilância)', fabricante: 'Fabricante / distribuidor', visa_local: 'Vigilância sanitária local' };
 const OC_ETAPAS_ANEXO = { registro: 'Registro', acoes: 'Ações', liberacao: 'Liberação', notificacao: 'Notificação' };
+// Desfecho de cada ativo parado: volta a operar ou sai de uso (temporária ou definitivamente).
+// Os dois últimos resolvem a pendência da ocorrência e levam o ativo para "Em desuso".
+const OC_DESFECHOS = {
+  retorno: { label: 'Retorno ao uso',                    curto: 'Retornou ao uso',  dataLbl: 'Data/hora do retorno ao uso' },
+  desuso:  { label: 'Fora de uso (sem previsão de retorno)', curto: 'Fora de uso',  dataLbl: 'Data/hora da retirada de uso' },
+  baixa:   { label: 'Desativado / baixa definitiva',     curto: 'Desativado',       dataLbl: 'Data/hora da desativação' },
+};
+
+// Apresentação dos desfechos no popover de seleção (ico = chave de OC_ICO)
+const OC_DESF_UI = {
+  retorno: { ico: 'unlock', desc: 'Verificado e liberado para operar. Exige as OTs de pausa concluídas.' },
+  desuso:  { ico: 'lock',   desc: 'Retirado de uso, aguardando decisão ou peça. Pode voltar em outro registro.' },
+  baixa:   { ico: 'ban',    desc: 'Encerrado definitivamente: descarte, devolução ou substituição.' },
+};
 
 const OC_LBL_REGISTRO = {
   tipo: 'Tipo', subtipo: 'Subtipo', titulo: 'Título', descricao: 'Descrição',
@@ -178,7 +193,7 @@ function _ocApplyData(d) {
   ocState.ocorrencias = ocs;
   const c = d?.catalogos;
   if (c && typeof c === 'object') {
-    ['causasRaiz', 'metodosDetec', 'criteriosLiberacao'].forEach(k => {
+    ['causasRaiz', 'metodosDetec', 'criteriosLiberacao', 'motivosRetirada'].forEach(k => {
       if (Array.isArray(c[k])) ocState.catalogos[k] = c[k];
     });
     if (c.subtipos && typeof c.subtipos === 'object') {
@@ -309,6 +324,9 @@ function _ocVisivel(oc) {
 }
 function _ocTemParado(oc)        { return oc.ativos.some(a => a.parado); }
 function _ocParadosPendentes(oc) { return oc.ativos.filter(a => a.parado && !a.liberacao.liberado); }
+// Registros anteriores ao desfecho só tinham a liberação para uso, datada pela assinatura
+function _ocDesfecho(l)  { return l.desfecho || 'retorno'; }
+function _ocDataDesfecho(l) { return l.dataHora || l.em || ''; }
 function _ocNomesAtivos(oc, max = 3) {
   const nomes = oc.ativos.map(a => a.snapshot.nome || '—');
   return nomes.length > max ? `${nomes.slice(0, max).join(', ')} +${nomes.length - max}` : nomes.join(', ');
@@ -320,11 +338,13 @@ function _ocRotuloSetor(s) {
   return typeof _orgRotuloRef === 'function' ? _orgRotuloRef(s.setorId, s.setor) : (s.setor || '');
 }
 function _ocMetaAtivo(s) {
-  return [s.codigo, _ocRotuloSetor(s), s.marca && s.marca !== '-' ? s.marca : '', s.modelo && s.modelo !== '-' ? s.modelo : '', s.serie && s.serie !== '-' ? 'S/N ' + s.serie : ''].filter(Boolean).join(' · ');
+  const amb = typeof _orgRotuloAmbienteRef === 'function' ? _orgRotuloAmbienteRef(s.ambienteId, s.ambiente) : (s.ambiente || '');
+  return [s.codigo, _ocRotuloSetor(s), amb, s.marca && s.marca !== '-' ? s.marca : '', s.modelo && s.modelo !== '-' ? s.modelo : '', s.serie && s.serie !== '-' ? 'S/N ' + s.serie : ''].filter(Boolean).join(' · ');
 }
 function _ocSnapshotAtivo(a) {
   const ref = a && typeof _orgRefDoAtivo === 'function' ? _orgRefDoAtivo(a) : { setor: a?.setor || '', setorId: '', unidadeId: '' };
   return a ? { nome: a.nome || '', codigo: a.codigo || '', setor: ref.setor, setorId: ref.setorId, unidadeId: ref.unidadeId,
+               ambienteId: ref.ambienteId || '', ambiente: ref.ambiente || '',
                unidade: ref.unidadeId && typeof _orgSiglaUnidade === 'function' ? _orgSiglaUnidade(ref.unidadeId) : '', categoria: a.categoria || '',
                tipo: a.tipo || '', marca: a.marca || '', modelo: a.modelo || '', serie: a.serie || '' } : {};
 }
@@ -381,7 +401,7 @@ function _ocPendencias(oc) {
   if (!_ocEficaciaOk(oc))                    p.push({ tab: 'eficacia',    texto: oc.eficacia.eficaz === false ? 'Ações ineficazes: registrar novas ações' : 'Verificar a eficácia das ações' });
   if (!_ocLiberacaoOk(oc)) {
     const n = _ocParadosPendentes(oc).length;
-    p.push({ tab: 'eficacia', texto: n > 1 ? `Liberar formalmente ${n} ativos para uso` : 'Liberar formalmente o ativo para uso' });
+    p.push({ tab: 'eficacia', texto: n > 1 ? `Registrar o retorno ou a retirada de uso de ${n} ativos parados` : 'Registrar o retorno ou a retirada de uso do ativo parado' });
   }
   if (!_ocNotificacaoOk(oc))                 p.push({ tab: 'notificacao', texto: oc.notificacao.requer === true ? 'Registrar protocolo da notificação' : 'Avaliar a necessidade de notificação' });
   return p;
@@ -440,7 +460,7 @@ function _ocRestaurarDraft(d) {
     if (!el || el.type === 'file') return;
     if ('c' in x) el.checked = x.c; else el.value = x.v;
   });
-  ocImpactoToggle(); ocCausaMetodoChange(); ocNotifToggle(); ocAcoesNAToggle();
+  ocImpactoToggle(); ocCausaMetodoChange(); ocNotifToggle(); ocAcoesNAToggle(); ocLibDesfechoToggle();
 }
 
 // ── PAUSA E LIBERAÇÃO DO ATIVO ───────────────────────────────
@@ -1115,7 +1135,7 @@ function _ocRenderHeader(oc) {
   <div class="ot-view-hero-badges">
     ${_ocBadgeTipo(oc.tipo)} ${_ocBadgeSev(oc.severidade)} ${_ocBadgeStatus(oc.status)}
     ${pend ? `<span class="oc-badge oc-badge-parado">${OC_ICO.lock}${pend > 1 ? `${pend} ativos fora de uso` : 'Ativo fora de uso'}</span>` : ''}
-    ${nParados && !pend && oc.status !== 'cancelada' ? `<span class="oc-badge oc-badge-liberado">${OC_ICO.unlock}${nParados > 1 ? 'Ativos liberados' : 'Ativo liberado'}</span>` : ''}
+    ${nParados && !pend && oc.status !== 'cancelada' ? `<span class="oc-badge oc-badge-liberado">${OC_ICO.unlock}${oc.ativos.some(a => a.parado && _ocDesfecho(a.liberacao) !== 'retorno') ? 'Desfecho dos ativos registrado' : nParados > 1 ? 'Ativos liberados' : 'Ativo liberado'}</span>` : ''}
   </div>
 </div>
 <div class="oc-stepper">
@@ -1160,7 +1180,7 @@ function _ocRenderTab(oc, tab) {
       initUploadZone(ctx);
     }
   });
-  ocImpactoToggle(); ocCausaMetodoChange(); ocNotifToggle(); ocAcoesNAToggle();
+  ocImpactoToggle(); ocCausaMetodoChange(); ocNotifToggle(); ocAcoesNAToggle(); ocLibDesfechoToggle();
 }
 
 // Blocos reutilizados nas abas
@@ -1207,7 +1227,12 @@ function _ocAvisoSomenteLeitura(oc) {
 // Situação de um ativo dentro da ocorrência: em operação, fora de uso ou liberado
 function _ocSituacaoAtivo(oc, a) {
   if (!a.parado) return `<span class="oc-badge oc-st-cancelada">Não parado</span>`;
-  if (a.liberacao.liberado) return `<span class="oc-badge oc-st-encerrada" title="${_ocEsc(a.liberacao.criterio || '')}">${OC_ICO.unlock}Liberado ${_ocFmtDH(a.liberacao.em)}</span>`;
+  if (a.liberacao.liberado) {
+    const l = a.liberacao, d = _ocDesfecho(l);
+    return d === 'retorno'
+      ? `<span class="oc-badge oc-st-encerrada" title="${_ocEsc(l.criterio || '')}">${OC_ICO.unlock}Retornou ${_ocFmtDH(_ocDataDesfecho(l))}</span>`
+      : `<span class="oc-badge oc-st-cancelada" title="${_ocEsc(l.motivo || '')}">${OC_DESFECHOS[d].curto} ${_ocFmtDH(_ocDataDesfecho(l))}</span>`;
+  }
   if (oc.status === 'cancelada') return `<span class="oc-badge oc-st-cancelada">Parado desde ${_ocFmtDH(a.dataHoraParada)}</span>`;
   return `<span class="oc-badge oc-st-aberta">${OC_ICO.lock}Parado desde ${_ocFmtDH(a.dataHoraParada)}</span>`;
 }
@@ -1344,6 +1369,9 @@ function _ocTabAcoes(oc) {
   const cards = oc.acoes.map(a => {
     const venc = a.status !== 'concluida' && a.prazo && a.prazo < hoje;
     const podeConcluir = _ocAberta(oc) && a.status !== 'concluida' && (pode || a.responsavelId === me);
+    const podeRetificar = _ocAberta(oc) && a.status === 'concluida' && (pode || a.responsavelId === me || a.concluidaPorId === me);
+    const podeEditar = _ocAberta(oc) && a.status !== 'concluida' && (pode || a.responsavelId === me);
+    const ret = a.retificacoes?.[a.retificacoes.length - 1];
     const ot = a.otId && typeof otState !== 'undefined' ? otState.ordens.find(o => o.id === a.otId) : null;
     return `<div class="oc-acao${a.status === 'concluida' ? ' concluida' : ''}">
       <div class="oc-acao-top">
@@ -1355,10 +1383,13 @@ function _ocTabAcoes(oc) {
       <div class="oc-acao-desc">${_ocEsc(a.descricao)}</div>
       <div class="oc-acao-meta">${OC_ICO.user}${_ocEsc(a.responsavelNome || '—')} · ${OC_ICO.clock}Prazo ${_ocFmtData(a.prazo)}</div>
       ${a.status === 'concluida' ? `<div class="oc-acao-evid"><b>Evidência:</b> ${_ocEsc(a.evidencia)}<div class="oc-assinatura">${OC_ICO.check}Concluída por ${_ocEsc(a.concluidaPorNome || '—')} · ${_ocFmtDH(a.concluidaEm)}</div></div>` : ''}
+      ${ret ? `<div class="oc-assinatura">${OC_ICO.undo}${ret.conclusaoAnterior ? 'Reaberta para retificação' : 'Retificada'} por ${_ocEsc(ret.porNome || '—')} · ${_ocFmtDH(ret.em)} — ${_ocEsc(ret.motivo)}${a.retificacoes.length > 1 ? ` (${a.retificacoes.length}×, ver Trilha)` : ''}</div>` : ''}
+      ${podeRetificar ? `<div class="oc-acao-btns"><button class="btn btn-outline btn-sm" onclick="ocRetificarAcao('${a.id}')">${OC_ICO.edit} Retificar</button></div>` : ''}
       ${_ocAberta(oc) && a.status !== 'concluida' ? `<div class="oc-acao-btns">
         ${podeConcluir ? `<button class="btn btn-primary btn-sm" style="background:var(--green);" onclick="ocConcluirAcao('${a.id}')">${OC_ICO.check} Concluir</button>` : ''}
+        ${podeEditar ? `<button class="btn btn-outline btn-sm" onclick="ocEditarAcao('${a.id}')">${OC_ICO.edit} Editar</button>` : ''}
         ${pode && canOT && !a.otId && _ocAtivoDe(oc) ? `<button class="btn btn-outline btn-sm" onclick="ocGerarOT('${oc.id}','${a.id}')">${OC_ICO.ot} Gerar OT</button>` : ''}
-        ${pode ? `<button class="btn btn-outline btn-sm oc-btn-danger" onclick="ocRemoverAcao('${a.id}')">${OC_ICO.trash}</button>` : ''}
+        ${pode && !a.retificacoes?.length ? `<button class="btn btn-outline btn-sm oc-btn-danger" onclick="ocRemoverAcao('${a.id}')">${OC_ICO.trash}</button>` : ''}
       </div>` : ''}
     </div>`;
   }).join('');
@@ -1445,11 +1476,81 @@ function ocConcluirAcao(acaoId) {
   });
 }
 
-function ocRemoverAcao(acaoId) {
+// Retificação de ação concluída: reabre a ação (volta a pendente) para editar, gerar OT
+// e concluir de novo. Só com a ocorrência aberta; a conclusão anterior fica preservada
+// em retificacoes[] e na trilha, com motivo obrigatório.
+function ocRetificarAcao(acaoId) {
+  const oc = ocState.ocorrencias[_ocViewId];
+  const a = oc?.acoes.find(x => x.id === acaoId);
+  if (!a || a.status !== 'concluida' || !_ocAberta(oc)) return;
+  _ocPrompt({
+    titulo: 'Retificar ação concluída',
+    subtitulo: a.descricao,
+    html: `<div class="oc-aviso">${OC_ICO.undo} A ação volta para <b>pendente</b>: poderá ser editada, gerar OT e ser concluída novamente. A conclusão atual fica registrada na trilha.</div>
+      <div class="form-field"><label class="field-label">Motivo da retificação <span class="required">*</span></label>
+      <textarea id="oc-prompt-txt" class="field-textarea" style="min-height:80px;" placeholder="Ex.: evidência incompleta, ação precisa de intervenção técnica (OT)..."></textarea></div>`,
+    confirmar: 'Reabrir ação',
+    onConfirm: async () => {
+      const motivo = _ocVal('oc-prompt-txt');
+      if (!motivo) { showToast('Informe o motivo da retificação.', 'error'); return false; }
+      const novo = _ocClone(ocState.ocorrencias[_ocViewId]);
+      if (!_ocAberta(novo)) { showToast('A ocorrência não está mais aberta.', 'error'); return false; }
+      const ac = novo.acoes.find(x => x.id === acaoId);
+      if (!ac || ac.status !== 'concluida') return false;
+      const u = _ocSess();
+      const conclusao = { evidencia: ac.evidencia, concluidaEm: ac.concluidaEm, concluidaPorId: ac.concluidaPorId, concluidaPorNome: ac.concluidaPorNome };
+      ac.retificacoes = [...(ac.retificacoes || []), { em: _ocAgora(), porId: u.id, porNome: u.nome, motivo, conclusaoAnterior: conclusao }];
+      ac.status = 'pendente';
+      delete ac.evidencia; delete ac.concluidaEm; delete ac.concluidaPorId; delete ac.concluidaPorNome;
+      _ocTrilha(novo, 'acao_retificada', `Ação reaberta para retificação: ${ac.descricao} — motivo: ${motivo}`, [
+        { campo: 'Status', antes: 'Concluída', depois: 'Pendente' },
+        { campo: 'Evidência', antes: conclusao.evidencia || '—', depois: '—' },
+        { campo: 'Conclusão', antes: `${conclusao.concluidaPorNome || '—'} · ${_ocFmtDH(conclusao.concluidaEm)}`, depois: '—' },
+      ]);
+      await _ocCommit(novo, 'Ação reaberta para retificação.', { tab: 'acoes' });
+      return true;
+    },
+  });
+}
+
+// Edição de ação pendente (descrição); a alteração vai para a trilha com antes/depois
+function ocEditarAcao(acaoId) {
+  const oc = ocState.ocorrencias[_ocViewId];
+  const a = oc?.acoes.find(x => x.id === acaoId);
+  if (!a || a.status === 'concluida' || !_ocAberta(oc)) return;
+  _ocPrompt({
+    titulo: 'Editar ação',
+    subtitulo: `${a.tipo === 'preventiva' ? 'Preventiva' : 'Corretiva'} · ${a.responsavelNome || '—'} · prazo ${_ocFmtData(a.prazo)}`,
+    html: `<div class="form-field"><label class="field-label">Descrição <span class="required">*</span></label>
+      <textarea id="oc-prompt-txt" class="field-textarea" style="min-height:110px;">${_ocEsc(a.descricao)}</textarea></div>`,
+    confirmar: 'Salvar',
+    onConfirm: async () => {
+      const descricao = _ocVal('oc-prompt-txt');
+      if (!descricao) { showToast('Descreva a ação.', 'error'); return false; }
+      const novo = _ocClone(ocState.ocorrencias[_ocViewId]);
+      if (!_ocAberta(novo)) { showToast('A ocorrência não está mais aberta.', 'error'); return false; }
+      const ac = novo.acoes.find(x => x.id === acaoId);
+      if (!ac) return false;
+      if (descricao === ac.descricao) return true;
+      _ocTrilha(novo, 'acao_editada', `Ação editada: ${descricao}`, [{ campo: 'Descrição', antes: ac.descricao, depois: descricao }]);
+      ac.descricao = descricao;
+      await _ocCommit(novo, 'Ação atualizada.', { tab: 'acoes' });
+      return true;
+    },
+  });
+}
+
+async function ocRemoverAcao(acaoId) {
+  const atual = ocState.ocorrencias[_ocViewId]?.acoes.find(x => x.id === acaoId);
+  if (!atual) return;
+  if (!(await uiConfirmar({
+    tipo: 'perigo', titulo: 'Remover ação?', confirmar: 'Remover ação',
+    mensagem: `<b>${uiEsc(atual.descricao)}</b>`,
+    detalhe: 'A remoção fica registrada na trilha de auditoria.',
+  }))) return;
   const oc = _ocClone(ocState.ocorrencias[_ocViewId]);
   const a = oc?.acoes.find(x => x.id === acaoId);
-  if (!a || a.status === 'concluida') return;
-  if (!confirm(`Remover a ação "${a.descricao}"? O registro da remoção fica na trilha.`)) return;
+  if (!a || !_ocAberta(oc) || a.status === 'concluida' || a.retificacoes?.length) return;
   oc.acoes = oc.acoes.filter(x => x.id !== acaoId);
   _ocTrilha(oc, 'acao_removida', `Ação removida: ${a.descricao} (resp.: ${a.responsavelNome}, prazo ${_ocFmtData(a.prazo)})`);
   _ocCommit(oc, 'Ação removida.', { tab: 'acoes' });
@@ -1483,8 +1584,9 @@ function _ocTabEficacia(oc) {
       ${_ocInfo('Eficaz', ef.eficaz === true ? 'Sim' : ef.eficaz === false ? 'Não' : '—')}${_ocInfo('Evidência', `<div class="oc-texto">${_ocEsc(ef.descricao)}</div>`, true)}</div>${_ocAssinado(ef)}`;
   }
 
-  // Liberação: cada ativo parado tem a sua. Vários podem ser liberados juntos
-  // quando a mesma verificação e a mesma evidência valem para todos.
+  // Desfecho de cada ativo parado: retorno ao uso, fora de uso ou baixa, com a data
+  // real do evento. Vários podem ser registrados juntos quando tudo vale para todos;
+  // motivos diferentes = um registro por ativo.
   const parados = oc.ativos.filter(a => a.parado);
   const pendentes = parados.filter(a => !a.liberacao.liberado);
   const liberados = parados.filter(a => a.liberacao.liberado);
@@ -1492,67 +1594,247 @@ function _ocTabEficacia(oc) {
   if (parados.length) {
     const libsVistas = new Set();
     const blocosLiberados = liberados.map(a => {
-      const l = a.liberacao;
+      const l = a.liberacao, d = _ocDesfecho(l);
       const ev = l.liberacaoId && !libsVistas.has(l.liberacaoId)
         ? (libsVistas.add(l.liberacaoId), _ocAnexosHTML(oc, 'liberacao', false, x => x.liberacaoId === l.liberacaoId))
-        : (l.liberacaoId ? '<div class="oc-nota">Mesma evidência da liberação acima.</div>' : _ocAnexosHTML(oc, 'liberacao', false, x => !x.liberacaoId));
-      return `<div class="oc-liberado">${OC_ICO.unlock}<div style="flex:1;min-width:0;"><b>${_ocEsc(a.snapshot.nome)}</b> — liberado para uso
+        : (l.liberacaoId ? '<div class="oc-nota">Mesma evidência do registro acima.</div>' : _ocAnexosHTML(oc, 'liberacao', false, x => !x.liberacaoId));
+      return `<div class="oc-liberado${d === 'retorno' ? '' : ' oc-retirado'}">${d === 'retorno' ? OC_ICO.unlock : OC_ICO.lock}<div style="flex:1;min-width:0;"><b>${_ocEsc(a.snapshot.nome)}</b> — ${OC_DESFECHOS[d].label.toLowerCase()}
         <div class="oc-grid" style="margin-top:8px;">
-          ${_ocInfo('Critério', _ocEsc(l.criterio))}${_ocInfo('Liberado por', `${_ocEsc(l.porNome)} · ${_ocFmtDH(l.em)}`)}
-          ${_ocInfo('Verificação', `<div class="oc-texto">${_ocEsc(l.descricao)}</div>`, true)}
+          ${_ocInfo(OC_DESFECHOS[d].dataLbl, _ocFmtDH(_ocDataDesfecho(l)))}
+          ${d === 'retorno' ? _ocInfo('Critério', _ocEsc(l.criterio)) : _ocInfo('Motivo', _ocEsc(l.motivo))}
+          ${_ocInfo('Parado desde', _ocFmtDH(a.dataHoraParada))}${_ocInfo('Registrado por', `${_ocEsc(l.porNome)} · ${_ocFmtDH(l.em)}`)}
+          ${_ocInfo(d === 'retorno' ? 'Verificação' : 'Descrição', `<div class="oc-texto">${_ocEsc(l.descricao)}</div>`, true)}
         </div>${ev}</div></div>`;
     }).join('');
 
     let formHTML = '';
     if (pendentes.length && _ocAberta(oc) && _ocCan('liberarAtivo')) {
-      formHTML = `<div class="oc-aviso oc-aviso-red">${OC_ICO.lock} ${pendentes.length > 1 ? `${pendentes.length} ativos fora de uso` : 'Ativo fora de uso'}. Cada um só volta a "Em uso" com a sua liberação (e com as OTs de pausa concluídas).</div>
-        <div class="form-field"><label class="field-label">Ativos a liberar nesta verificação <span class="required">*</span></label>
-          ${pendentes.map((a, i) => `<label class="oc-check"><input type="checkbox" id="ocv-lib-ativo-${i}" class="ocv-lib-ativo" value="${a.ativoId}" ${pendentes.length === 1 ? 'checked' : ''}>
-            ${_ocEsc(a.snapshot.nome)} <span class="oc-cell-sub">· parado desde ${_ocFmtDH(a.dataHoraParada)}</span></label>`).join('')}
+      const unico = pendentes.length === 1;
+      const optAtivo = a => `<label class="oc-pop-opt">
+          <input type="checkbox" class="ocv-lib-ativo" value="${a.ativoId}" data-nome="${_ocEsc(a.snapshot.nome)}" ${unico ? 'checked' : ''} onchange="ocLibAtivosSync()">
+          <span class="oc-pop-mark oc-pop-mark-check">${OC_ICO.check}</span>
+          <span class="oc-pop-txt"><b>${_ocEsc(a.snapshot.nome)}</b><small>${OC_ICO.clock}Parado desde ${_ocFmtDH(a.dataHoraParada)}${_ocParadoHa(a.dataHoraParada)}</small></span>
+        </label>`;
+      const optDesf = k => `<label class="oc-pop-opt oc-desf-${k}">
+          <input type="radio" name="ocv-lib-desfecho" value="${k}" onchange="ocLibDesfechoToggle()">
+          <span class="oc-pop-ico">${OC_ICO[OC_DESF_UI[k].ico]}</span>
+          <span class="oc-pop-txt"><b>${OC_DESFECHOS[k].label}</b><small>${OC_DESF_UI[k].desc}</small></span>
+          <span class="oc-pop-mark">${OC_ICO.check}</span>
+        </label>`;
+      formHTML = `<div class="oc-aviso oc-aviso-red">${OC_ICO.lock} ${pendentes.length > 1 ? `${pendentes.length} ativos fora de uso` : 'Ativo fora de uso'}. Registre o desfecho de cada um: retorno ao uso (com as OTs de pausa concluídas) ou retirada de uso. Se os motivos forem diferentes, registre um ativo por vez.</div>
+        <div class="form-row">
+          <div class="form-field"><label class="field-label">Ativos deste registro <span class="required">*</span></label>
+            <div class="oc-pop-wrap">
+              <button type="button" class="oc-pop-trigger" id="ocv-lib-ativos-trg" aria-haspopup="true" aria-expanded="false" onclick="ocPopToggle('ocv-lib-ativos-pop', event)">${_ocLibAtivosTrgHTML(unico ? [pendentes[0].snapshot.nome] : [], pendentes.length)}</button>
+              <div class="oc-pop" id="ocv-lib-ativos-pop" role="listbox" aria-multiselectable="true">
+                ${unico ? '' : `<div class="oc-pop-head"><span>${pendentes.length} ativos parados</span>
+                  <button type="button" class="oc-pop-link" onclick="ocLibAtivosTodos(true)">Todos</button>
+                  <button type="button" class="oc-pop-link" onclick="ocLibAtivosTodos(false)">Nenhum</button></div>`}
+                ${pendentes.map(optAtivo).join('')}
+              </div>
+            </div></div>
+          <div class="form-field"><label class="field-label">Desfecho <span class="required">*</span></label>
+            <div class="oc-pop-wrap">
+              <button type="button" class="oc-pop-trigger" id="ocv-lib-desf-trg" aria-haspopup="true" aria-expanded="false" onclick="ocPopToggle('ocv-lib-desf-pop', event)">${_ocLibDesfTrgHTML('')}</button>
+              <div class="oc-pop" id="ocv-lib-desf-pop" role="listbox">${Object.keys(OC_DESFECHOS).map(optDesf).join('')}</div>
+            </div></div>
         </div>
-        <div class="form-field"><label class="field-label">Critério de liberação <span class="required">*</span></label>
-          <select id="ocv-lib-criterio" class="field-select">${_ocOptions(ocState.catalogos.criteriosLiberacao, '')}</select></div>
-        <div class="form-field"><label class="field-label">Descrição da verificação <span class="required">*</span></label>
-          <textarea id="ocv-lib-desc" class="field-textarea" placeholder="Testes realizados, resultados obtidos, quem verificou..."></textarea></div>
-        <div class="field-label" style="margin:6px 0;">Evidência da liberação <span class="required">*</span></div>
-        ${_ocAnexosHTML(oc, 'liberacao', true, x => !x.liberacaoId)}
-        ${_ocUploadHTML('oc-lib')}
-        <div class="oc-acoes-form"><button class="btn btn-primary" style="background:var(--green);" onclick="ocLiberarAtivos()">${OC_ICO.unlock} Liberar selecionados para uso</button></div>`;
+        <div id="ocv-lib-campos" style="display:none;">
+          <div class="form-row">
+            <div class="form-field"><label class="field-label"><span id="ocv-lib-data-lbl">Data/hora</span> <span class="required">*</span></label>
+              <input type="datetime-local" id="ocv-lib-data" class="field-input" max="${_ocNowLocal()}"></div>
+            <div class="form-field" id="ocv-lib-criterio-box"><label class="field-label">Critério de liberação <span class="required">*</span></label>
+              <select id="ocv-lib-criterio" class="field-select">${_ocOptions(ocState.catalogos.criteriosLiberacao, '')}</select></div>
+            <div class="form-field" id="ocv-lib-motivo-box"><label class="field-label">Motivo da retirada <span class="required">*</span></label>
+              <select id="ocv-lib-motivo" class="field-select">${_ocOptions(ocState.catalogos.motivosRetirada || [], '')}</select></div>
+          </div>
+          <div class="form-field"><label class="field-label">Descrição <span class="required">*</span></label>
+            <textarea id="ocv-lib-desc" class="field-textarea" placeholder="Testes realizados, resultados obtidos, quem verificou..."></textarea></div>
+          <div class="field-label" style="margin:6px 0;">Evidência <span class="oc-cell-sub" id="ocv-lib-ev-opc"> (opcional: termo de baixa, laudo, orçamento...)</span></div>
+          ${_ocAnexosHTML(oc, 'liberacao', true, x => !x.liberacaoId)}
+          ${_ocUploadHTML('oc-lib')}
+          <div class="oc-acoes-form"><button class="btn btn-primary" id="ocv-lib-btn" onclick="ocLiberarAtivos()">${OC_ICO.check} Registrar desfecho</button></div>
+        </div>`;
     } else if (pendentes.length) {
-      formHTML = `<div class="oc-aviso oc-aviso-red">${OC_ICO.lock} Aguardando liberação formal: ${_ocEsc(pendentes.map(a => a.snapshot.nome).join(', '))}${_ocAberta(oc) ? ' (requer permissão "Liberar ativo para uso")' : ''}.</div>`;
+      formHTML = `<div class="oc-aviso oc-aviso-red">${OC_ICO.lock} Aguardando o registro do desfecho: ${_ocEsc(pendentes.map(a => a.snapshot.nome).join(', '))}${_ocAberta(oc) ? ' (requer permissão "Liberar ativo para uso")' : ''}.</div>`;
     }
     libHTML = formHTML + blocosLiberados;
   }
 
   return `
-<div class="oc-ajuda">Confirme, após um período adequado, que as ações eliminaram a causa (sem recorrência). Os ativos retirados de uso só voltam a operar com a liberação formal e evidência objetiva.</div>
-${parados.length ? _ocSecao(`Liberação dos ativos para uso (${liberados.length}/${parados.length})`, libHTML) : ''}
+<div class="oc-ajuda">Confirme, após um período adequado, que as ações eliminaram a causa (sem recorrência). Cada ativo retirado de uso só volta a operar com a liberação formal — ou é registrado como fora de uso / desativado.</div>
+${parados.length ? _ocSecao(`Desfecho dos ativos parados (${liberados.length}/${parados.length})`, libHTML) : ''}
 ${_ocSecao('Verificação de eficácia', efHTML)}
 ${hist}
 ${!pode ? _ocAvisoSomenteLeitura(oc) : ''}`;
 }
 
+// ── POPOVER DE SELEÇÃO (ativos / desfecho) ───────────────────
+// Os inputs ficam dentro do popover (só oculto), então a leitura do formulário não muda.
+function ocPopToggle(id, ev) {
+  ev?.stopPropagation();
+  const pop = document.getElementById(id);
+  if (!pop) return;
+  const abrir = !pop.classList.contains('open');
+  _ocPopFechar();
+  if (!abrir) return;
+  pop.classList.add('open');
+  pop.previousElementSibling?.setAttribute('aria-expanded', 'true');
+}
+
+function _ocPopFechar() {
+  document.querySelectorAll('.oc-pop.open').forEach(p => {
+    p.classList.remove('open');
+    p.previousElementSibling?.setAttribute('aria-expanded', 'false');
+  });
+}
+
+document.addEventListener('click', e => { if (!e.target.closest('.oc-pop-wrap')) _ocPopFechar(); });
+// Captura: o Esc fecha só o popover, sem fechar o modal da ocorrência junto
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || !document.querySelector('.oc-pop.open')) return;
+  e.stopPropagation();
+  _ocPopFechar();
+}, true);
+
+function _ocParadoHa(dataHora) {
+  const ms = Date.now() - new Date(dataHora).getTime();
+  if (!dataHora || isNaN(ms) || ms < 0) return '';
+  const h = Math.floor(ms / 3600000), d = Math.floor(h / 24);
+  return d >= 1 ? ` · há ${d} dia${d > 1 ? 's' : ''}` : ` · há ${h}h`;
+}
+
+function ocLibAtivosTodos(marcar) {
+  document.querySelectorAll('.ocv-lib-ativo').forEach(el => { el.checked = marcar; });
+  ocLibAtivosSync();
+}
+
+function ocLibAtivosSync() {
+  const trg = document.getElementById('ocv-lib-ativos-trg');
+  if (!trg) return;
+  const todos = [...document.querySelectorAll('.ocv-lib-ativo')];
+  const sel = todos.filter(el => el.checked);
+  trg.innerHTML = _ocLibAtivosTrgHTML(sel.map(el => el.dataset.nome), todos.length);
+}
+
+function _ocLibAtivosTrgHTML(nomes, total) {
+  const chips = nomes.map(n => `<span class="oc-pop-chip">${_ocEsc(n)}</span>`).join('');
+  return `<span class="oc-pop-val">${nomes.length ? chips : '<span class="oc-pop-ph">Selecione os ativos…</span>'}</span>
+    ${total > 1 ? `<span class="oc-pop-count">${nomes.length}/${total}</span>` : ''}<span class="oc-pop-chev"></span>`;
+}
+
+function _ocLibDesfTrigger(d) {
+  const trg = document.getElementById('ocv-lib-desf-trg');
+  if (!trg) return;
+  trg.className = `oc-pop-trigger${d ? ` oc-desf-${d}` : ''}`;
+  trg.innerHTML = _ocLibDesfTrgHTML(d);
+}
+
+function _ocLibDesfTrgHTML(d) {
+  return `<span class="oc-pop-val">${d
+    ? `<span class="oc-pop-ico">${OC_ICO[OC_DESF_UI[d].ico]}</span><b>${OC_DESFECHOS[d].label}</b>`
+    : '<span class="oc-pop-ph">Escolha o desfecho…</span>'}</span><span class="oc-pop-chev"></span>`;
+}
+
+function ocLibDesfechoToggle() {
+  const d = _ocRadio('ocv-lib-desfecho');
+  _ocLibDesfTrigger(d);
+  if (d) _ocPopFechar();
+  const campos = document.getElementById('ocv-lib-campos');
+  if (!campos) return;
+  campos.style.display = d ? '' : 'none';
+  if (!d) return;
+  const retorno = d === 'retorno';
+  const show = (id, v) => { const el = document.getElementById(id); if (el) el.style.display = v ? '' : 'none'; };
+  show('ocv-lib-criterio-box', retorno); show('ocv-lib-motivo-box', !retorno);
+  document.getElementById('ocv-lib-ev-opc').textContent = retorno
+    ? ' (opcional: teste, CQ, laudo, foto do display...)'
+    : ' (opcional: termo de baixa, laudo, orçamento...)';
+  document.getElementById('ocv-lib-data-lbl').textContent = OC_DESFECHOS[d].dataLbl;
+  document.getElementById('ocv-lib-desc').placeholder = retorno
+    ? 'Testes realizados, resultados obtidos, quem verificou...'
+    : 'Situação do ativo, decisão tomada, quem autorizou, destino do equipamento...';
+  const btn = document.getElementById('ocv-lib-btn');
+  btn.style.background = retorno ? 'var(--green)' : '';
+  btn.innerHTML = retorno ? `${OC_ICO.unlock} Liberar para uso` : `${OC_ICO.lock} Registrar retirada de uso`;
+}
+
 async function ocLiberarAtivos() {
   const oc = _ocClone(ocState.ocorrencias[_ocViewId]);
-  if (!oc || !_ocAberta(oc) || !_ocCan('liberarAtivo')) { showToast('Sem permissão para liberar ativos.', 'error'); return; }
+  if (!oc || !_ocAberta(oc) || !_ocCan('liberarAtivo')) { showToast('Sem permissão para registrar o desfecho dos ativos.', 'error'); return; }
   if (_uploadsInProgress?.['oc-lib']) { showToast('Aguarde o envio do arquivo terminar.', 'error'); return; }
   const ids = [...document.querySelectorAll('.ocv-lib-ativo:checked')].map(el => el.value);
-  const criterio = _ocVal('ocv-lib-criterio'), descricao = _ocVal('ocv-lib-desc');
-  if (!ids.length)  { showToast('Selecione os ativos verificados.', 'error'); return; }
-  if (!criterio)    { showToast('Selecione o critério de liberação.', 'error'); return; }
-  if (!descricao)   { showToast('Descreva a verificação realizada.', 'error'); return; }
-  const evidencias = oc.anexos.filter(a => a.etapa === 'liberacao' && !a.liberacaoId);
-  if (!evidencias.length) { showToast('Anexe a evidência da liberação (teste, CQ, laudo...).', 'error'); return; }
+  const desfecho = _ocRadio('ocv-lib-desfecho');
+  const retorno = desfecho === 'retorno';
+  const dataHora = _ocVal('ocv-lib-data'), descricao = _ocVal('ocv-lib-desc');
+  const criterio = retorno ? _ocVal('ocv-lib-criterio') : '';
+  const motivo   = retorno ? '' : _ocVal('ocv-lib-motivo');
+  if (!ids.length)  { showToast('Selecione os ativos deste registro.', 'error'); return; }
+  if (!OC_DESFECHOS[desfecho]) { showToast('Indique o desfecho: retorno ao uso, fora de uso ou desativado.', 'error'); return; }
+  if (!dataHora)    { showToast(`Informe a ${OC_DESFECHOS[desfecho].dataLbl.toLowerCase()}.`, 'error'); return; }
+  if (dataHora > _ocNowLocal()) { showToast('A data/hora não pode estar no futuro.', 'error'); return; }
+  if (retorno && !criterio) { showToast('Selecione o critério de liberação.', 'error'); return; }
+  if (!retorno && !motivo)  { showToast('Selecione o motivo da retirada de uso.', 'error'); return; }
+  if (!descricao)   { showToast(retorno ? 'Descreva a verificação realizada.' : 'Descreva a situação e a decisão sobre o ativo.', 'error'); return; }
   const alvos = oc.ativos.filter(a => ids.includes(a.ativoId) && a.parado && !a.liberacao.liberado);
-  if (!confirm(`Confirmar a liberação formal para uso de: ${alvos.map(a => a.snapshot.nome).join(', ')}?`)) return;
+  const antesDaParada = alvos.filter(a => a.dataHoraParada && dataHora < a.dataHoraParada);
+  if (antesDaParada.length) {
+    showToast(`A data/hora é anterior à parada de: ${antesDaParada.map(a => `${a.snapshot.nome} (${_ocFmtDH(a.dataHoraParada)})`).join(', ')}.`, 'error'); return;
+  }
+  const evidencias = oc.anexos.filter(a => a.etapa === 'liberacao' && !a.liberacaoId);
+  const nomes = alvos.map(a => a.snapshot.nome).join(', ');
+  const nomesHTML = alvos.map(a => `<b>${uiEsc(a.snapshot.nome)}</b>`).join(', ');
+  const ok = await uiConfirmar(retorno ? {
+    tipo: 'sucesso', icone: 'sucesso', titulo: 'Liberar para uso?', confirmar: 'Liberar para uso',
+    mensagem: `Liberação formal de ${nomesHTML}, com retorno em <b>${_ocFmtDH(dataHora)}</b>.`,
+  } : {
+    tipo: desfecho === 'baixa' ? 'perigo' : 'aviso', titulo: `${OC_DESFECHOS[desfecho].label}?`, confirmar: 'Registrar desfecho',
+    mensagem: `${nomesHTML} — ${uiEsc(OC_DESFECHOS[desfecho].label.toLowerCase())} em <b>${_ocFmtDH(dataHora)}</b>.`,
+    detalhe: `O ativo passará para "Em desuso" no cadastro.`,
+  });
+  if (!ok) return;
   const liberacaoId = _ocUid();
   const ass = _ocAssinatura();
-  alvos.forEach(a => { a.liberacao = { liberado: true, criterio, descricao, liberacaoId, ...ass }; });
+  alvos.forEach(a => {
+    a.liberacao = { liberado: true, desfecho, dataHora, descricao, liberacaoId, ...(retorno ? { criterio } : { motivo }), ...ass };
+  });
   evidencias.forEach(a => { a.liberacaoId = liberacaoId; });
-  _ocTrilha(oc, 'liberacao', `Liberado(s) para uso — ${alvos.map(a => a.snapshot.nome).join(', ')} — ${criterio}`,
-    [{ campo: 'Verificação', antes: '—', depois: descricao }, { campo: 'Evidências', antes: '—', depois: evidencias.map(a => a.titulo).join(', ') }]);
-  await _ocCommit(oc, alvos.length > 1 ? `${alvos.length} ativos liberados.` : 'Liberação registrada.', { tab: 'eficacia' });
-  _ocReavaliarAtivo(oc);
+  _ocTrilha(oc, 'liberacao', `${OC_DESFECHOS[desfecho].label} — ${nomes} — ${retorno ? criterio : motivo}`, [
+    { campo: OC_DESFECHOS[desfecho].dataLbl, antes: '—', depois: _ocFmtDH(dataHora) },
+    { campo: retorno ? 'Verificação' : 'Descrição', antes: '—', depois: descricao },
+    ...(evidencias.length ? [{ campo: 'Evidências', antes: '—', depois: evidencias.map(a => a.titulo).join(', ') }] : []),
+  ]);
+  const msg = retorno ? (alvos.length > 1 ? `${alvos.length} ativos liberados.` : 'Liberação registrada.')
+                      : (alvos.length > 1 ? `${alvos.length} ativos retirados de uso.` : 'Retirada de uso registrada.');
+  await _ocCommit(oc, msg, { tab: 'eficacia' });
+  if (retorno) _ocReavaliarAtivo(oc);
+  else _ocRetirarDeUso(oc, alvos);
+}
+
+// Fora de uso / baixa: o ativo sai da pausa da ocorrência direto para "Em desuso"
+function _ocRetirarDeUso(oc, alvos) {
+  if (typeof state === 'undefined' || typeof _ativoIdxById !== 'function') return;
+  const u = _ocSess();
+  const nomes = [];
+  alvos.forEach(item => {
+    const idx = _ativoIdxById(item.ativoId);
+    if (idx < 0) return;
+    const a = state.ativos[idx];
+    const l = item.liberacao;
+    const ST = { em_uso: 'Em uso', em_pausa: 'Em pausa', em_desuso: 'Em desuso' };
+    const hist = Array.isArray(a._historico) ? a._historico : [];
+    state.ativos[idx] = {
+      ...a, statusUso: 'em_desuso', pausaOTs: [], pausaOcorrencias: [],
+      _historico: [{ ts: _ocAgora(), userId: u.id, userName: u.nome, isNew: false, diffs: [
+        { campo: 'Status de uso', antes: ST[a.statusUso] || a.statusUso || '—', depois: 'Em desuso' },
+        { campo: 'Motivo', antes: '—', depois: `${OC_DESFECHOS[l.desfecho].label}: ${l.motivo} (${oc.numero}, ${_ocFmtDH(l.dataHora)})` },
+      ] }, ...hist],
+    };
+    nomes.push(a.nome);
+  });
+  if (!nomes.length) return;
+  saveState();
+  showToast(`${nomes.map(n => `"${n}"`).join(', ')} ${nomes.length > 1 ? 'passaram' : 'passou'} para Em desuso.`, 'success');
 }
 
 // ── ABA NOTIFICAÇÃO ──────────────────────────────────────────
@@ -1639,7 +1921,11 @@ async function ocSalvarEtapa(etapa) {
     oc.impacto = { ...novo, ..._ocAssinatura() };
     _ocTrilha(oc, 'impacto', 'Avaliação de impacto registrada', diffs);
     if ((novo.riscoPaciente || novo.laudosLiberadosAfetados) && oc.severidade !== 'critica'
-        && confirm('Há risco ao paciente ou laudos liberados afetados. Elevar a severidade para Crítica?')) {
+        && await uiConfirmar({
+          titulo: 'Elevar severidade para Crítica?', confirmar: 'Elevar para Crítica', cancelar: 'Manter atual',
+          mensagem: `A avaliação indica ${[novo.riscoPaciente && '<b>risco ao paciente</b>', novo.laudosLiberadosAfetados && '<b>laudos liberados afetados</b>'].filter(Boolean).join(' e ')}.`,
+          detalhe: `Severidade atual: ${uiEsc(OC_SEV[oc.severidade]?.label || '—')}.`,
+        })) {
       _ocTrilha(oc, 'edicao', 'Severidade elevada após avaliação de impacto', [{ campo: 'Severidade', antes: OC_SEV[oc.severidade]?.label, depois: 'Crítica' }]);
       oc.severidade = 'critica';
     }
@@ -1733,11 +2019,19 @@ function ocUpload(ctx) {
   }, prefixo);
 }
 
-function ocRemoverAnexo(i) {
+async function ocRemoverAnexo(i) {
+  const alvo = ocState.ocorrencias[_ocViewId]?.anexos[i];
+  if (!alvo) return;
+  if (!(await uiConfirmar({
+    tipo: 'perigo', titulo: 'Remover anexo?', confirmar: 'Remover anexo',
+    mensagem: `<b>${uiEsc(alvo.titulo)}</b> será removido desta ocorrência.`,
+    detalhe: 'A remoção fica registrada na trilha de auditoria.',
+  }))) return;
+  // Relê depois da confirmação: a lista pode ter mudado enquanto a janela estava aberta
   const oc = _ocClone(ocState.ocorrencias[_ocViewId]);
+  i = oc?.anexos.findIndex(x => x.url === alvo.url && x.titulo === alvo.titulo) ?? -1;
   const a = oc?.anexos[i];
   if (!a || !_ocAberta(oc)) return;
-  if (!confirm(`Remover o anexo "${a.titulo}" desta ocorrência? A remoção fica registrada na trilha.`)) return;
   oc.anexos.splice(i, 1);
   _ocTrilha(oc, 'anexo_removido', `Anexo removido (${OC_ETAPAS_ANEXO[a.etapa] || ''}): ${a.titulo} — ${a.url}`);
   _ocCommit(oc, 'Anexo removido.', { manterDraft: true });
@@ -1854,7 +2148,9 @@ function ocExcluir(id) {
 // Modal genérico de confirmação com campos
 function _ocPrompt({ titulo, subtitulo, html, confirmar, cor, onConfirm }) {
   document.getElementById('oc-prompt-title').textContent = titulo;
-  document.getElementById('oc-prompt-subtitle').textContent = subtitulo || '';
+  const sub = document.getElementById('oc-prompt-subtitle');
+  sub.textContent = subtitulo || '';
+  sub.title = subtitulo || ''; // texto longo fica cortado em 2 linhas; o completo aparece no hover
   document.getElementById('oc-prompt-body').innerHTML = html;
   const btn = document.getElementById('oc-prompt-confirm');
   btn.style.display = confirmar ? '' : 'none';
@@ -2102,6 +2398,14 @@ function _ocTimelineAtivo(ativo, idx) {
     titulo: `${oc.numero} — ${oc.titulo}`, sub: `${OC_TIPOS[oc.tipo]?.label || ''} · ${OC_STATUS[oc.status]?.label || ''}`,
     onclick: `ocOpenView('${oc.id}')`,
   }));
+  ocListarPorAtivo(ativo.id).forEach(oc => oc.ativos.filter(a => a.ativoId === ativo.id && a.parado && a.liberacao.liberado).forEach(a => {
+    const l = a.liberacao, d = _ocDesfecho(l);
+    ev.push({
+      data: _ocDataDesfecho(l).length > 16 ? _ocIsoParaLocal(l.em) : _ocDataDesfecho(l), cls: 'oc', rotulo: OC_DESFECHOS[d].curto,
+      titulo: `${oc.numero} — ${d === 'retorno' ? l.criterio : l.motivo}`, sub: `Parado desde ${_ocFmtDH(a.dataHoraParada)} · ${l.porNome || ''}`,
+      onclick: `ocOpenView('${oc.id}')`,
+    });
+  }));
   const OT_ST = { pendente: 'Pendente', em_processo: 'Em processo', em_revisao: 'Em revisão', concluida: 'Concluída', cancelada: 'Cancelada' };
   (typeof otState !== 'undefined' ? otState.ordens : [])
     .filter(o => otAtivoIds(o).includes(ativo.id) || otTemAtivo(o, idx))
@@ -2180,7 +2484,7 @@ function ocImprimir(id) {
 <table><tr><th style="width:auto">Ativo</th><th style="width:12%">Código</th><th style="width:18%">Unidade · Setor</th><th style="width:22%">Marca / Modelo / Nº de série</th><th style="width:20%">Situação</th></tr>
 ${oc.ativos.map(a => { const s = a.snapshot; return `<tr><td>${e(s.nome)}</td><td>${e(s.codigo)}</td><td>${e(_ocRotuloSetor(s))}</td>
 <td>${e([s.marca, s.modelo, s.serie].filter(x => x && x !== '-').join(' / '))}</td>
-<td>${a.parado ? `Parado desde ${_ocFmtDH(a.dataHoraParada)}${a.liberacao.liberado ? `<br>Liberado em ${_ocFmtDH(a.liberacao.em)}` : '<br><b>Aguardando liberação</b>'}` : 'Não parado'}</td></tr>`; }).join('')}</table>
+<td>${a.parado ? `Parado desde ${_ocFmtDH(a.dataHoraParada)}${a.liberacao.liberado ? `<br>${OC_DESFECHOS[_ocDesfecho(a.liberacao)].curto} em ${_ocFmtDH(_ocDataDesfecho(a.liberacao))}` : '<br><b>Aguardando desfecho</b>'}` : 'Não parado'}</td></tr>`; }).join('')}</table>
 <h2>2. Descrição da ocorrência</h2>
 <table>${linha('Título', e(oc.titulo))}${linha('Tipo / Subtipo', e(`${OC_TIPOS[oc.tipo]?.label || ''}${oc.subtipo ? ' / ' + oc.subtipo : ''}`))}
 ${linha('Ocorrida em', _ocFmtDH(oc.dataHoraOcorrencia))}${linha('Detectada em / método', `${_ocFmtDH(oc.dataHoraDeteccao)}${oc.metodoDetec ? ' · ' + e(oc.metodoDetec) : ''}`)}
@@ -2209,11 +2513,12 @@ ${ots.length ? `<table>${linha('OTs vinculadas', ots.map(o => `${e(o.numero)} �
 <table>${oc.eficaciaHistorico.map(h => linha(`Verificação anterior (${_ocFmtData(h.verificadaEm)})`, `${h.eficaz ? 'Eficaz' : 'Não eficaz'} — ${e(h.descricao)}${ass(h)}`)).join('')}
 ${linha('Verificada em', _ocFmtData(ef.verificadaEm))}${linha('Eficaz', ef.eficaz === true ? 'Sim' : ef.eficaz === false ? 'Não' : '—')}
 ${linha('Evidência', `<div class="txt">${e(ef.descricao)}</div>${ass(ef)}`)}</table>
-${temLib ? `<h2>8. Liberação dos ativos para uso</h2>
-${parados.map(a => { const l = a.liberacao; return `<table>${linha('Ativo', `<b>${e(a.snapshot.nome)}</b> — parado desde ${_ocFmtDH(a.dataHoraParada)}`)}
-${linha('Liberado', l.liberado ? 'Sim' : 'Não — ativo fora de uso')}
-${l.liberado ? linha('Critério', e(l.criterio)) + linha('Verificação', `<div class="txt">${e(l.descricao)}</div>${ass(l)}`)
-  + linha('Evidências', oc.anexos.filter(x => x.etapa === 'liberacao' && (l.liberacaoId ? x.liberacaoId === l.liberacaoId : !x.liberacaoId)).map(x => e(x.titulo)).join(', ')) : ''}</table>`; }).join('')}` : ''}
+${temLib ? `<h2>8. Desfecho dos ativos parados</h2>
+${parados.map(a => { const l = a.liberacao, d = _ocDesfecho(l), ret = d === 'retorno'; return `<table>${linha('Ativo', `<b>${e(a.snapshot.nome)}</b> — parado desde ${_ocFmtDH(a.dataHoraParada)}`)}
+${linha('Desfecho', l.liberado ? OC_DESFECHOS[d].label : 'Pendente — ativo fora de uso')}
+${l.liberado ? linha(OC_DESFECHOS[d].dataLbl, _ocFmtDH(_ocDataDesfecho(l))) + linha(ret ? 'Critério' : 'Motivo', e(ret ? l.criterio : l.motivo))
+  + linha(ret ? 'Verificação' : 'Descrição', `<div class="txt">${e(l.descricao)}</div>${ass(l)}`)
+  + linha('Evidências', oc.anexos.filter(x => x.etapa === 'liberacao' && (l.liberacaoId ? x.liberacaoId === l.liberacaoId : !x.liberacaoId)).map(x => e(x.titulo)).join(', ') || '—') : ''}</table>`; }).join('')}` : ''}
 <h2>${temLib ? 9 : 8}. Notificação externa</h2>
 <table>${linha('Requer notificação', OC_FMT.requer(n.requer))}${n.requer ? linha('Destinos', e(OC_FMT.destinos(n.destinos))) + linha('Protocolo / data', `${e(n.protocolo)} · ${_ocFmtData(n.data)}`) : ''}
 ${linha(n.requer ? 'Descrição' : 'Justificativa', `<div class="txt">${e(n.descricao)}</div>${ass(n)}`)}</table>
@@ -2302,7 +2607,8 @@ function ocRenderConfigCatalogos() {
     <div class="oc-cat-grupo">Tratamento</div>
     ${bloco('Causas raiz', 'causasRaiz', ocState.catalogos.causasRaiz)}
     ${bloco('Métodos de detecção', 'metodosDetec', ocState.catalogos.metodosDetec)}
-    ${bloco('Critérios de liberação do ativo', 'criteriosLiberacao', ocState.catalogos.criteriosLiberacao)}`;
+    ${bloco('Critérios de liberação do ativo', 'criteriosLiberacao', ocState.catalogos.criteriosLiberacao)}
+    ${bloco('Motivos de retirada de uso (fora de uso / baixa)', 'motivosRetirada', ocState.catalogos.motivosRetirada || [])}`;
 }
 
 function _ocCatLista(chave, tipo) {
@@ -2319,9 +2625,17 @@ function ocCatAdicionar(chave, tipo) {
   _ocSalvarCatalogos();
   ocRenderConfigCatalogos();
 }
-function ocCatRemover(chave, i, tipo) {
+async function ocCatRemover(chave, i, tipo) {
+  const valor = _ocCatLista(chave, tipo)[i];
+  if (valor === undefined) return;
+  if (!(await uiConfirmar({
+    tipo: 'perigo', titulo: 'Remover do catálogo?', confirmar: 'Remover',
+    mensagem: `<b>${uiEsc(valor)}</b> deixa de aparecer nas opções.`,
+    detalhe: 'Registros existentes não são alterados.',
+  }))) return;
   const lista = _ocCatLista(chave, tipo);
-  if (!confirm(`Remover "${lista[i]}" do catálogo? Registros existentes não são alterados.`)) return;
+  i = lista.indexOf(valor);
+  if (i < 0) return;
   lista.splice(i, 1);
   _ocSalvarCatalogos();
   ocRenderConfigCatalogos();

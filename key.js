@@ -629,7 +629,9 @@ function openTopbarSectorFilter() {
 // Verifica se o usuário pode ver um ativo com base no filtro de unidades/setores ativo
 function _userCanSeeAtivo(ativo) {
   if (!ativo) return false;
-  return _userCanSeeSetor(typeof _orgSetorIdDoAtivo === 'function' ? _orgSetorIdDoAtivo(ativo) : '');
+  // Setor responsável ou qualquer setor com que o ativo é compartilhado
+  const ids = typeof _orgSetorIdsDoAtivo === 'function' ? _orgSetorIdsDoAtivo(ativo) : [];
+  return ids.length ? ids.some(_userCanSeeSetor) : _userCanSeeSetor('');
 }
 // Mesmo critério para um setor (id) — OT/ocorrência sem ativo
 function _userCanSeeSetor(setorId) {
@@ -951,11 +953,11 @@ function saveUserProfile() {
 }
 
 // ── LOGOUT ────────────────────────────────────────────────────
-function authDoLogout() {
+async function authDoLogout() {
   if (typeof openModal === 'function') {
     openModal('modal-confirmar-logout');
   } else {
-    if (!confirm('Deseja sair do sistema?')) return;
+    if (!(await uiConfirmar({ icone: 'sair', titulo: 'Sair do sistema?', mensagem: 'Sua sessão será encerrada neste dispositivo.', confirmar: 'Sair' }))) return;
     authLogout();
   }
 }
@@ -1207,20 +1209,26 @@ function updateUserEditAdminButton() {
   }
 }
 
-function promoteAdmin(id) {
+async function promoteAdmin(id) {
   const u = authState.users.find(u => u.id === id);
   if (!u || !currentSession?.isAdmin || u.id === currentSession.userId) return;
-  if (!confirm(`Promover "${u.nomeCompleto}" a administrador?`)) return;
+  if (!(await uiConfirmar({
+    tipo: 'info', titulo: 'Promover a administrador?', confirmar: 'Promover',
+    mensagem: `<b>${uiEsc(u.nomeCompleto)}</b> terá acesso total ao sistema, inclusive a usuários e permissões.`,
+  }))) return;
   u.isAdmin = true;
   _saveAuth();
   renderUsersTable();
   if (typeof showToast === 'function') showToast(`${u.nomeCompleto} agora é administrador.`, 'success');
 }
 
-function demoteAdmin(id) {
+async function demoteAdmin(id) {
   const u = authState.users.find(u => u.id === id);
   if (!u || !currentSession?.isAdmin || u.id === currentSession.userId) return;
-  if (!confirm(`Remover permissão de administrador de "${u.nomeCompleto}"?`)) return;
+  if (!(await uiConfirmar({
+    titulo: 'Remover administrador?', confirmar: 'Remover permissão',
+    mensagem: `<b>${uiEsc(u.nomeCompleto)}</b> deixa de ser administrador e passa a seguir as permissões do grupo.`,
+  }))) return;
   u.isAdmin = false;
   _saveAuth();
   renderUsersTable();
@@ -1528,7 +1536,7 @@ function saveUserEdit() {
     showToast(_userEditId ? 'Usuário atualizado!' : 'Usuário criado!', 'success');
 }
 
-function deleteUser(id) {
+async function deleteUser(id) {
   if (currentSession && !currentSession.isAdmin && !authHasPermission('config.gerenciarUsuarios')) {
     if (typeof showToast === 'function') showToast('Você não tem permissão para excluir usuários.', 'error');
     return;
@@ -1537,7 +1545,11 @@ function deleteUser(id) {
   if (!u) return;
   if (u.isAdmin) { if (typeof showToast==='function') showToast('Não é possível excluir o administrador.', 'error'); return; }
   if (u.id === currentSession?.userId) { if (typeof showToast==='function') showToast('Você não pode excluir sua própria conta.', 'error'); return; }
-  if (!confirm(`Excluir o usuário "${u.nomeCompleto}"? Esta ação não pode ser desfeita.`)) return;
+  if (!(await uiConfirmar({
+    tipo: 'perigo', titulo: 'Excluir usuário?', confirmar: 'Excluir',
+    mensagem: `O usuário <b>${uiEsc(u.nomeCompleto)}</b> perderá o acesso ao sistema.`,
+    detalhe: 'Esta ação não pode ser desfeita.',
+  }))) return;
   authState.users = authState.users.filter(u => u.id !== id);
   _saveAuth();
   renderUsersTable();
@@ -1570,7 +1582,7 @@ const PERM_LABELS = {
   excluirPublicacoes:'Excluir Publicações',
   registrar:'Registrar', tratar:'Tratar (impacto, causa, ações)', liberarAtivo:'Liberar ativo para uso',
   encerrar:'Encerrar / reabrir', cancelar:'Cancelar',
-  lancar:'Lançar corridas de controle', liberar:'Avaliar / liberar corridas', configurar:'Cadastros e unidades de CQ',
+  lancar:'Lançar corridas de controle', liberar:'Avaliar / liberar corridas', configurar:'Cadastros e áreas de CQ',
   definirAlvos:'Definir médias, DP e regras', ceq:'Controle externo (CEQ)', revisar:'Revisão mensal / análise crítica',
   relatorios:'Relatórios de CQ', invalidar:'Corrigir / invalidar resultados',
   visualizarConfig:'Visualizar configurações', backup:'Backup',
@@ -1932,13 +1944,16 @@ function saveGroupEdit() {
     showToast(_groupEditId ? 'Grupo atualizado!' : 'Grupo criado!', 'success');
 }
 
-function deleteGroup(id) {
+async function deleteGroup(id) {
   const g = authState.groups.find(g => g.id === id);
   if (!g) return;
   if (g.isDefault) { if (typeof showToast==='function') showToast('Não é possível excluir o grupo padrão.', 'error'); return; }
   const n = authState.users.filter(u => u.grupoId === id).length;
   if (n > 0) { if (typeof showToast==='function') showToast(`Este grupo tem ${n} membro(s). Mova-os antes de excluir.`, 'error'); return; }
-  if (!confirm(`Excluir o grupo "${g.nome}"?`)) return;
+  if (!(await uiConfirmar({
+    tipo: 'perigo', titulo: 'Excluir grupo?', confirmar: 'Excluir',
+    mensagem: `O grupo <b>${uiEsc(g.nome)}</b> e suas permissões serão removidos.`,
+  }))) return;
   authState.groups = authState.groups.filter(g => g.id !== id);
   _saveAuth();
   renderGroupsTable();

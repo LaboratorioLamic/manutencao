@@ -50,15 +50,15 @@ function cqExemploCriar() {
   if (!_cqConfigReady) { showToast('Aguarde o carregamento do CQ.', 'info'); return; }
   if (_cqExemploExiste()) { showToast('Os dados de exemplo já existem. Remova-os antes de criar de novo.', 'error'); return; }
   _cqPrompt({
-    titulo: 'Criar dados de exemplo', subtitulo: 'Unidade fictícia “EXEMP”',
-    corpo: `<div class="cq-nota">Será criada a unidade <b>EXEMP — Unidade de exemplo</b> com cerca de ${CQ_EX_DIAS} dias de corridas:</div>
+    titulo: 'Criar dados de exemplo', subtitulo: 'Área fictícia “EXEMP”',
+    corpo: `<div class="cq-nota">Será criada a área <b>EXEMP — Área de exemplo</b> com cerca de ${CQ_EX_DIAS} dias de corridas:</div>
       <ul class="cq-nota" style="margin:6px 0 10px 18px;padding:0;">
         <li><b>Bioquímica</b> (glicose, colesterol, creatinina): Westgard com aceites, alertas, rejeições, repetições, troca de lote de reagente e lote anterior encerrado por vencimento.</li>
         <li><b>Microbiologia</b> (corrida fracionada): coloração de Gram semanal e Ágar Mueller Hinton preparado no laboratório, com preparos anteriores finalizados (consumidos), um reprovado e descartado e o de hoje em avaliação (desempenho atípico aguardando decisão).</li>
         <li><b>Urinálise</b>: proteína na tira reagente (semiquantitativo), com alerta de uma categoria e uma discordância.</li>
         <li>Produtos com vários lotes (em uso, em avaliação, quarentena, encerrado), produto sem lote e não conformidades abertas e concluídas.</li>
       </ul>
-      <div class="cq-alerta-box">${CQ_ICO.alerta} Os dados são fictícios e ficam gravados no banco até serem removidos por “Remover dados de exemplo”. Não use a unidade de exemplo para registros reais.</div>`,
+      <div class="cq-alerta-box">${CQ_ICO.alerta} Os dados são fictícios e ficam gravados no banco até serem removidos por “Remover dados de exemplo”. Não use a área de exemplo para registros reais.</div>`,
     confirmar: 'Criar dados de exemplo',
     onConfirm: async () => {
       if (!_cqPodeGravar()) return false;
@@ -69,7 +69,7 @@ function cqExemploCriar() {
       _cqInvalidarCaches();
       cqSetUnidade(CQ_EX_U);
       cqRenderConfig();
-      showToast('Dados de exemplo criados. Unidade EXEMP selecionada na aba Controle de Qualidade.', 'success');
+      showToast('Dados de exemplo criados. Área EXEMP selecionada na aba Controle de Qualidade.', 'success');
       return true;
     },
   });
@@ -109,11 +109,11 @@ function _cqExemploMontar() {
   // ── Unidade (microbiologia em corrida fracionada: Gram e meios rodam em momentos distintos) ──
   const sisBq = 'Analisador bioquímico (exemplo)', sisMic = 'Bancada de microbiologia (exemplo)', sisUri = 'Leitura de tiras reagentes (exemplo)';
   cfg('unidades', novo({
-    id: U, sigla: 'EXEMP', nome: 'Unidade de exemplo (dados fictícios)', cnes: '', endereco: '', fuso: CQ_EX_FUSO, rtUserId: me.id,
+    id: U, sigla: 'EXEMP', nome: 'Área de exemplo (dados fictícios)', cnes: '', endereco: '', fuso: CQ_EX_FUSO, rtUserId: me.id,
     setores: [], diasOperacao: [0, 1, 2, 3, 4, 5, 6], ativa: true, validacao: true, membros: { [me.id]: 'rt' },
     politica: { liberarAceitosAoSalvar: true, comentarioObrigatorioAlerta: true, reautenticar: true, retroativoHoras: 24,
                 modoCorrida: 'lote', modoCorridaEquip: { [_cqChaveModoEquip('m:' + sisMic)]: 'fracionada' } },
-  }, 'Unidade cadastrada'));
+  }, 'Área cadastrada'));
 
   // ── Analitos (com os sistemas analíticos onde são dosados) ──
   const AN = {
@@ -538,8 +538,8 @@ function cqExemploRemover() {
     return;
   }
   _cqPrompt({
-    titulo: 'Remover dados de exemplo', subtitulo: 'Unidade EXEMP e cadastros “(exemplo)”', perigo: true, confirmar: 'Remover',
-    corpo: `<div class="cq-nota">Remove a unidade de exemplo com todas as suas corridas, resultados, alvos, não conformidades e índices, e os cadastros de exemplo (ids iniciados por “ex-”). Dados de outras unidades não são alterados.</div>`,
+    titulo: 'Remover dados de exemplo', subtitulo: 'Área EXEMP e cadastros “(exemplo)”', perigo: true, confirmar: 'Remover',
+    corpo: `<div class="cq-nota">Remove a área de exemplo com todas as suas corridas, resultados, alvos, não conformidades e índices, e os cadastros de exemplo (ids iniciados por “ex-”). Dados de outras áreas não são alterados.</div>`,
     onConfirm: async () => {
       if (!_cqPodeGravar()) return false;
       const updates = {};

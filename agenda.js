@@ -57,7 +57,7 @@
       : state.ativos;
     const tipos    = [...new Set(state.rotinas.map(r => r.tipo).filter(Boolean))].sort();
     const cats     = [...new Set(ativosVisiveis.map(a => a.categoria).filter(Boolean))].sort();
-    _agendaSetorIds = [...new Set(ativosVisiveis.map(a => _orgSetorIdDoAtivo(a)).filter(Boolean))];
+    _agendaSetorIds = [...new Set(ativosVisiveis.flatMap(a => _orgSetorIdsDoAtivo(a)).filter(Boolean))];
 
     // Tipo continua como select
     const _rebuild = (sel, items, placeholder) => {
@@ -197,7 +197,7 @@
       : state.ativos;
     const tipos   = [...new Set(state.rotinas.map(r => r.tipo).filter(Boolean))].sort();
     const cats    = [...new Set(ativosVisiveis.map(a => a.categoria).filter(Boolean))].sort();
-    _tabSetorIds[tab] = [...new Set(ativosVisiveis.map(a => _orgSetorIdDoAtivo(a)).filter(Boolean))];
+    _tabSetorIds[tab] = [...new Set(ativosVisiveis.flatMap(a => _orgSetorIdsDoAtivo(a)).filter(Boolean))];
 
     const cur = selTipo.value;
     selTipo.innerHTML = `<option value="">Todos</option>` +
@@ -1095,7 +1095,7 @@
     const el = document.createElement('div');
     el.id = 'agenda-aviso-futura';
     el.innerHTML = `
-      <div class="agenda-aviso-futura-backdrop" onclick="document.getElementById('agenda-aviso-futura').remove()"></div>
+      <div class="agenda-aviso-futura-backdrop"></div>
       <div class="agenda-aviso-futura-box">
         <div class="agenda-aviso-futura-icon">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:28px;height:28px;">

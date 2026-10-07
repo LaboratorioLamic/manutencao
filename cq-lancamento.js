@@ -115,7 +115,7 @@ function cqRenderLancar(body) {
           <span class="cq-lanc-eq-txt"><b>${_cqEsc(x.nome)}</b><small>${x.testes.length} teste${x.testes.length === 1 ? '' : 's'}${x.ativo?.statusUso === 'em_pausa' ? ' · em pausa (verificação)' : ''}</small>
             <span class="cq-lanc-eq-st"><i></i>${_cqEsc(r.status)}</span></span>
           <svg class="cq-cfg-tile-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 6 15 12 9 18"/></svg></button>`;
-      }).join('')}</div></div>` : '<div class="cq-vazio">Nenhum teste ativo nesta unidade. Cadastre testes em Cadastros.</div>'}
+      }).join('')}</div></div>` : '<div class="cq-vazio">Nenhum teste ativo nesta área. Cadastre testes em Cadastros.</div>'}
   </div>`;
   if (g) { _cqLancAtualizarRetro(); _cqGradeAtualizarTudo(); if (ester) _cqEsterAtualizar(); }
 }
@@ -722,7 +722,7 @@ function cqLancTrocarLote(tid, n) {
   const atual = _cqLoteDoNivel(t, n);
   const cands = _cqLotesTrocaNivel(t, n, dia).filter(l => l.id !== atual?.id);
   const mat = cqState.config.materiais[_cqMaterialDoNivel(t, n)];
-  if (!cands.length) { showToast(`Nenhum outro lote de ${mat?.nome || 'controle'} em uso ou em avaliação, dentro da validade, nesta unidade. Cadastre-o em Controles/Materiais.`, 'error'); return; }
+  if (!cands.length) { showToast(`Nenhum outro lote de ${mat?.nome || 'controle'} em uso ou em avaliação, dentro da validade, nesta área. Cadastre-o em Controles/Materiais.`, 'error'); return; }
   const dec = _cqAnalito(t.analitoId)?.decimais ?? 2;
   const alvoTxt = (l, m) => { const a = _cqAlvoVigente(t.id, l.id, m, _cqLanc?.dataHora); return a ? `${_cqNum(a.media, dec)} ± ${_cqNum(a.dp, dec + 1)}` : 'sem alvo'; };
   const rot = m => qual ? _cqRotuloNivel(t, m) : `N${m}`;
@@ -1122,6 +1122,8 @@ async function cqLancSalvar() {
             validade: _cqPrepValidade(ins, data), situacao: leg ? 'liberado' : 'em_avaliacao', legado: !!leg, origem: 'lancamento', criadoEm: ass.em, criadoPor: ass, corridas: {} };
           // Uso único: consumido nesta corrida (sai dos lançamentos; a decisão da corrida ainda libera ou reprova)
           if (ins.preparoUsoUnico) obj.finalizado = { auto: true, motivo: `uso único — corrida ${numero}`, ...ass };
+          // Produto liberado no registro (sem CIQ): nasce liberado, como na aba Preparos
+          if (!leg && ins.preparo?.liberaSemCIQ) { obj.situacao = 'liberado'; obj.avaliacao = { auto: true, acao: 'liberado', motivo: 'Liberado no registro (produto sem corrida de CIQ)', ...ass }; }
           prepNovos[k] = obj;
           updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${obj.id}`] = obj;
           updates[`${CQ_KEYS.config}/insumos/${l.lr}/trilha/${_cqTk()}${obj.id.slice(-3)}`] = _cqTrilhaEntry('edicao', `Preparo ${obj.codigo} de ${_cqFmtData(data)} (${obj.responsavel}${_cqPrepQtdTxt(obj) ? ', ' + _cqPrepQtdTxt(obj) : ''}) registrado na corrida ${numero}`);
@@ -1705,7 +1707,7 @@ async function cqImprimirCorrida() {
   <style>@page{size:A4;margin:14mm}body{font:12px/1.4 system-ui,sans-serif;color:#111}h1{font-size:16px;margin:0 0 4px}table{width:100%;border-collapse:collapse;margin-top:10px}
   th,td{border:1px solid #999;padding:4px 6px;vertical-align:top;text-align:left}th{background:#eee}small{color:#555}.meta{display:grid;grid-template-columns:1fr 1fr;gap:2px 16px;margin-top:6px}</style></head>
   <body><h1>Registro de corrida de controle interno — ${_cqEsc(c.numero)}</h1>
-  <div class="meta"><div><b>Unidade:</b> ${_cqEsc(un?.sigla)} — ${_cqEsc(un?.nome)}${un?.cnes ? ` (CNES ${_cqEsc(un.cnes)})` : ''}${_cqSetoresDeRegistro(c).filter(Boolean).length ? ` · <b>Setor:</b> ${_cqEsc([...new Set(_cqSetoresDeRegistro(c).filter(Boolean))].map(_cqRotuloSetor).join(', '))}` : ''}</div><div><b>Equipamento:</b> ${_cqEsc(c.ativoSnap?.nome || c.sistemaAnalitico || '')}${c.ativoSnap?.serie ? ` · S/N ${_cqEsc(c.ativoSnap.serie)}` : ''}</div>
+  <div class="meta"><div><b>Área:</b> ${_cqEsc(un?.sigla)} — ${_cqEsc(un?.nome)}${un?.cnes ? ` (CNES ${_cqEsc(un.cnes)})` : ''}${_cqSetoresDeRegistro(c).filter(Boolean).length ? ` · <b>Setor:</b> ${_cqEsc([...new Set(_cqSetoresDeRegistro(c).filter(Boolean))].map(_cqRotuloSetor).join(', '))}` : ''}</div><div><b>Equipamento:</b> ${_cqEsc(c.ativoSnap?.nome || c.sistemaAnalitico || '')}${c.ativoSnap?.serie ? ` · S/N ${_cqEsc(c.ativoSnap.serie)}` : ''}</div>
   <div><b>Data/hora:</b> ${_cqFmtDH(c.dataHora)}</div><div><b>Executado por:</b> ${_cqEsc(c.operadorNome)}</div>
   <div><b>Lançado por:</b> ${_cqEsc(c.lancadoPorNome)} em ${_cqFmtDH(c.lancadoEm)} (estação ${_cqEsc(c.estacao || '')})</div><div><b>Situação:</b> ${_cqEsc(CQ_CORRIDA_STATUS[_cqStatusCorrida(c)]?.label)}</div>${c.observacao ? `<div style="grid-column:1/-1;"><b>Observação:</b> ${_cqEsc(c.observacao)}</div>` : ''}</div>
   ${typeof _cqEsterImpressaoHTML === 'function' ? _cqEsterImpressaoHTML(c) : ''}

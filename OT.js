@@ -1856,7 +1856,7 @@ function otSaveForm() {
       ocorrenciaId:  null, // substituído por ocorrenciaIds
       // Setor/unidade do ativo principal no momento da abertura (histórico)
       ...((_otAtivoIdx !== null && typeof state !== 'undefined')
-        ? _orgRefDoAtivo(state.ativos[_otAtivoIdx]) : { setor: '', setorId: '', unidadeId: '' }),
+        ? _orgRefDoAtivo(state.ativos[_otAtivoIdx]) : { setor: '', setorId: '', unidadeId: '', ambienteId: '', ambiente: '' }),
       solicitanteId:   sess?.userId       || null,
       solicitanteNome: sess?.nomeCompleto || sess?.username || '',
       responsavelIds:  respIds,
@@ -2025,6 +2025,10 @@ function _otRenderView(o) {
     <div class="detail-label">Setor</div>
     <div class="detail-value">${_escHtml((o.setorId || o.setor) ? _orgRotuloRef(o.setorId, o.setor) : (_orgRotuloAtivo(ativo) || '—'))}</div>
   </div>
+  ${o.ambienteId || o.ambiente ? `<div class="detail-card">
+    <div class="detail-label">Ambiente</div>
+    <div class="detail-value">${_escHtml(_orgRotuloAmbienteRef(o.ambienteId, o.ambiente))}</div>
+  </div>` : ''}
   <div class="detail-card">
     <div class="detail-label">Prazo</div>
     <div class="detail-value">${o.prazo ? _fmtDate(o.prazo) : '—'}</div>

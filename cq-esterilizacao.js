@@ -194,7 +194,7 @@ function _cqEsterUnidadeHTML(u, grupos) {
   const rel = grupos.filter(g => _cqEsterCfgRaw(u, g.key) || _cqEsterTemIndicadores(g.testes));
   const outros = grupos.filter(g => !rel.includes(g));
   return `<div class="form-section"><div class="form-section-title">${CQ_ICO.clock}Ciclos de esterilização (autoclaves)</div>
-    <div class="cq-nota">Ficha do ciclo por equipamento: lote da carga, programa, tempo, temperatura, pressão e pacotes em cada corrida (RDC 1002/2025, art. 91). Salva na hora, independente do botão Salvar da unidade.</div>
+    <div class="cq-nota">Ficha do ciclo por equipamento: lote da carga, programa, tempo, temperatura, pressão e pacotes em cada corrida (RDC 1002/2025, art. 91). Salva na hora, independente do botão Salvar da área.</div>
     ${rel.length ? `<div class="cq-membros">${rel.map(g => `<div class="cq-membro"><span>${_cqEsc(g.nome)}<span class="cq-muted cq-un-ester-st" data-k="${_cqEsc(g.key)}"> ${_cqEsc(_cqEsterRotuloUn(u, g.key))}</span></span>
       <button type="button" class="btn btn-outline btn-sm" data-k="${_cqEsc(g.key)}" onclick="cqEsterConfigForm('${u}', this.dataset.k)">Configurar</button></div>`).join('')}</div>` : ''}
     ${outros.length ? `<div class="form-row" style="margin-top:8px;"><div class="form-field"><select id="cq-un-ester-outro" class="field-select"><option value="">Outro equipamento…</option>${outros.map(g => `<option value="${_cqEsc(g.key)}">${_cqEsc(g.nome)}</option>`).join('')}</select></div>
@@ -414,7 +414,7 @@ function _cqEsterValidar(dh) {
       incubacao: s.incubIni || it !== null ? { inicio: s.incubIni || null, temperatura: it, horasAposCiclo: atraso === null ? null : Math.round(atraso * 10) / 10 } : null } };
   }
   const progs = _cqEsterProgramas(cfg);
-  if (!progs.length) return { erro: 'Cadastre os programas da autoclave (Configurações › Unidade › Ciclos de esterilização).' };
+  if (!progs.length) return { erro: 'Cadastre os programas da autoclave (Configurações › Área › Ciclos de esterilização).' };
   const p = progs.find(x => x.id === s.programaId);
   if (!p) return { erro: 'Escolha o programa do ciclo de esterilização.' };
   const lote = String(s.lote || '').trim().toUpperCase().replace(/\s+/g, ' ');
