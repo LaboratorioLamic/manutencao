@@ -1668,13 +1668,15 @@ function cqRenderHomeCard(periodo) {
   if (!_cqConfigReady || !(typeof authCanViewTab !== 'function' || authCanViewTab('cq'))) return '';
   const unidades = _cqUnidadesVisiveis().filter(u => !u.validacao);
   if (!unidades.length) return '';
-  let pend = 0, ncs = 0, sem = 0, venc = 0, rej = 0;
+  let pend = 0, ncs = 0, sem = 0, venc = 0, rej = 0, vencido = false;
   const linhas = unidades.map(un => {
     const idx = cqState.indices[un.id] || {};
     const p = Object.values(idx.pendentes || {});
     const n = Object.keys(idx.ncAbertas || {}).length;
     const s = _cqTestesDaUnidade(un.id).filter(t => _cqTesteSemCQHoje(t, (idx.ultimo || {})[t.id], un)).length;
-    const v = _cqLotesVencendo(un.id).filter(x => x.v.diasRestantes <= 7).length;
+    const vl = _cqLotesVencendo(un.id, 30);
+    const v = vl.length;
+    if (vl.some(x => x.v.vencido)) vencido = true;
     pend += p.length; ncs += n; sem += s; venc += v; rej += p.filter(x => x.temRejeicao).length;
     return { un, p: p.length, n, s, v };
   });
@@ -1693,7 +1695,8 @@ function cqRenderHomeCard(periodo) {
     .sort((a, b) => (b.temRejeicao - a.temRejeicao) || (a.dataHora || '').localeCompare(b.dataHora || ''));
   const ncList = unidades.flatMap(un => Object.entries((cqState.indices[un.id] || {}).ncAbertas || {}).map(([id, n]) => ({ un, id, ...n })))
     .sort((a, b) => (a.abertaEm || '').localeCompare(b.abertaEm || ''));
-  const vencList = unidades.flatMap(un => _cqLotesVencendo(un.id).filter(x => x.v.diasRestantes <= 7).map(x => ({ un, ...x })));
+  const vencList = unidades.flatMap(un => _cqLotesVencendo(un.id, 30).map(x => ({ un, ...x })))
+    .sort((a, b) => a.v.diasRestantes - b.v.diasRestantes);
   const item = (cor, titulo, sub, acao) => `<div class="home-notif-item" onclick="${acao}">
       <div class="home-notif-dot" style="background:${cor}"></div>
       <div class="home-notif-content"><div class="home-notif-title">${titulo}</div><div class="home-notif-meta">${sub}</div></div>
@@ -1725,7 +1728,7 @@ function cqRenderHomeCard(periodo) {
   const listas = `<div class="home-cols-3">
     ${listaCard('Corridas aguardando avaliação', pendList.length, listaPend || vazio('Nenhuma corrida pendente'), "cqHomeAbrir('','corridas')")}
     ${listaCard('Não conformidades abertas', ncList.length, listaNc || vazio('Nenhuma NC aberta'), "cqHomeAbrir('','ncs')")}
-    ${listaCard('Lotes vencendo (7 dias)', vencList.length, listaVenc || vazio('Nenhum lote vencendo'), "cqHomeAbrir('','cadastros')")}
+    ${listaCard('Lotes vencendo (30 dias)', vencList.length, listaVenc || vazio('Nenhum lote vencendo'), "cqHomeAbrir('','cadastros')")}
   </div>`;
 
   return `<div class="home-cols home-cols-larga cq-home-topo"><div class="home-chart-card oc-home-card cq-home-card">
@@ -1737,7 +1740,7 @@ function cqRenderHomeCard(periodo) {
       ${tile(pend, 'Corridas aguardando avaliação', rej ? 'red' : pend ? 'amber' : '', "cqHomeAbrir('','corridas')")}
       ${tile(ncs, 'Não conformidades abertas', ncs ? 'red' : '', "cqHomeAbrir('','ncs')")}
       ${tile(sem, 'Testes sem CQ hoje', sem ? 'cyan' : '', "cqHomeAbrir('','lancar')")}
-      ${tile(venc, 'Lotes vencendo (7 dias)', venc ? 'amber' : '', "cqHomeAbrir('','cadastros')")}
+      ${tile(venc, 'Lotes vencendo (30 dias)', vencido ? 'red' : venc ? 'amber' : '', "cqHomeAbrir('','cadastros')")}
       ${comAviso ? tile(trocas.length, 'Trocas de preparo vencendo', trocas.some(a => a.tipo === 'danger') ? 'red' : trocas.length ? 'amber' : '', `cqAbrirTrocaAlerta('${trU}')`) : ''}
     </div>
     ${linhas.length > 1 ? `<div class="cq-home-unidades">${linhas.map(l => `<div class="cq-home-un"><b>${_cqEsc(l.un.sigla)}</b><span>${l.p} pend.</span><span>${l.n} NC</span><span>${l.s} sem CQ</span></div>`).join('')}</div>` : ''}
