@@ -2489,7 +2489,8 @@ function cqPreparoInfo(insId, prepId, dataNovo, respNovo) {
 // Conteúdo resumido (RDC 978, art. 101): produto, código do preparo, lote, quantidade, data do preparo,
 // validade e responsável; o tamanho da fonte e o número de linhas se ajustam ao tamanho da etiqueta.
 const CQ_ETQ_TAMANHOS = [[50, 30], [40, 25], [60, 40], [100, 50]];
-// Resolução do PNG (pontos por polegada). 203 dpi é a das etiquetadoras térmicas comuns; o máximo é 300.
+// Resolução da etiqueta (pontos por polegada), usada no PNG e na impressão. 203 dpi é a das
+// etiquetadoras térmicas comuns; o máximo é 300.
 const CQ_ETQ_DPIS = [96, 150, 203, 300];
 const CQ_ETQ_CONTAVEIS = { placas: 'placa', tubos: 'tubo', frascos: 'frasco', 'alíquotas': 'alíquota', 'lâminas': 'lâmina' };
 let _cqEtqDadosAtual = null;
@@ -2590,7 +2591,7 @@ function _cqEtqCamposHTML(px, cfg) {
     <div class="form-field"><label class="field-label">Orientação</label>
       <div class="cq-seg cq-etq-rot" id="${px}-rotseg">${[0, 90, 180, 270].map(r => `<button type="button" data-k="${r}" class="${cfg.rot === r ? 'active' : ''}" title="Girar a etiqueta ${r}°" onclick="cqEtqRot('${px}',${r})"><span class="cq-etq-rot-a" style="transform:rotate(${r}deg)">A</span>${r}°</button>`).join('')}</div></div>
     <input type="hidden" id="${px}-dpi" value="${cfg.dpi}">
-    <div class="form-field"><label class="field-label">Qualidade do PNG</label>
+    <div class="form-field"><label class="field-label">Qualidade (dpi) do PNG e da impressão</label>
       <div class="cq-seg cq-etq-dpi" id="${px}-dpiseg">${CQ_ETQ_DPIS.map(v => `<button type="button" data-k="${v}" class="${cfg.dpi === v ? 'active' : ''}" title="${_cqEtqDpiDica(v)}" onclick="cqEtqDpi('${px}',${v})">${v} dpi</button>`).join('')}</div>
       <div class="cq-nota" id="${px}-dpi-info">${_cqEtqDpiInfo(cfg)}</div></div>
   </div>`;
@@ -2599,7 +2600,7 @@ function _cqEtqDpiDica(v) { return { 96: 'Tela / pré-visualização (arquivo le
 // Tamanho da imagem gerada, em pixels
 function _cqEtqDpiInfo(c) {
   const [w, h] = _cqEtqFisico(c), px = mm => Math.round(mm * c.dpi / 25.4);
-  return `PNG de ${px(w)} × ${px(h)} px · ${_cqEtqDpiDica(c.dpi).toLowerCase()}.`;
+  return `${px(w)} × ${px(h)} pontos em ${String(w).replace('.', ',')} × ${String(h).replace('.', ',')} mm · ${_cqEtqDpiDica(c.dpi).toLowerCase()}. Vale para o PNG e para a impressão; o tamanho físico continua o da etiqueta.`;
 }
 function _cqEtqLer(px) { return _cqEtqNorm({ modo: _cqVal(px + '-modo'), largura: _cqVal(px + '-l'), altura: _cqVal(px + '-a'), rot: _cqVal(px + '-rot'), dpi: _cqVal(px + '-dpi') }); }
 function cqEtqDpi(px, v) {
@@ -2651,9 +2652,25 @@ function _cqEtqImprimir(d, cfg, copias) {
   const css = folha
     ? '@page{size:A4;margin:8mm}html,body{margin:0}body{display:flex;flex-wrap:wrap;gap:2mm;align-content:flex-start}.etq{break-inside:avoid;page-break-inside:avoid}'
     : `@page{size:${_cqEtqFisico(cfg).join('mm ')}mm;margin:0}html,body{margin:0;padding:0}.etq{break-after:page;page-break-after:always}.etq:last-child{break-after:auto;page-break-after:auto}`;
+  // A etiqueta vai impressa como a mesma imagem do PNG, na resolução escolhida (dpi do ajuste),
+  // com o tamanho físico em mm: a impressora recebe exatamente os pontos que vai imprimir
+  const [fw, fh] = _cqEtqFisico(cfg);
+  let etq;
+  try {
+    const src = _cqEtqCanvas(d, cfg, cfg.dpi || 300).toDataURL('image/png');
+    etq = `<div class="etq" style="box-sizing:border-box;width:${fw}mm;height:${fh}mm;overflow:hidden;background:#fff;${folha ? 'border:0.2mm dashed #999;' : ''}"><img src="${src}" alt="" style="display:block;width:100%;height:100%;image-rendering:${(cfg.dpi || 300) < 200 ? 'pixelated' : 'auto'};"></div>`;
+  } catch (err) {
+    console.error('[cq-cadastros.js] _cqEtqImprimir: imagem da etiqueta', err);
+    etq = _cqEtiquetaHTML(d, cfg, folha);   // sem canvas: imprime o layout em mm
+  }
   const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiqueta ${_cqEsc(d.codigo || d.lote)}</title>
     <style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact}${css}</style></head>
-    <body>${_cqEtiquetaHTML(d, cfg, folha).repeat(copias)}<script>window.onload=()=>window.print()<\/script></body></html>`;
+    <body><template id="etq">${etq}</template><script>
+      // A imagem vai uma vez no HTML e é clonada para cada cópia
+      const t = document.getElementById('etq').content.firstElementChild;
+      for (let i = 0; i < ${copias}; i++) document.body.appendChild(t.cloneNode(true));
+      window.onload = () => window.print();
+    <\/script></body></html>`;
   const w = window.open('', '_blank');
   if (!w) { showToast('Permita pop-ups para imprimir.', 'error'); return false; }
   w.document.write(html);
