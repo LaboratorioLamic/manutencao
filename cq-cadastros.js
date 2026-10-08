@@ -2049,7 +2049,7 @@ function _cqPrepAvaliacaoTxt(p) {
   if (a.auto) return a.motivo || 'liberado no registro';
   return a.manual ? `alterado por ${a.porNome || '—'} em ${_cqFmtDH(a.em)}` : `decisão da corrida ${a.numero || ''}${a.porNome ? ' · ' + a.porNome : ''}`;
 }
-// Selo da situação; clicável para alterar quando há permissão (onde: 'lote' | 'lanc' | 'info')
+// Selo da situação; clicável para alterar quando há permissão (onde: 'lote' | 'aba' | 'info')
 const CQ_SITUACAO_PREPARO_DESC = {
   em_avaliacao: 'Aguardando a decisão da corrida que o usar',
   liberado: 'Aprovado no controle; oferecido no lançamento',
@@ -2115,7 +2115,7 @@ function _cqPreparosHistoricoHTML(i) {
       <div class="cq-prep-data"><b>${_cqFmtData(p.data)}</b><small class="${venc ? 'cq-txt-vermelho' : ''}" title="Validade do preparado">val. ${_cqFmtData(p.validade)}</small></div>
       <div class="cq-prep-info"><span title="${_cqEsc(quem)}">${_cqEsc(quem)}</span><small title="${_cqEsc(sub)}">${_cqEsc(sub)}</small></div>
       ${_cqPrepSituacaoBtn(i, p, 'lote')}
-      <span class="cq-prep-item-acoes"><button type="button" class="cq-icobtn" title="Imprimir etiqueta" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print}</button><button type="button" class="cq-icobtn" title="Baixar etiqueta em PNG" onclick="cqEtqBaixar('${i.id}','${p.id}')">${CQ_ICO.baixar}</button>${_cqPrepBtnExcluir(i, p, 'lote')}</span>
+      <span class="cq-prep-item-acoes"><button type="button" class="cq-icobtn" title="Imprimir etiqueta" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print}</button><button type="button" class="cq-icobtn" title="Baixar etiqueta em PDF" onclick="cqEtqBaixar('${i.id}','${p.id}')">${CQ_ICO.baixar}</button>${_cqPrepBtnExcluir(i, p, 'lote')}</span>
     </div>`;
   };
   const ativos = ps.filter(p => !p.finalizado), fins = ps.filter(p => p.finalizado);
@@ -2198,7 +2198,6 @@ function cqPreparoSituacao(insId, prepId, onde, opts = {}) {
       if (onde === 'lote') cqInsumoForm(insId, { aba: 'preparos' });
       else if (onde === 'aba') cqRender();
       else if (onde === 'info') setTimeout(() => cqPreparoInfo(insId, prepId), 60);
-      else if (onde === 'lanc' && typeof _cqLancRedesenharGrade === 'function') _cqLancRedesenharGrade();
       return true;
     },
   });
@@ -2268,7 +2267,6 @@ async function _cqPreparoFinalizarGravar(insId, prepId, onde = 'aba') {
   showToast(`Preparo ${nome} finalizado. Para reabrir, use a situação do preparo.`, 'success');
   if (onde === 'lote') cqInsumoForm(insId, { aba: 'preparos' });
   else if (onde === 'info') cqPreparoInfo(insId, prepId);
-  else if (onde === 'lanc' && typeof _cqLancRedesenharGrade === 'function') _cqLancRedesenharGrade();
   else cqRender();
 }
 
@@ -2476,7 +2474,7 @@ function cqPreparoInfo(insId, prepId, dataNovo, respNovo) {
       </details>
     </div>`,
     rodape: `<div>${!p.novo && _cqPodeExcluirPreparo(p) ? `<button class="btn btn-outline cq-btn-perigo" onclick="cqPreparoExcluir('${i.id}','${p.id}','info')">${CQ_ICO.lixo} Excluir</button>` : ''}</div>
-      <div style="display:flex;gap:8px;">${!p.novo && !p.legado ? `<button class="btn btn-outline" title="Baixar etiqueta em PNG" onclick="cqEtqBaixar('${i.id}','${p.id}')">${CQ_ICO.baixar} PNG</button>
+      <div style="display:flex;gap:8px;">${!p.novo && !p.legado ? `<button class="btn btn-outline" title="Baixar etiqueta em PDF" onclick="cqEtqBaixar('${i.id}','${p.id}')">${CQ_ICO.baixar} PDF</button>
         <button class="btn btn-outline" onclick="cqModalClose();cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print} Imprimir etiqueta</button>` : ''}
       <button class="btn btn-primary" onclick="cqModalClose()">Fechar</button></div>`,
   });
@@ -2489,10 +2487,9 @@ function cqPreparoInfo(insId, prepId, dataNovo, respNovo) {
 // Conteúdo resumido (RDC 978, art. 101): produto, código do preparo, lote, quantidade, data do preparo,
 // validade e responsável; o tamanho da fonte e o número de linhas se ajustam ao tamanho da etiqueta.
 const CQ_ETQ_TAMANHOS = [[50, 30], [40, 25], [60, 40], [100, 50]];
-// Resolução da etiqueta (pontos por polegada), usada no PNG e na impressão. 203 dpi é a das
+// Resolução da etiqueta (pontos por polegada), usada no PDF e na impressão. 203 dpi é a das
 // etiquetadoras térmicas comuns; o máximo é 300.
 const CQ_ETQ_DPIS = [96, 150, 203, 300];
-const CQ_ETQ_CONTAVEIS = { placas: 'placa', tubos: 'tubo', frascos: 'frasco', 'alíquotas': 'alíquota', 'lâminas': 'lâmina' };
 let _cqEtqDadosAtual = null;
 
 function _cqEtqNorm(c) {
@@ -2516,13 +2513,28 @@ function _cqEtqResumo(c) {
   return `${c.modo === 'folha' ? 'Folha A4' : 'Etiquetadora'} · ${f(w)} × ${f(h)} mm${c.rot ? ` · ${c.rot}°` : ''}${c.modo === 'folha' ? ` · ${_cqEtqPorFolha(c)} por folha` : ''}`;
 }
 
+// Primeiro e último nome (cabe na etiqueta)
+function _cqEtqNomeCurto(nome) {
+  const n = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  return n.length > 1 ? `${n[0]} ${n[n.length - 1]}` : (n[0] || '');
+}
 function _cqEtqDados(i, pr) {
   const fd = s => (s ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(2, 4)}` : '—');
-  const nomes = String(pr.responsavel || '').trim().split(/\s+/).filter(Boolean);
   return { produto: i.nome || '', codigo: pr.codigo || '', lote: i.lote || '', qtd: _cqPrepQtdTxt(pr), prep: fd(pr.data), val: fd(pr.validade || i.validade),
-           resp: nomes.length > 1 ? `${nomes[0]} ${nomes[nomes.length - 1]}` : (nomes[0] || '') };
+           resp: _cqEtqNomeCurto(pr.responsavel) };
 }
 function _cqEtqExemplo() { return { produto: 'Ágar Mueller Hinton', codigo: 'MH-2611-P06', lote: 'MH-2611', qtd: '500 mL', prep: '06/10/26', val: '03/11/26', resp: 'Maria Souza' }; }
+// Linhas de informação: trechos [texto, negrito] por chave e, em niveis, as combinações do mais completo
+// ao mais enxuto. O preparo usa as do padrão; outro modelo (ex.: ciclo de esterilização) traz d.segs e d.niveis.
+const CQ_ETQ_NIVEIS = [{ tit: 2, linhas: ['lote', 'datas', 'resp'] }, { tit: 1, linhas: ['lote', 'datas'] }, { tit: 1, linhas: ['val'] }];
+function _cqEtqSegs(d) {
+  return d.segs || {
+    lote: [['Lote ', 0], [d.lote, 1], [d.qtd ? ` · ${d.qtd}` : '', 0]],
+    datas: [[`Prep ${d.prep} · Val `, 0], [d.val, 1]],
+    resp: d.resp ? [[`Resp: ${d.resp}`, 0]] : null,
+    val: [['Val ', 0], [d.val, 1], [` · L ${d.lote}`, 0]],
+  };
+}
 
 // Etiqueta com estilos inline em mm (mesma aparência na prévia e na impressão). O conteúdo é montado
 // em largura × altura e gira 0/90/180/270° junto com a etiqueta (em 90°/270° a página fica altura × largura).
@@ -2538,7 +2550,7 @@ function _cqEtqLayout(d, W, H) {
   const iw = W - 2 * pad, ih = H - 2 * pad;
   const sw = iw / 47;                        // escala pela largura (base: 50 mm)
   // Do mais completo ao mais enxuto: usa o primeiro em que a altura não força letra pequena demais
-  const niveis = [{ tit: 2, linhas: ['lote', 'datas', 'resp'] }, { tit: 1, linhas: ['lote', 'datas'] }, { tit: 1, linhas: ['val'] }];
+  const niveis = d.niveis || CQ_ETQ_NIVEIS;
   const alturaBase = n => n.tit * 3.9 + (d.codigo ? 4.9 : 0) + n.linhas.length * 3.2;
   let nv = niveis[0], esc = 1;
   for (const n of niveis) {
@@ -2553,16 +2565,12 @@ function _cqEtqConteudoHTML(d, W, H, giro) {
   const mm = v => `${(v * esc).toFixed(2)}mm`;
   const e = _cqEsc;
   const lin = html => `<div style="font-size:${mm(2.7)};line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${html}</div>`;
-  const L = {
-    lote: lin(`Lote <b>${e(d.lote)}</b>${d.qtd ? ` · ${e(d.qtd)}` : ''}`),
-    datas: lin(`Prep ${e(d.prep)} · Val <b>${e(d.val)}</b>`),
-    resp: d.resp ? lin(`Resp: ${e(d.resp)}`) : '',
-    val: lin(`Val <b>${e(d.val)}</b> · L ${e(d.lote)}`),
-  };
+  const segs = _cqEtqSegs(d);
+  const L = k => (segs[k] ? lin(segs[k].map(([t, b]) => (b ? `<b>${e(t)}</b>` : e(t))).join('')) : '');
   return `<div style="box-sizing:border-box;width:${W}mm;height:${H}mm;padding:${pad.toFixed(2)}mm;overflow:hidden;display:flex;flex-direction:column;justify-content:center;gap:${mm(0.35)};font-family:Arial,Helvetica,sans-serif;color:#000;text-align:left;${giro}">
     <div style="font-size:${mm(3.4)};font-weight:700;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:${nv.tit};word-break:break-word;">${e(d.produto)}</div>
     ${d.codigo ? `<div style="font-size:${mm(4.2)};font-weight:800;line-height:1.15;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${e(d.codigo)}</div>` : ''}
-    ${nv.linhas.map(k => L[k]).join('')}
+    ${nv.linhas.map(L).join('')}
   </div>`;
 }
 // Prévia ampliada (cabe em ~280 px)
@@ -2591,7 +2599,7 @@ function _cqEtqCamposHTML(px, cfg) {
     <div class="form-field"><label class="field-label">Orientação</label>
       <div class="cq-seg cq-etq-rot" id="${px}-rotseg">${[0, 90, 180, 270].map(r => `<button type="button" data-k="${r}" class="${cfg.rot === r ? 'active' : ''}" title="Girar a etiqueta ${r}°" onclick="cqEtqRot('${px}',${r})"><span class="cq-etq-rot-a" style="transform:rotate(${r}deg)">A</span>${r}°</button>`).join('')}</div></div>
     <input type="hidden" id="${px}-dpi" value="${cfg.dpi}">
-    <div class="form-field"><label class="field-label">Qualidade (dpi) do PNG e da impressão</label>
+    <div class="form-field"><label class="field-label">Qualidade (dpi) do PDF e da impressão</label>
       <div class="cq-seg cq-etq-dpi" id="${px}-dpiseg">${CQ_ETQ_DPIS.map(v => `<button type="button" data-k="${v}" class="${cfg.dpi === v ? 'active' : ''}" title="${_cqEtqDpiDica(v)}" onclick="cqEtqDpi('${px}',${v})">${v} dpi</button>`).join('')}</div>
       <div class="cq-nota" id="${px}-dpi-info">${_cqEtqDpiInfo(cfg)}</div></div>
   </div>`;
@@ -2600,7 +2608,7 @@ function _cqEtqDpiDica(v) { return { 96: 'Tela / pré-visualização (arquivo le
 // Tamanho da imagem gerada, em pixels
 function _cqEtqDpiInfo(c) {
   const [w, h] = _cqEtqFisico(c), px = mm => Math.round(mm * c.dpi / 25.4);
-  return `${px(w)} × ${px(h)} pontos em ${String(w).replace('.', ',')} × ${String(h).replace('.', ',')} mm · ${_cqEtqDpiDica(c.dpi).toLowerCase()}. Vale para o PNG e para a impressão; o tamanho físico continua o da etiqueta.`;
+  return `${px(w)} × ${px(h)} pontos em ${String(w).replace('.', ',')} × ${String(h).replace('.', ',')} mm · ${_cqEtqDpiDica(c.dpi).toLowerCase()}. Vale para o PDF e para a impressão; o tamanho físico continua o da etiqueta.`;
 }
 function _cqEtqLer(px) { return _cqEtqNorm({ modo: _cqVal(px + '-modo'), largura: _cqVal(px + '-l'), altura: _cqVal(px + '-a'), rot: _cqVal(px + '-rot'), dpi: _cqVal(px + '-dpi') }); }
 function cqEtqDpi(px, v) {
@@ -2652,7 +2660,7 @@ function _cqEtqImprimir(d, cfg, copias) {
   const css = folha
     ? '@page{size:A4;margin:8mm}html,body{margin:0}body{display:flex;flex-wrap:wrap;gap:2mm;align-content:flex-start}.etq{break-inside:avoid;page-break-inside:avoid}'
     : `@page{size:${_cqEtqFisico(cfg).join('mm ')}mm;margin:0}html,body{margin:0;padding:0}.etq{break-after:page;page-break-after:always}.etq:last-child{break-after:auto;page-break-after:auto}`;
-  // A etiqueta vai impressa como a mesma imagem do PNG, na resolução escolhida (dpi do ajuste),
+  // A etiqueta vai impressa como a mesma imagem do PDF, na resolução escolhida (dpi do ajuste),
   // com o tamanho físico em mm: a impressora recebe exatamente os pontos que vai imprimir
   const [fw, fh] = _cqEtqFisico(cfg);
   let etq;
@@ -2678,25 +2686,19 @@ function _cqEtqImprimir(d, cfg, copias) {
   return true;
 }
 
-// ── Etiqueta em PNG (dpi do ajuste, até 300), desenhada no canvas com o mesmo layout da impressão ──
-function _cqEtqCanvas(d, cfg, dpi = 300) {
+// ── Desenho da etiqueta: linhas de texto já posicionadas (px no dpi pedido, eixo y para baixo, sem giro) ──
+// Usado pela imagem da impressão (canvas) e pelo PDF (texto), que assim saem com o mesmo layout e os mesmos cortes.
+function _cqEtqDesenho(d, cfg, dpi = 300) {
   const pxmm = dpi / 25.4;
-  const [fw, fh] = _cqEtqFisico(cfg);
-  const cv = document.createElement('canvas');
-  cv.width = Math.round(fw * pxmm);
-  cv.height = Math.round(fh * pxmm);
-  const ctx = cv.getContext('2d');
-  ctx.fillStyle = '#fff';
-  ctx.fillRect(0, 0, cv.width, cv.height);
-  ctx.translate(cv.width / 2, cv.height / 2);
-  ctx.rotate((cfg.rot || 0) * Math.PI / 180);
+  const ctx = document.createElement('canvas').getContext('2d');   // só para medir o texto
   const W = cfg.largura * pxmm, H = cfg.altura * pxmm;
-  ctx.translate(-W / 2, -H / 2);
   const { pad, esc, nv } = _cqEtqLayout(d, cfg.largura, cfg.altura);
   const P = pad * pxmm, iw = W - 2 * P;
-  const fonte = (peso, mm) => `${peso} ${(mm * esc * pxmm).toFixed(2)}px Arial, Helvetica, sans-serif`;
-  ctx.fillStyle = '#000';
-  ctx.textBaseline = 'top';
+  const tam = mm => mm * esc * pxmm;
+  const fonte = (peso, px) => `${peso} ${px.toFixed(2)}px Arial, Helvetica, sans-serif`;
+  const ops = [];
+  // y = topo do texto; guarda a linha de base (Arial: topo do quadrado da letra a 0,81 do tamanho)
+  const texto = (t, x, y, peso, px) => { if (t) ops.push({ t: String(t), x, y: y + px * 0.81, peso, px }); };
   // Corta com reticências o texto que não cabe na largura
   const caber = (txt, larg) => {
     if (ctx.measureText(txt).width <= larg) return txt;
@@ -2705,7 +2707,7 @@ function _cqEtqCanvas(d, cfg, dpi = 300) {
     return t.trimEnd() + '…';
   };
   // Título: quebra por palavras em até nv.tit linhas
-  ctx.font = fonte(700, 3.4);
+  ctx.font = fonte(700, tam(3.4));
   const linhasTit = [];
   let atual = '';
   String(d.produto || '').split(/\s+/).filter(Boolean).forEach(p => {
@@ -2715,77 +2717,140 @@ function _cqEtqCanvas(d, cfg, dpi = 300) {
   if (atual) linhasTit.push(atual);
   const tit = linhasTit.slice(0, nv.tit);
   if (linhasTit.length > nv.tit) tit[tit.length - 1] = caber(`${tit[tit.length - 1]} ${linhasTit.slice(nv.tit).join(' ')}`, iw);
-  // Linhas de informação: trechos [texto, negrito]
-  const segs = {
-    lote: [['Lote ', 0], [d.lote, 1], [d.qtd ? ` · ${d.qtd}` : '', 0]],
-    datas: [[`Prep ${d.prep} · Val `, 0], [d.val, 1]],
-    resp: d.resp ? [[`Resp: ${d.resp}`, 0]] : null,
-    val: [['Val ', 0], [d.val, 1], [` · L ${d.lote}`, 0]],
-  };
+  const segs = _cqEtqSegs(d);
   const blocos = [
-    ...tit.map(t => ({ h: 3.4 * 1.15, fn: y => { ctx.font = fonte(700, 3.4); ctx.fillText(caber(t, iw), P, y); } })),
-    ...(d.codigo ? [{ h: 4.2 * 1.15, fn: y => { ctx.font = fonte(800, 4.2); ctx.fillText(caber(d.codigo, iw), P, y); } }] : []),
+    ...tit.map(t => ({ h: 3.4 * 1.15, fn: y => { const px = tam(3.4); ctx.font = fonte(700, px); texto(caber(t, iw), P, y, 700, px); } })),
+    ...(d.codigo ? [{ h: 4.2 * 1.15, fn: y => { const px = tam(4.2); ctx.font = fonte(800, px); texto(caber(d.codigo, iw), P, y, 800, px); } }] : []),
     ...nv.linhas.map(k => segs[k]).filter(Boolean).map(sg => ({ h: 2.7 * 1.18, fn: y => {
-      const larg = () => sg.reduce((n, [t, b]) => { ctx.font = fonte(b ? 700 : 400, 2.7); return n + ctx.measureText(t).width; }, 0);
-      const f = Math.min(1, iw / (larg() || 1));      // linha longa: encolhe para caber
+      const larg = () => sg.reduce((n, [t, b]) => { ctx.font = fonte(b ? 700 : 400, tam(2.7)); return n + ctx.measureText(t).width; }, 0);
+      const px = tam(2.7) * Math.min(1, iw / (larg() || 1));   // linha longa: encolhe para caber
       let x = P;
-      sg.forEach(([t, b]) => { ctx.font = fonte(b ? 700 : 400, 2.7 * f); ctx.fillText(t, x, y); x += ctx.measureText(t).width; });
+      sg.forEach(([t, b]) => { ctx.font = fonte(b ? 700 : 400, px); texto(t, x, y, b ? 700 : 400, px); x += ctx.measureText(t).width; });
     } })),
   ];
   const gap = 0.35 * esc * pxmm;
   const total = blocos.reduce((n, b) => n + b.h * esc * pxmm, 0) + gap * (blocos.length - 1);
   let y = (H - total) / 2;
   blocos.forEach(b => { b.fn(y + (b.h - (b.h / 1.16)) * esc * pxmm / 2); y += b.h * esc * pxmm + gap; });
+  return { W, H, ops, fonte };
+}
+
+// ── Imagem da etiqueta (dpi do ajuste, até 300) para a impressão ──
+function _cqEtqCanvas(d, cfg, dpi = 300) {
+  const pxmm = dpi / 25.4;
+  const [fw, fh] = _cqEtqFisico(cfg);
+  const { W, H, ops, fonte } = _cqEtqDesenho(d, cfg, dpi);
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(fw * pxmm);
+  cv.height = Math.round(fh * pxmm);
+  const ctx = cv.getContext('2d');
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.translate(cv.width / 2, cv.height / 2);
+  ctx.rotate((cfg.rot || 0) * Math.PI / 180);
+  ctx.translate(-W / 2, -H / 2);
+  ctx.fillStyle = '#000';
+  ctx.textBaseline = 'alphabetic';
+  ops.forEach(o => { ctx.font = fonte(o.peso, o.px); ctx.fillText(o.t, o.x, o.y); });
   return cv;
 }
-function _cqEtqBaixarPNG(d, cfg) {
+
+// ── Etiqueta em PDF: uma página no tamanho físico da etiqueta, com texto (selecionável e nítido) ──
+// PDF montado aqui mesmo (sem biblioteca), nas fontes padrão Helvetica/Helvetica-Bold (mesmas
+// medidas da Arial usada no layout) com codificação WinAnsi, que cobre os acentos do português.
+const CQ_ETQ_WINANSI = { '€': 0x80, '‚': 0x82, '„': 0x84, '…': 0x85, '‘': 0x91, '’': 0x92, '“': 0x93, '”': 0x94, '•': 0x95, '–': 0x96, '—': 0x97, '™': 0x99 };
+function _cqEtqPdfTexto(s) {
+  let r = '';
+  for (const ch of String(s)) {
+    let c = ch.codePointAt(0);
+    if (CQ_ETQ_WINANSI[ch]) c = CQ_ETQ_WINANSI[ch];
+    else if (c > 0xFF || (c >= 0x80 && c < 0xA0)) c = 0x3F;    // fora da WinAnsi: '?'
+    if (c === 0x28 || c === 0x29 || c === 0x5C) r += '\\' + ch;
+    else if (c < 0x20 || c > 0x7E) r += '\\' + c.toString(8).padStart(3, '0');
+    else r += ch;
+  }
+  return r;
+}
+function _cqEtqPDFBlob(d, cfg) {
+  const dpi = cfg.dpi || 300;
+  const k = 72 / dpi;                          // px do layout → pontos do PDF
+  const n = v => String(Math.round(v * 1000) / 1000);
+  const [fw, fh] = _cqEtqFisico(cfg);
+  const PW = fw * 72 / 25.4, PH = fh * 72 / 25.4;
+  const { W, H, ops } = _cqEtqDesenho(d, cfg, dpi);
+  const a = (cfg.rot || 0) * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+  // Mesmo sistema do canvas: y para baixo, giro em torno do centro da etiqueta
+  const desenho = [
+    `q 1 0 0 -1 0 ${n(PH)} cm`,
+    `1 0 0 1 ${n(PW / 2)} ${n(PH / 2)} cm`,
+    `${n(cos)} ${n(sin)} ${n(-sin)} ${n(cos)} 0 0 cm`,
+    `1 0 0 1 ${n(-W * k / 2)} ${n(-H * k / 2)} cm`,
+    '0 g BT',
+    ...ops.map(o => `/${o.peso >= 700 ? 'F2' : 'F1'} ${n(o.px * k)} Tf 1 0 0 -1 ${n(o.x * k)} ${n(o.y * k)} Tm (${_cqEtqPdfTexto(o.t)}) Tj`),
+    'ET Q',
+  ].join('\n');
+  const objs = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${n(PW)} ${n(PH)}] /Resources << /Font << /F1 4 0 R /F2 5 0 R >> >> /Contents 6 0 R >>`,
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>',
+    `<< /Length ${desenho.length} >>\nstream\n${desenho}\nendstream`,
+  ];
+  // Tudo em ASCII: posição em bytes = posição na string
+  let pdf = '%PDF-1.4\n';
+  const offs = objs.map((o, i) => { const pos = pdf.length; pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; return pos; });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objs.length + 1}\n0000000000 65535 f \n${offs.map(o => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  pdf += `trailer\n<< /Size ${objs.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Blob([pdf], { type: 'application/pdf' });
+}
+function _cqEtqBaixarPDF(d, cfg) {
   try {
-    const cv = _cqEtqCanvas(d, cfg, cfg.dpi || 300);
-    const nome = `etiqueta-${String(d.codigo || d.lote || 'preparo').replace(/[^\w.-]+/g, '_')}.png`;
-    cv.toBlob(blob => {
-      if (!blob) { showToast('Não foi possível gerar a imagem.', 'error'); return; }
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = nome;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
-      showToast(`Etiqueta salva em ${nome}.`, 'success');
-    }, 'image/png');
+    const blob = _cqEtqPDFBlob(d, cfg);
+    const nome = `etiqueta-${String(d.codigo || d.lote || 'preparo').replace(/[^\w.-]+/g, '_')}.pdf`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    showToast(`Etiqueta salva em ${nome}.`, 'success');
   } catch (err) {
-    console.error('[cq-cadastros.js] _cqEtqBaixarPNG:', err);
-    showToast('Não foi possível gerar a imagem.', 'error');
+    console.error('[cq-cadastros.js] _cqEtqBaixarPDF:', err);
+    showToast('Não foi possível gerar o PDF.', 'error');
   }
 }
 // Botão da janela de impressão (usa o ajuste atual) e das listas de preparos (usa o da estação)
-function cqEtqBaixarPrompt() { if (_cqEtqDadosAtual) _cqEtqBaixarPNG(_cqEtqDadosAtual, _cqEtqLer('cq-etqp')); }
+function cqEtqBaixarPrompt() { if (_cqEtqDadosAtual) _cqEtqBaixarPDF(_cqEtqDadosAtual, _cqEtqLer('cq-etqp')); }
 function cqEtqBaixar(id, prepId) {
   const i = cqState.config.insumos[id];
   const pr = i ? _cqPreparo(i, prepId) : null;
   if (!pr) return;
-  _cqEtqBaixarPNG(_cqEtqDados(i, pr), _cqEtqCfg());
+  _cqEtqBaixarPDF(_cqEtqDados(i, pr), _cqEtqCfg());
 }
 
-// Janela de impressão: prévia, cópias (placas/tubos… sugerem uma por unidade) e ajuste rápido
+// Janela de impressão: prévia, cópias (padrão 1) e ajuste rápido
 function cqImprimirRotulo(id, prepId) {
   const i = cqState.config.insumos[id];
   if (!i?.preparoInterno) return;
   const pr = _cqPreparo(i, prepId) || _cqPreparosDe(i)[0];
   if (!pr) { showToast('Nenhum preparo para imprimir.', 'error'); return; }
-  const d = _cqEtqDados(i, pr);
+  _cqEtqDialogo(_cqEtqDados(i, pr), 'Imprimir etiqueta', `${i.nome} · ${pr.codigo || 'lote ' + i.lote}`);
+}
+
+// Janela de impressão de uma etiqueta já montada (preparo, ciclo de esterilização): prévia, PDF, cópias e ajuste
+function _cqEtqDialogo(d, titulo, subtitulo, aviso = '') {
   _cqEtqDadosAtual = d;
   const cfg = _cqEtqCfg();
-  const unid = CQ_ETQ_CONTAVEIS[pr.unidadeQtd];
-  const contavel = !!unid && pr.quantidade >= 1 && pr.quantidade <= 300;
   _cqPrompt({
-    titulo: 'Imprimir etiqueta', subtitulo: `${i.nome} · ${pr.codigo || 'lote ' + i.lote}`, confirmar: 'Imprimir',
-    corpo: `<div class="cq-etq-prev-wrap"><div class="cq-etq-prev" id="cq-etqp-prev">${_cqEtqPrevHTML(d, cfg)}</div>
-        <button type="button" class="cq-etq-baixar" title="Baixar etiqueta em PNG (qualidade em Ajustar impressão)" onclick="cqEtqBaixarPrompt()">${CQ_ICO.baixar} PNG</button></div>
+    titulo, subtitulo, confirmar: 'Imprimir',
+    corpo: `${aviso}<div class="cq-etq-prev-wrap"><div class="cq-etq-prev" id="cq-etqp-prev">${_cqEtqPrevHTML(d, cfg)}</div>
+        <button type="button" class="cq-etq-baixar" title="Baixar etiqueta em PDF (qualidade em Ajustar impressão)" onclick="cqEtqBaixarPrompt()">${CQ_ICO.baixar} PDF</button></div>
       <div class="cq-etq-lin">
         <div class="form-field"><label class="field-label">Cópias</label>
-          <input type="number" id="cq-etqp-copias" class="field-input" min="1" max="300" step="1" value="${contavel ? Math.round(pr.quantidade) : 1}" onkeydown="if(event.key==='Enter')cqPromptConfirmar()"></div>
-        ${contavel ? `<div class="cq-nota">Uma etiqueta por ${unid} (${_cqEsc(_cqPrepQtdTxt(pr))}).</div>` : ''}
+          <input type="number" id="cq-etqp-copias" class="field-input" min="1" max="300" step="1" value="1" onkeydown="if(event.key==='Enter')cqPromptConfirmar()"></div>
       </div>
       <details class="cq-etq-det"><summary>Ajustar impressão</summary>${_cqEtqCamposHTML('cq-etqp', cfg)}
         <div class="cq-nota">O ajuste fica salvo nesta estação (também em Configurações › Controle de Qualidade). Na etiquetadora, use o mesmo tamanho de papel no driver da impressora.</div></details>`,
@@ -3251,7 +3316,7 @@ function _cqPrepAbaLista() {
       <td class="oc-num" style="text-align:center;">${nC || '<span class="cq-muted">0</span>'}</td>
       <td class="cq-prep-acoes" onclick="event.stopPropagation()">
         <button type="button" class="cq-icobtn" title="Imprimir etiqueta" onclick="cqImprimirRotulo('${i.id}','${p.id}')">${CQ_ICO.print}</button>
-        <button type="button" class="cq-icobtn" title="Baixar etiqueta em PNG" onclick="cqEtqBaixar('${i.id}','${p.id}')">${CQ_ICO.baixar}</button>
+        <button type="button" class="cq-icobtn" title="Baixar etiqueta em PDF" onclick="cqEtqBaixar('${i.id}','${p.id}')">${CQ_ICO.baixar}</button>
         ${_cqPrepBtnExcluir(i, p, 'aba')}
       </td></tr>`;
   };

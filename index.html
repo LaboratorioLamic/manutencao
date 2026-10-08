@@ -1701,39 +1701,8 @@
       </div>
     </div>
 
-    <!-- Abas do modal de rotina -->
-    <div class="drawer-tabs" style="background:var(--bg);border-bottom:1px solid var(--border);padding:0 24px;">
-      <button class="drawer-tab-btn active" id="rvtab-btn-info" onclick="switchRotinaViewTab('info')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        Informações
-      </button>
-      <button class="drawer-tab-btn" id="rvtab-btn-tarefas" onclick="switchRotinaViewTab('tarefas')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        Tarefas
-      </button>
-      <button class="drawer-tab-btn" id="rvtab-btn-atividades" onclick="switchRotinaViewTab('atividades')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        Atividades
-      </button>
-    </div>
-
-    <div class="modal-body" style="padding:0;max-height:60vh;overflow-y:auto;">
-      <div id="rvtab-info" style="padding:24px 28px;display:block;">
-        <div id="rotina-view-body"></div>
-      </div>
-      <div id="rvtab-tarefas" style="padding:16px 24px;display:none;">
-        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
-          <div class="status-filter-group">
-            <button class="status-filter-btn active active-green" id="sfbtn-rv-tarefa-ativo" onclick="setTarefaStatusFilter('rv','ativo')">Ativos</button>
-            <button class="status-filter-btn" id="sfbtn-rv-tarefa-inativo" onclick="setTarefaStatusFilter('rv','inativo')">Inativos</button>
-            <button class="status-filter-btn" id="sfbtn-rv-tarefa-ambos" onclick="setTarefaStatusFilter('rv','ambos')">Ambos</button>
-          </div>
-        </div>
-        <div id="rotina-view-tarefas-list"></div>
-      </div>
-      <div id="rvtab-atividades" style="padding:16px 24px;display:none;">
-        <div id="rotina-view-atividades-list"></div>
-      </div>
+    <div class="modal-body" style="max-height:60vh;">
+      <div id="rotina-view-body"></div>
     </div>
 
     <div class="modal-footer">
@@ -2073,10 +2042,6 @@
         <button class="modal-close" onclick="openRastreabilidadeModal('tarefa-view')" title="Rastreabilidade de edições">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </button>
-        <button class="modal-close" style="width:auto;padding:0 10px;gap:5px;font-size:12px;font-weight:600;font-family:inherit;" onclick="abrirHistoricoTarefa()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-          Publicações
-        </button>
         <button id="btn-editar-tarefa" class="modal-close" style="width:auto;padding:0 10px;gap:5px;font-size:12px;font-weight:600;font-family:inherit;" onclick="editarTarefaAtual()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
           Editar
@@ -2086,7 +2051,40 @@
         </button>
       </div>
     </div>
-    <div class="modal-body" id="tarefa-detalhe-body"></div>
+
+    <!-- Abas da tarefa -->
+    <div class="drawer-tabs" style="background:var(--bg);border-bottom:1px solid var(--border);padding:0 24px;">
+      <button class="drawer-tab-btn active" id="tdtab-btn-info" onclick="switchTarefaDetalheTab('info')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        Informações
+      </button>
+      <button class="drawer-tab-btn" id="tdtab-btn-atividades" onclick="switchTarefaDetalheTab('atividades')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span id="tdtab-label-atividades">Atividades</span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div id="tdtab-info" style="display:block;">
+        <div id="tarefa-detalhe-body"></div>
+      </div>
+      <div id="tdtab-atividades" style="display:none;">
+        <div class="data-table-wrapper" style="overflow:auto;">
+          <table class="data-table">
+            <thead>
+              <tr id="historico-thead-row">
+                <th class="th-sortable th-sort-active" onclick="sortHistoricoBy('dataRealizada')" data-sort-col="dataRealizada" data-sort-arrow=" ↓">Data Realizada</th>
+                <th class="th-sortable" onclick="sortHistoricoBy('dataPublicacao')" data-sort-col="dataPublicacao" data-sort-arrow="">Publicado em</th>
+                <th class="th-sortable" onclick="sortHistoricoBy('publicadoPor')" data-sort-col="publicadoPor" data-sort-arrow="">Publicado por</th>
+                <th>Checklist</th>
+                <th>Observações</th>
+              </tr>
+            </thead>
+            <tbody id="historico-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
     <div class="modal-footer">
       <button id="btn-excluir-tarefa" class="btn btn-outline" style="color:var(--red);border-color:rgba(230,57,70,0.3);" onclick="excluirTarefaAtual()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg>
@@ -2245,46 +2243,6 @@
   </div>
 </div>
 
-<!-- ══════════ MODAL HISTÓRICO DA TAREFA ══════════ -->
-<div class="modal-overlay" id="modal-historico">
-  <div class="modal wide">
-    <div class="modal-header">
-      <div class="modal-header-left">
-        <div class="modal-header-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        </div>
-        <div>
-          <div class="modal-title" id="historico-title">Histórico de Publicações</div>
-          <div class="modal-subtitle">Todas as execuções registradas desta tarefa</div>
-        </div>
-      </div>
-      <button class="modal-close" onclick="closeModal('modal-historico')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-      </button>
-    </div>
-    <div class="modal-body">
-      <div class="data-table-wrapper" style="overflow:auto;">
-        <table class="data-table">
-          <thead>
-            <tr id="historico-thead-row">
-              <th class="th-sortable th-sort-active" onclick="sortHistoricoBy('dataRealizada')" data-sort-col="dataRealizada" data-sort-arrow=" ↓">Data Realizada</th>
-              <th class="th-sortable" onclick="sortHistoricoBy('dataPublicacao')" data-sort-col="dataPublicacao" data-sort-arrow="">Publicado em</th>
-              <th class="th-sortable" onclick="sortHistoricoBy('publicadoPor')" data-sort-col="publicadoPor" data-sort-arrow="">Publicado por</th>
-              <th>Checklist</th>
-              <th>Observações</th>
-              <th style="width:90px;">Ações</th>
-            </tr>
-          </thead>
-          <tbody id="historico-tbody"></tbody>
-        </table>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('modal-historico')">Fechar</button>
-    </div>
-  </div>
-</div>
-
 <!-- ══════════ MODAL VER PUBLICAÇÃO ══════════ -->
 <div class="modal-overlay" id="modal-pub-view">
   <div class="modal">
@@ -2302,10 +2260,6 @@
         <button class="modal-close" onclick="openRastreabilidadeModal('pub-view')" title="Rastreabilidade da atividade">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         </button>
-        <button class="modal-close" style="width:auto;padding:0 10px;gap:5px;font-size:12px;font-weight:600;font-family:inherit;" onclick="editarPubView()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
-          Editar
-        </button>
         <button class="modal-close" onclick="closePubView()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -2317,7 +2271,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:14px;height:14px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
         Excluir
       </button>
-      <button class="btn btn-outline" onclick="closePubView()">Fechar</button>
+      <button id="btn-editar-pub-view" class="btn btn-primary" onclick="editarPubView()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>
+        Editar
+      </button>
     </div>
   </div>
 </div>
@@ -2508,12 +2465,24 @@
               <button class="btn btn-outline btn-icon" onclick="formAmbienteGerenciar()" title="Ambientes da unidade"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg></button>
             </div>
           </div>
-        </div>
-        <!-- Setores compartilhados: outros setores do mesmo ambiente que também usam o ativo (org.js) -->
-        <div class="form-row" id="ativo-comp-row" style="display:none;">
-          <div class="form-field">
-            <label class="field-label">Compartilhar com <span class="amb-hint">outros setores deste ambiente — o setor acima continua responsável</span></label>
-            <div class="comp-chips" id="ativo-comp-chips"></div>
+          <!-- Setores compartilhados: outros setores do mesmo ambiente que também usam o ativo (org.js) -->
+          <div class="form-field" id="ativo-comp-row" style="display:none;">
+            <label class="field-label">Compartilhar com
+              <span class="comp-info" tabindex="0" data-tip="Outros setores deste ambiente que também usam o ativo — o setor acima continua responsável">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+              </span>
+            </label>
+            <div class="comp-pop-wrap" id="ativo-comp-wrap">
+              <button type="button" class="field-input comp-pop-btn" id="ativo-comp-btn" aria-haspopup="true" aria-expanded="false" onclick="formCompPopToggle()">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+                <span class="comp-pop-rot" id="ativo-comp-rot">Nenhum setor</span>
+                <svg class="comp-pop-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              <div class="org-pop comp-pop" id="ativo-comp-pop" role="menu">
+                <div class="org-pop-head"><b>Compartilhar com</b></div>
+                <div class="org-pop-lista" id="ativo-comp-chips"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2704,17 +2673,9 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         <span id="avtab-label-rotinas">Rotinas</span>
       </button>
-      <button class="drawer-tab-btn" id="avtab-btn-tarefas" onclick="switchAtivoTab('tarefas')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        <span id="avtab-label-tarefas">Tarefas</span>
-      </button>
       <button class="drawer-tab-btn" id="avtab-btn-ots" onclick="switchAtivoTab('ots')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         <span id="avtab-label-ots">OT's</span>
-      </button>
-      <button class="drawer-tab-btn" id="avtab-btn-atividades" onclick="switchAtivoTab('atividades')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        <span id="avtab-label-atividades">Atividades</span>
       </button>
       <button class="drawer-tab-btn" id="avtab-btn-ocorrencias" onclick="switchAtivoTab('ocorrencias')">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
@@ -2736,21 +2697,8 @@
         </div>
         <div id="ativo-rotinas-list"></div>
       </div>
-      <div id="avtab-tarefas" style="padding:16px 24px;display:none;">
-        <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
-          <div class="status-filter-group">
-            <button class="status-filter-btn active active-green" id="sfbtn-av-tarefa-ativo" onclick="setTarefaStatusFilter('av','ativo')">Ativos</button>
-            <button class="status-filter-btn" id="sfbtn-av-tarefa-inativo" onclick="setTarefaStatusFilter('av','inativo')">Inativos</button>
-            <button class="status-filter-btn" id="sfbtn-av-tarefa-ambos" onclick="setTarefaStatusFilter('av','ambos')">Ambos</button>
-          </div>
-        </div>
-        <div id="ativo-tarefas-list"></div>
-      </div>
       <div id="avtab-ots" style="padding:16px 24px;display:none;">
         <div id="ativo-ots-list"></div>
-      </div>
-      <div id="avtab-atividades" style="padding:16px 24px;display:none;">
-        <div id="ativo-atividades-list"></div>
       </div>
       <div id="avtab-ocorrencias" style="padding:16px 24px;display:none;">
         <div id="ativo-ocorrencias-list"></div>

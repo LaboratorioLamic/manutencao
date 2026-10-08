@@ -3,8 +3,9 @@
 // Cria uma unidade fictícia ("EXEMP") com cadastros no modelo atual (produto ×
 // lote de insumo, lotes encerrados por vencimento, meio preparado com preparos,
 // qualitativos e semiquantitativo), alvos, ~45 dias de corridas (aceitas,
-// alertas, rejeições com repetição, corrida fracionada), não conformidades
-// e índices, para demonstrar o módulo. Tudo fica identificado com
+// alertas, rejeições com repetição, corrida fracionada), autoclave com ficha
+// do ciclo (integrador a cada ciclo, indicador biológico mensal com leitura
+// vinculada), não conformidades e índices, para demonstrar o módulo. Tudo fica identificado com
 // `exemplo: true`, ids iniciados por "ex-" e dados particionados na
 // unidade de exemplo, e é removido por cqExemploRemover().
 // Os valores são gerados por um gerador pseudoaleatório com semente fixa
@@ -56,6 +57,7 @@ function cqExemploCriar() {
         <li><b>Bioquímica</b> (glicose, colesterol, creatinina): Westgard com aceites, alertas, rejeições, repetições, troca de lote de reagente e lote anterior encerrado por vencimento.</li>
         <li><b>Microbiologia</b> (corrida fracionada): coloração de Gram semanal e Ágar Mueller Hinton preparado no laboratório, com preparos anteriores finalizados (consumidos), um reprovado e descartado e o de hoje em avaliação (desempenho atípico aguardando decisão).</li>
         <li><b>Urinálise</b>: proteína na tira reagente (semiquantitativo), com alerta de uma categoria e uma discordância.</li>
+        <li><b>Autoclave</b> com ficha do ciclo (lote da carga, programa, tempo, temperatura, pressão e pacotes): integrador químico em todo ciclo, indicador biológico mensal com a leitura de 24 h vinculada ao ciclo, um integrador reprovado e um ciclo com parâmetros físicos fora da especificação (carga reprocessada).</li>
         <li>Produtos com vários lotes (em uso, em avaliação, quarentena, encerrado), produto sem lote e não conformidades abertas e concluídas.</li>
       </ul>
       <div class="cq-alerta-box">${CQ_ICO.alerta} Os dados são fictícios e ficam gravados no banco até serem removidos por “Remover dados de exemplo”. Não use a área de exemplo para registros reais.</div>`,
@@ -108,12 +110,22 @@ function _cqExemploMontar() {
 
   // ── Unidade (microbiologia em corrida fracionada: Gram e meios rodam em momentos distintos) ──
   const sisBq = 'Analisador bioquímico (exemplo)', sisMic = 'Bancada de microbiologia (exemplo)', sisUri = 'Leitura de tiras reagentes (exemplo)';
-  cfg('unidades', novo({
+  const sisAut = 'Autoclave vertical (exemplo)';
+  // Ficha do ciclo de esterilização da autoclave: programas com a especificação do fabricante
+  const chaveAut = _cqChaveModoEquip('m:' + sisAut);
+  const unPressao = 'kgf/cm²';
+  const P121 = { id: 'ex-prog-121', nome: '121 °C — meios e descontaminação', ordem: 0, tempMin: 121, tempMax: 124, tempoMin: 15, pressaoMin: 1, pressaoMax: 1.3 };
+  const P134 = { id: 'ex-prog-134', nome: '134 °C — instrumental embalado', ordem: 1, tempMin: 134, tempMax: 137, tempoMin: 4, pressaoMin: 2, pressaoMax: 2.3 };
+  const dhCfgAut = `${ini}T09:30`;
+  const cfgAut = { ativo: true, prefixo: 'EXAC', unPressao, programas: { [P121.id]: P121, [P134.id]: P134 }, equipNome: sisAut, atualizadoEm: _cqExIso(dhCfgAut), atualizadoPor: ass(dhCfgAut) };
+  const un = cfg('unidades', novo({
     id: U, sigla: 'EXEMP', nome: 'Área de exemplo (dados fictícios)', cnes: '', endereco: '', fuso: CQ_EX_FUSO, rtUserId: me.id,
     setores: [], diasOperacao: [0, 1, 2, 3, 4, 5, 6], ativa: true, validacao: true, membros: { [me.id]: 'rt' },
     politica: { liberarAceitosAoSalvar: true, comentarioObrigatorioAlerta: true, reautenticar: true, retroativoHoras: 24,
-                modoCorrida: 'lote', modoCorridaEquip: { [_cqChaveModoEquip('m:' + sisMic)]: 'fracionada' } },
+                modoCorrida: 'lote', modoCorridaEquip: { [_cqChaveModoEquip('m:' + sisMic)]: 'fracionada', [chaveAut]: 'fracionada' } },
+    esterilizacao: { [chaveAut]: cfgAut },
   }, 'Área cadastrada'));
+  addTr(un, dhCfgAut, 0, 'edicao', `Ficha do ciclo de esterilização — ${sisAut}`, [{ campo: `Ficha de esterilização · ${sisAut}`, antes: 'não configurada', depois: _cqEsterResumoCfg(cfgAut) }]);
 
   // ── Analitos (com os sistemas analíticos onde são dosados) ──
   const AN = {
@@ -132,12 +144,15 @@ function _cqExemploMontar() {
     'ex-an-est':  { codigo: 'EX-EST', nome: 'Esterilidade de meio de cultura (exemplo)', tipo: 'qualitativo', esp: 'Microbiologia', sis: sisMic, escala: [...CQ_MODELOS_MICRO[0].escala] },
     'ex-an-des':  { codigo: 'EX-DES', nome: 'Desempenho de meio de cultura (exemplo)', tipo: 'qualitativo', esp: 'Microbiologia', sis: sisMic, escala: [...CQ_MODELOS_MICRO[1].escala] },
     'ex-an-prot': { codigo: 'EX-PROT', nome: 'Proteína na urina — tira (exemplo)', tipo: 'semiquantitativo', esp: 'Urinálise', sis: sisUri, escala: ['Negativo', 'Traços', '1+', '2+', '3+'], tol: 1 },
+    'ex-an-iq5':  { codigo: 'EX-IQ5', nome: 'Integrador químico tipo 5 — vapor (exemplo)', tipo: 'qualitativo', esp: 'Outros', sis: sisAut, escala: [...CQ_MODELOS_ESTER[0].escala] },
+    'ex-an-ib':   { codigo: 'EX-IB', nome: 'Indicador biológico — G. stearothermophilus (exemplo)', tipo: 'qualitativo', esp: 'Outros', sis: sisAut, escala: [...CQ_MODELOS_ESTER[1].escala] },
   };
   Object.entries(QL).forEach(([id, a]) => cfg('analitos', novo({
     id, codigo: a.codigo, nome: a.nome, unidadeMedida: '', decimais: 0, tipo: a.tipo, especialidade: a.esp, limitesDecisao: [], eta: null, cvMeta: null,
     escala: a.escala, toleranciaPassos: a.tol ?? null, ativo: true, ativoIds: [], sistemas: [a.sis],
   }, 'Analito cadastrado')));
   const escalaGram = QL['ex-an-gram'].escala, escalaEst = QL['ex-an-est'].escala, escalaDes = QL['ex-an-des'].escala, escalaProt = QL['ex-an-prot'].escala;
+  const escalaIQ = QL['ex-an-iq5'].escala, escalaIB = QL['ex-an-ib'].escala;
 
   // ── Materiais, cepas e lotes de controle ──
   const validade = _cqExDia(hoje, 300);
@@ -176,6 +191,23 @@ function _cqExemploMontar() {
   }, 'Material cadastrado'));
   cfg('lotesControle', novo({
     id: 'ex-lt-uri', materialId: 'ex-mat-uri', lote: 'EX-URI-26', validade, niveis: [1, 2], status: 'em_uso', bulaUrl: '', observacoes: '',
+  }, 'Lote cadastrado'));
+  // Indicadores da autoclave (uso único): integrador no pacote teste de todo ciclo; indicador biológico mensal
+  cfg('materiais', novo({
+    id: 'ex-mat-iq5', nome: 'Integrador químico classe 5 — vapor (exemplo)', fabricante: 'Fabricante fictício', fornecedor: '', tipo: 'comercial', regAnvisa: '', matriz: '',
+    codigoReferencia: 'ISO 11140-1, classe 5 · vapor 121 a 134 °C · amarelo → preto (viragem completa)', estabilidadeAbertoDias: null,
+    armazenamento: 'Local seco, ao abrigo da luz; uso único', niveis: { 1: { nome: 'Pacote teste' } }, equips: ['m:' + sisAut], analitoIds: ['ex-an-iq5'], ativo: true,
+  }, 'Material cadastrado'));
+  cfg('materiais', novo({
+    id: 'ex-mat-ib', nome: 'Indicador biológico 24 h — G. stearothermophilus (exemplo)', fabricante: 'Fabricante fictício', fornecedor: '', tipo: 'comercial', regAnvisa: '', matriz: '',
+    codigoReferencia: 'G. stearothermophilus ATCC 7953 · 10⁵ a 10⁶ esporos · leitura em 24 h a 55–60 °C', estabilidadeAbertoDias: null,
+    armazenamento: '15 a 30 °C, UR 35 a 60 %, ao abrigo do sol; descartar após autoclavar 30 min a 121 °C', niveis: { 1: { nome: 'Ampola' } }, equips: ['m:' + sisAut], analitoIds: ['ex-an-ib'], ativo: true,
+  }, 'Material cadastrado'));
+  cfg('lotesControle', novo({
+    id: 'ex-lt-iq5', materialId: 'ex-mat-iq5', lote: 'IQ-2604', validade, niveis: [1], status: 'em_uso', bulaUrl: '', observacoes: 'Caixa com 250 tiras',
+  }, 'Lote cadastrado'));
+  cfg('lotesControle', novo({
+    id: 'ex-lt-ib', materialId: 'ex-mat-ib', lote: 'IB-2603', validade, niveis: [1], status: 'em_uso', bulaUrl: '', observacoes: 'Caixa com 10 ampolas',
   }, 'Lote cadastrado'));
 
   // ── Reagentes, calibrador, corante e meio: produto + lotes ──
@@ -261,7 +293,7 @@ function _cqExemploMontar() {
       id, unidadeId: U, analitoId, ativoId: null, ativoSnap: null, sistemaAnalitico: sis, metodo, inicioUso: ini, materialId: '',
       niveis: Object.keys(controlesQual).map(Number), controlesQual, lotesAtivos, frequencia: { tipo: frequencia, vezesDia: 1 },
       regrasPreset: 'qualitativo', regras: {}, opcoesRegras: {}, etaOverride: null,
-      insumoTipo, insumoProduto: metodo, insumoProdutoId: produtoId, exigirInsumo: true, ativo: true, versaoConfig: 1,
+      insumoTipo, insumoProduto: produtoId ? metodo : '', insumoProdutoId: produtoId, exigirInsumo: !!produtoId, ativo: true, versaoConfig: 1,
     }, 'Teste cadastrado'));
     return TESTES[id];
   };
@@ -275,8 +307,14 @@ function _cqExemploMontar() {
   const TU = testeQual('ex-te-prot', 'ex-an-prot', sisUri, 'Tira reagente de urina (exemplo)',
     { 1: { rotulo: 'Controle negativo', materialId: 'ex-mat-uri', nivelLote: 1, esperado: 'Negativo' }, 2: { rotulo: 'Controle positivo', materialId: 'ex-mat-uri', nivelLote: 2, esperado: '2+' } },
     { 1: 'ex-lt-uri', 2: 'ex-lt-uri' }, 'diaria', 'reagente', 'ex-pi-tira');
+  // Autoclave: indicadores sem insumo vinculado (o lote é o do próprio indicador)
+  const TIQ = testeQual('ex-te-iq5', 'ex-an-iq5', sisAut, '',
+    { 1: { rotulo: 'Pacote teste', materialId: 'ex-mat-iq5', esperado: escalaIQ[0] } }, { 1: 'ex-lt-iq5' }, 'por_corrida', '', '');
+  const TIB = testeQual('ex-te-ib', 'ex-an-ib', sisAut, '',
+    { 1: { rotulo: 'Ampola teste (no pacote)', materialId: 'ex-mat-ib', esperado: escalaIB[0] }, 2: { rotulo: 'Ampola controle (fora da autoclave)', materialId: 'ex-mat-ib', esperado: escalaIB[1] } },
+    { 1: 'ex-lt-ib', 2: 'ex-lt-ib' }, 'mensal', '', '');
   const nomeAn = { ...Object.fromEntries(Object.values(AN).map(a => [a.id, a.nome])), ...Object.fromEntries(Object.entries(QL).map(([id, a]) => [id, a.nome])) };
-  const nomeT = t => QL[t.analitoId] ? `${nomeAn[t.analitoId]} · ${t.metodo}` : nomeAn[t.analitoId];
+  const nomeT = t => QL[t.analitoId] && t.metodo ? `${nomeAn[t.analitoId]} · ${t.metodo}` : nomeAn[t.analitoId];
 
   // ── Corridas ──
   const seq = {};
@@ -310,6 +348,8 @@ function _cqExemploMontar() {
           atual.push({ nivel: Number(n), obtido, esperado: c.esperado, rotulo: c.rotulo });
         });
         r = CQEngine.avaliarCorridaQualitativa({ atual, tipo: q.tipo, escala: q.escala, tolerancia: q.tol });
+        // Ciclo de esterilização com parâmetro físico fora da especificação rejeita os indicadores
+        if (opts.ciclo && !opts.ciclo.vinculo) r = _cqEsterAplicar(r, opts.ciclo.falhas);
       } else {
         const tq = TQ.find(x => x.id === t.id);
         Object.entries(L.valores).forEach(([n, z]) => {
@@ -349,12 +389,13 @@ function _cqExemploMontar() {
       _cqMarcarUso(updates, 'insumos', L.lk);
       testes[t.id] = {
         niveis: niveisMap, lr: L.lr || null, lk: L.lk || null, prep: L.prep || null, posCalibracao: !!L.posCalibracao, trocaLoteReagente: !!L.trocaLr, trocaLoteCalibrador: false, versaoConfig: 1,
-        avaliacao: { status: r.status, violacoes: r.violacoes.map(v => ({ regra: v.regra, severidade: v.severidade, escopo: v.escopo, niveis: v.niveis, texto: v.texto })) },
+        avaliacao: { status: r.status, violacoes: r.violacoes.map(v => ({ regra: v.regra, severidade: v.severidade, escopo: v.escopo, niveis: v.niveis, texto: v.texto })),
+                     ...(r.statusIndicadores ? { statusIndicadores: r.statusIndicadores } : {}) },
         decisao,
       };
       ultimo[t.id] = { dataHora: dh, corridaKey: ck, mes, status: r.status, decisao: sigla, lr: L.lr || null, lk: L.lk || null };
       resumo.push(`${nomeT(t)}: ${CQ_STATUS[r.status]?.label}`);
-      if (decisao?.acao === 'rejeitado') rejeitados.push({ t, r, decisao, motivo: L.motivo });
+      if (decisao?.acao === 'rejeitado') rejeitados.push({ t, r, decisao, motivo: L.motivo, ncTx: L.ncTx });
     });
     const hdr = {
       numero, unidadeId: U, ativoId: null, ativoSnap: null, sistemaAnalitico: sistema, dataHora: dh,
@@ -363,7 +404,18 @@ function _cqExemploMontar() {
       repeticaoDe: opts.repeticaoDe || null, testes, exemplo: true, trilha: {},
     };
     if (_cqModoCorridaEx(sistema) === 'fracionada') hdr.fracionada = true;
-    addTr(hdr, dh, 3, 'criacao', `Corrida ${numero} lançada${hdr.fracionada ? ' (fracionada)' : ''} — ${resumo.join('; ')}`);
+    // Ficha do ciclo: reserva o lote da carga (único na área) como no lançamento real
+    let txtCiclo = '';
+    const ci = opts.ciclo;
+    if (ci) {
+      hdr.ciclo = ci;
+      if (ci.vinculo) txtCiclo = ` · leitura do ciclo ${ci.loteCarga} (corrida ${ci.vinculo.numero})`;
+      else {
+        updates[`${CQ_KEYS.cargas}/${U}/${_cqChaveModoEquip(ci.loteCarga)}`] = { lote: ci.loteCarga, corridaKey: ck, mes, dataHora: dh, equip: 'm:' + sistema, porNome: me.nome, em: _cqExIso(dh, 2), numero };
+        txtCiclo = ` · ciclo ${ci.loteCarga}, ${ci.programa.nome}, ${ci.pacotes.length} pacote(s)${ci.conforme ? '' : ` — parâmetros físicos fora da especificação: ${ci.falhas.join('; ')}`}`;
+      }
+    }
+    addTr(hdr, dh, 3, 'criacao', `Corrida ${numero} lançada${hdr.fracionada ? ' (fracionada)' : ''}${txtCiclo} — ${resumo.join('; ')}`);
     Object.entries(testes).forEach(([tid, ct]) => {
       if (ct.decisao && !ct.decisao.auto) addTr(hdr, dh, ct.decisao.acao === 'rejeitado' ? 15 : 20, 'decisao', `${nomeT(TESTES[tid])}: ${CQ_DECISAO[ct.decisao.acao].label} — ${ct.decisao.comentario}`);
     });
@@ -374,7 +426,47 @@ function _cqExemploMontar() {
     updates[`${CQ_KEYS.corridas}/${U}/${mes}/${ck}`] = hdr;
     return { ck, mes, numero, hdr, rejeitados };
   };
-  const _cqModoCorridaEx = sistema => sistema === sisMic ? 'fracionada' : 'lote';
+  const _cqModoCorridaEx = sistema => sistema === sisMic || sistema === sisAut ? 'fracionada' : 'lote';
+
+  // Autoclave: ficha do ciclo (lote da carga PREFIXO-AAAAMMDD-NN, como o botão "Gerar") e leitura do indicador biológico
+  const rngAut = _cqExRng(20261008);     // gerador próprio: não altera os valores dos demais cenários
+  const seqCarga = {};
+  let nCicloEquip = 1480;
+  const cicloAut = (dh, p, v, pacotes) => {
+    const dia = dh.slice(0, 10).replace(/-/g, '');
+    const n = seqCarga[dia] = (seqCarga[dia] || 0) + 1;
+    updates[`${CQ_KEYS.seq}/${U}/cargas/${chaveAut}/${dia}`] = n;
+    const falhas = _cqEsterFalhas(p, unPressao, v);
+    return {
+      loteCarga: `${cfgAut.prefixo}-${dia}-${String(n).padStart(2, '0')}`, numeroCicloEquip: String(++nCicloEquip), dataHoraCiclo: dh,
+      programa: { id: p.id, nome: p.nome, tempMin: p.tempMin, tempMax: p.tempMax, tempoMin: p.tempoMin, pressaoMin: p.pressaoMin, pressaoMax: p.pressaoMax, unPressao },
+      temperatura: v.temp, tempo: v.tempo, pressao: v.pressao, pacotes, conforme: !falhas.length, falhas,
+    };
+  };
+  // Parâmetros lidos no registro do equipamento, dentro da especificação do programa
+  const paramsOk = p => ({
+    temp: CQEngine.arred(p.tempMin + 0.4 + rngAut.rnd() * 1.6, 1),
+    tempo: p.tempoMin + (rngAut.rnd() < 0.3 ? 1 : 0),
+    pressao: CQEngine.arred(p.pressaoMin + 0.06 + rngAut.rnd() * (p.pressaoMax - p.pressaoMin - 0.12), 2),
+  });
+  const PAC121 = [
+    ['Pacote teste (integrador)', 'Ágar Mueller Hinton — 2 frascos de 500 mL', 'Caldo BHI — 40 tubos', 'Ponteiras 200 µL — 2 caixas'],
+    ['Pacote teste (integrador)', 'Saco autoclavável — descarte de culturas (2)', 'Placas de Petri usadas — 1 saco'],
+    ['Pacote teste (integrador)', 'Água destilada — 4 frascos de 1 L', 'Ponteiras 1000 µL — 2 caixas', 'Tubos de ensaio com tampa — 1 cesto'],
+  ];
+  const PAC134 = ['Pacote teste (integrador)', 'Pinça anatômica — 2 un.', 'Tesoura reta', 'Alça de platina — 3 un.', 'Cabo de bisturi'];
+  // Leitura do indicador biológico (24 h): corrida vinculada ao ciclo, com referência cruzada no ciclo de origem
+  const lerIB = (orig, dhLeit, obtidos) => {
+    const o = orig.hdr.ciclo;
+    const dhIncub = _cqExSomaMin(orig.hdr.dataHora, 30);
+    const { leituras, ...base } = o;
+    const ciclo = { ...base, vinculo: { mes: orig.mes, key: orig.ck, numero: orig.numero, dataHora: orig.hdr.dataHora, operadorNome: me.nome },
+      incubacao: { inicio: dhIncub, temperatura: 57, horasAposCiclo: Math.round(_cqEsterHoras(orig.hdr.dataHora, dhIncub) * 10) / 10 } };
+    const c = gravarCorrida(dhLeit, sisAut, [{ t: TIB, qual: true, valores: obtidos }], { ciclo });
+    o.leituras = { ...(o.leituras || {}), [c.ck]: { numero: c.numero, mes: c.mes, dataHora: dhLeit } };
+    addTr(orig.hdr, dhLeit, 3, 'edicao', `Leitura de indicador do ciclo ${o.loteCarga} registrada na corrida ${c.numero}`);
+    return c;
+  };
 
   // Preparos do Ágar MH (RDC 978, art. 101): criados na corrida; a decisão da corrida libera ou reprova
   let nPrep = 0;
@@ -414,6 +506,26 @@ function _cqExemploMontar() {
   const dUriAlerta = [-24, -9], dUriRej = -33;
   let colCorrigido = false;
   const minAntesDeAgora = (dh, hoje0, min) => (hoje0 && dh >= agoraLocal ? _cqExSomaMin(agoraLocal, -min) : dh);
+  // Autoclave em dias úteis; indicador biológico mensal no primeiro ciclo do mês (leitura 24 h depois);
+  // cenários contados só nos ciclos sem indicador biológico: 6º = integrador reprovado; 20º = parâmetros fora
+  const AUT_IQ_FALHA = 6, AUT_FIS_FALHA = 20;
+  let nAut = 0, mesIB = '';
+  const leiturasIB = [];
+  // Lança as leituras do indicador biológico até o instante informado (numeração em ordem cronológica)
+  const lerPendentes = ate => {
+    leiturasIB.filter(x => x.dhLeit <= ate).forEach(x => {
+      leiturasIB.splice(leiturasIB.indexOf(x), 1);
+      lerIB(x.orig, x.dhLeit, { 1: escalaIB[0], 2: escalaIB[1] });   // ampola teste negativa; ampola controle positiva
+    });
+  };
+  const ncAutoclave = {
+    impacto: { reprocessadas: 'na', qtd: null, diferencaSignificativa: 'na', laudosAfetados: 'nao', laudosRetificados: '',
+      justificativa: 'Carga não liberada: pacotes retidos e reprocessados no ciclo seguinte, sem uso do material do ciclo reprovado (exemplo).' },
+  };
+  const NC_IQ = { ...ncAutoclave, causa: 'Erro do operador', acao: 'Outra', desc: 'Carga redistribuída (sem exceder 2/3 da câmara) e reprocessada; operador reorientado', fatores: { procedimento: true },
+    inv: 'Integrador com viragem incompleta no pacote teste. Parâmetros físicos conformes; câmara carregada acima do limite e pacotes encostados na parede. Carga reprocessada com integrador aprovado.' };
+  const NC_FIS = { ...ncAutoclave, causa: 'Falha do equipamento', acao: 'Acionamento da assistência técnica', fatores: { equipamento: true },
+    inv: 'Temperatura e pressão abaixo da especificação do programa no registro do ciclo. Guarnição da porta com desgaste e vazamento de vapor; assistência técnica trocou a guarnição. Carga reprocessada com parâmetros conformes.' };
   for (let d = -CQ_EX_DIAS + 1; d <= 0; d++) {
     const dia = _cqExDia(hoje, d);
     const hoje0 = d === 0;
@@ -464,6 +576,41 @@ function _cqExemploMontar() {
       prepararMH(dia, minAntesDeAgora(`${dia}T10:00`, hoje0, 10), { est: contaminado ? escalaEst[1] : escalaEst[0], des: hoje0 ? escalaDes[1] : escalaDes[0] }, {
         pendente: hoje0, motivo: contaminado ? 'Crescimento na placa não inoculada após 48 h: preparo contaminado, descartado e refeito.' : '' });
     }
+    // Autoclave (fracionada): ciclo de 121 °C todo dia útil e de 134 °C às terças e quintas; integrador em todo ciclo
+    const dSem = new Date(`${dia}T12:00:00Z`).getUTCDay();
+    if (dSem >= 1 && dSem <= 5) {
+      const ib = dia.slice(0, 7) !== mesIB && +dia.slice(8, 10) <= 7;
+      if (ib) mesIB = dia.slice(0, 7);
+      else nAut++;
+      const falhaIQ = !ib && nAut === AUT_IQ_FALHA, falhaFis = !ib && nAut === AUT_FIS_FALHA;
+      const dhAut = minAntesDeAgora(`${dia}T13:00`, hoje0, 8);
+      const pac = [...PAC121[nAut % PAC121.length]];
+      if (ib) pac.splice(1, 0, 'Ampola teste do indicador biológico (no pacote teste)');
+      const vals = falhaFis ? { temp: 119.6, tempo: 15, pressao: 0.92 } : paramsOk(P121);
+      const ciclo = cicloAut(dhAut, P121, vals, pac);
+      const motivo = falhaIQ ? 'Integrador com viragem incompleta: carga não liberada, reprocessar.'
+        : falhaFis ? 'Temperatura e pressão abaixo da especificação do programa: carga não liberada, reprocessar.' : '';
+      const c = gravarCorrida(dhAut, sisAut, [{ t: TIQ, qual: true, valores: { 1: falhaIQ ? escalaIQ[1] : escalaIQ[0] }, motivo, ncTx: falhaIQ ? NC_IQ : falhaFis ? NC_FIS : null }],
+        { pendente: hoje0, ciclo });
+      if (ib) {
+        const dhLeit = _cqExSomaMin(dhAut, 24 * 60 + 30);
+        if (dhLeit < agoraLocal) leiturasIB.push({ orig: c, dhLeit });
+      }
+      lerPendentes(_cqExSomaMin(dhAut, 60));
+      // Carga reprovada: reprocessada em novo ciclo (novo lote da carga) como repetição da corrida
+      if (c.rejeitados.length && !hoje0) {
+        const dhRep = _cqExSomaMin(dhAut, 90);
+        const rep = gravarCorrida(dhRep, sisAut, [{ t: TIQ, qual: true, valores: { 1: escalaIQ[0] } }],
+          { repeticaoDe: c.ck, ciclo: cicloAut(dhRep, P121, paramsOk(P121), pac.map(x => x.startsWith('Pacote teste') ? x : `${x} — reprocessamento`)) });
+        const repeticao = { ck: rep.ck, mes: rep.mes, numero: rep.numero, dh: dhRep, status: rep.hdr.testes[TIQ.id]?.avaliacao?.status };
+        ncs.filter(n => n.ck === c.ck).forEach(n => { n.repeticao = repeticao; });
+      }
+      const dh134 = minAntesDeAgora(`${dia}T15:30`, hoje0, 4);
+      if ((dSem === 2 || dSem === 4) && dh134 > dhAut) {
+        gravarCorrida(dh134, sisAut, [{ t: TIQ, qual: true, valores: { 1: escalaIQ[0] } }], { pendente: hoje0, ciclo: cicloAut(dh134, P134, paramsOk(P134), [...PAC134]) });
+      }
+    }
+    lerPendentes(`${dia}T23:59`);
   }
 
   // ── Não conformidades ──
@@ -483,7 +630,7 @@ function _cqExemploMontar() {
   ncs.forEach(x => {
     const ano = x.dh.slice(0, 4);
     const id = `ex-nc-${x.ck}-${x.t.id.slice(6)}`;
-    const tx = textosNC[x.t.id] || { causa: 'Erro aleatório (sem causa identificada)', acao: 'Repetição do controle (mesmo frasco)', fatores: { procedimento: true }, inv: 'Violação isolada; repetição aceita.' };
+    const tx = x.ncTx || textosNC[x.t.id] || { causa: 'Erro aleatório (sem causa identificada)', acao: 'Repetição do controle (mesmo frasco)', fatores: { procedimento: true }, inv: 'Violação isolada; repetição aceita.' };
     const anteriores = (hist[x.t.id] || []).filter(r => r.corridaKey < x.ck && ['L', 'O'].includes(r.decisao)).sort((a, b) => b.corridaKey.localeCompare(a.corridaKey));
     const ultAceita = anteriores[0] ? { key: anteriores[0].corridaKey, mes: CQEngine.mesDe(anteriores[0].corridaKey), dataHora: CQEngine.dataDeChave(anteriores[0].corridaKey) } : null;
     const aberta = x === ultimaNC;   // a mais recente fica em tratamento
@@ -504,10 +651,10 @@ function _cqExemploMontar() {
       // NC em tratamento: falta avaliar o impacto em pacientes e concluir
       ncAbertas[id] = { numero: nc.numero, testeId: x.t.id, ano, abertaEm: nc.criadoEm };
     } else {
-      Object.assign(nc.impacto, { reprocessadas: 'sim', qtd: 12, diferencaSignificativa: 'nao', laudosAfetados: 'nao', laudosRetificados: '',
+      Object.assign(nc.impacto, tx.impacto || { reprocessadas: 'sim', qtd: 12, diferencaSignificativa: 'nao', laudosAfetados: 'nao', laudosRetificados: '',
         justificativa: 'Amostras do intervalo reprocessadas após a ação corretiva, sem diferença clinicamente significativa (exemplo).' });
       nc.status = 'concluida';
-      nc.conclusao = { texto: 'Causa tratada; repetição aceita e sem impacto em laudos (exemplo).', ...ass(x.dh, 24 * 60), reautenticado: true };
+      nc.conclusao = { texto: tx.impacto ? 'Causa tratada; carga reprocessada e liberada (exemplo).' : 'Causa tratada; repetição aceita e sem impacto em laudos (exemplo).', ...ass(x.dh, 24 * 60), reautenticado: true };
       nc.eficacia = { eficaz: true, texto: 'Corridas seguintes aceitas, sem recorrência (exemplo).', ...ass(x.dh, 7 * 24 * 60) };
       addTr(nc, x.dh, 24 * 60, 'conclusao', `Não conformidade concluída: ${nc.conclusao.texto}`);
       addTr(nc, x.dh, 7 * 24 * 60, 'eficacia', `Eficácia: eficaz — ${nc.eficacia.texto}`);
@@ -543,7 +690,7 @@ function cqExemploRemover() {
     onConfirm: async () => {
       if (!_cqPodeGravar()) return false;
       const updates = {};
-      ['alvos', 'corridas', 'resultados', 'acoes', 'indices', 'seq'].forEach(k => { updates[`${CQ_KEYS[k]}/${CQ_EX_U}`] = null; });
+      ['alvos', 'corridas', 'resultados', 'acoes', 'indices', 'seq', 'cargas'].forEach(k => { updates[`${CQ_KEYS[k]}/${CQ_EX_U}`] = null; });
       CQ_COLECOES.forEach(c => Object.keys(cqState.config[c] || {}).filter(exId).forEach(id => { updates[`${CQ_KEYS.config}/${c}/${id}`] = null; }));
       let uso = null;
       try { uso = await window.dbGet(CQ_KEYS.uso); }

@@ -534,7 +534,7 @@ async function cqTrocaRegistrar() {
       <div class="cq-cj-lista">${novos.map(({ ins, obj }) => `<div class="cq-cj-item">
         <div class="cq-cj-info"><b>${_cqEsc(obj.codigo)}</b><small>${_cqEsc(ins.nome)} · lote ${_cqEsc(ins.lote)} · val. ${_cqFmtData(obj.validade)}</small></div>
         <div class="cq-cj-acoes"><button class="btn btn-outline btn-sm" onclick="cqImprimirRotulo('${ins.id}','${obj.id}')">${CQ_ICO.print} Etiqueta</button>
-          <button class="cq-icobtn" title="Baixar etiqueta em PNG" onclick="cqEtqBaixar('${ins.id}','${obj.id}')">${CQ_ICO.baixar}</button></div>
+          <button class="cq-icobtn" title="Baixar etiqueta em PDF" onclick="cqEtqBaixar('${ins.id}','${obj.id}')">${CQ_ICO.baixar}</button></div>
       </div>`).join('')}</div>`,
     rodape: '<div></div><button class="btn btn-primary" onclick="cqModalClose()">Fechar</button>',
   });

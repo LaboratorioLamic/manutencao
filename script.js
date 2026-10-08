@@ -48,26 +48,18 @@
 
     if (isModalOpen('modal-rotina-view') && rotinaViewId) {
       renderRotinaViewInfo();
-      renderRotinaViewTarefas();
-      const rvTab = getActiveSubTab('rvtab', ['info', 'tarefas', 'atividades']);
-      if (rvTab === 'atividades') renderRotinaViewAtividades();
     }
 
     if (isModalOpen('modal-visualizar') && ativoEdicaoIndex !== null && ativoEdicaoIndex !== undefined) {
       _atualizarBadgesAtivoTabs(ativoEdicaoIndex);
-      const avTab = getActiveSubTab('avtab', ['info', 'rotinas', 'tarefas', 'atividades', 'ocorrencias']);
+      const avTab = getActiveSubTab('avtab', ['info', 'rotinas', 'ots', 'ocorrencias']);
       if (avTab === 'rotinas') _renderAtivoRotinas();
-      if (avTab === 'tarefas') _renderAtivoTarefas();
-      if (avTab === 'atividades') _renderAtivoAtividades();
       if (avTab === 'ocorrencias' && typeof _renderAtivoOcorrencias === 'function') _renderAtivoOcorrencias();
     }
 
     if (isModalOpen('modal-tarefa-detalhe') && tarefaDetalheId) {
       renderTarefaDetalheContent(tarefaDetalheId);
-    }
-
-    if (isModalOpen('modal-historico') && _historicoTarefaId) {
-      renderHistoricoTable(_historicoTarefaId);
+      if (getActiveSubTab('tdtab', ['info', 'atividades']) === 'atividades') renderHistoricoTable(tarefaDetalheId);
     }
   }
   function loadState() { return null; } // substituído por Firebase
@@ -1865,6 +1857,10 @@
 
     document.getElementById('tarefa-detalhe-title').textContent = t.titulo || rotina?.nome || 'Tarefa';
     document.getElementById('tarefa-detalhe-subtitle').textContent = ativo?.nome || '';
+    const lbAtiv = document.getElementById('tdtab-label-atividades');
+    if (lbAtiv) lbAtiv.innerHTML = nPubs > 0
+      ? `Atividades <span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:20px;font-size:10px;font-weight:700;background:var(--cyan);color:#fff;margin-left:4px;">${nPubs}</span>`
+      : 'Atividades';
 
     const flagIconMap = {
       'flag-ok':       `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>`,
@@ -2002,6 +1998,9 @@
 
   function openTarefaDetalhe(id) {
     renderTarefaDetalheContent(id);
+    _historicoSort = { col: 'dataRealizada', dir: 'desc' };
+    _historicoPage = 0;
+    switchTarefaDetalheTab('info');
     openModal('modal-tarefa-detalhe');
     // Permissões
     _mbtn('btn-editar-tarefa', _can('tarefas.editar'));
@@ -2030,8 +2029,12 @@
     showToast('Tarefa excluída.', 'success');
   }
 
-  function abrirHistoricoTarefa() {
-    openHistoricoModal(tarefaDetalheId);
+  function switchTarefaDetalheTab(tab) {
+    ['info', 'atividades'].forEach(t => {
+      document.getElementById('tdtab-' + t).style.display = t === tab ? 'block' : 'none';
+      document.getElementById('tdtab-btn-' + t).classList.toggle('active', t === tab);
+    });
+    if (tab === 'atividades') renderHistoricoTable(tarefaDetalheId);
   }
 
   // ══════════════════════════════════════════
@@ -2449,17 +2452,7 @@
   // ══════════════════════════════════════════
   // ── HISTÓRICO ──
   // ══════════════════════════════════════════
-  function openHistoricoModal(tarefaId) {
-    const t = state.tarefas.find(t => t.id === tarefaId);
-    const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
-    document.getElementById('historico-title').textContent =
-      t?.titulo ? `Histórico — ${t.titulo}` : (rotina ? `Histórico — ${rotina.nome}` : 'Histórico de Publicações');
-    _historicoSort = { col: 'dataRealizada', dir: 'desc' };
-    _historicoPage = 0;
-    renderHistoricoTable(tarefaId);
-    openModal('modal-historico');
-  }
-
+  // Histórico de publicações da tarefa — subaba "Atividades" do detalhe da tarefa
   let _historicoTarefaId = null;
 
   const HISTORICO_PER_PAGE = 10;
@@ -2479,8 +2472,6 @@
     _historicoTarefaId = tarefaId;
     if (page !== undefined) _historicoPage = page;
     const tbody       = document.getElementById('historico-tbody');
-    const canEditAtiv = typeof authHasPermission !== 'function' || authHasPermission('atividades.editar');
-    const canDelAtiv  = typeof authHasPermission !== 'function' || authHasPermission('atividades.excluir');
     const { col: sCol, dir: sDir } = _historicoSort;
     const allPubs = todasPublicacoes().filter(p => p.tarefaId === tarefaId)
       .sort((a, b) => {
@@ -2496,10 +2487,10 @@
     const totalPages = Math.max(1, Math.ceil(allPubs.length / HISTORICO_PER_PAGE));
     if (_historicoPage >= totalPages) _historicoPage = totalPages - 1;
     const pubs = allPubs.slice(_historicoPage * HISTORICO_PER_PAGE, (_historicoPage + 1) * HISTORICO_PER_PAGE);
-    arqRenderRodape('historico-arq-rodape', document.querySelector('#modal-historico .data-table-wrapper'), [tarefaId]);
+    arqRenderRodape('historico-arq-rodape', document.querySelector('#tdtab-atividades .data-table-wrapper'), [tarefaId]);
 
     if (allPubs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="6"><div class="data-table-empty">
+      tbody.innerHTML = `<tr><td colspan="5"><div class="data-table-empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
         <strong>Nenhuma publicação registrada</strong>
         <p>Publique a tarefa para registrar o histórico</p>
@@ -2512,17 +2503,12 @@
       const nCheck = p.checklistMarcado?.length || 0;
       const checkStr = nCheck > 0 ? `<span class="chip chip-green">${nCheck} item${nCheck>1?'s':''}</span>` : '<span style="color:var(--text-muted)">—</span>';
       const pubPor = p.publicadoPorNome || '<span style="color:var(--text-muted)">—</span>';
-      const editavel = !p._arq;
       return `<tr class="historico-pub-row" onclick="viewPublicacao('${p.id}')">
         <td style="font-weight:600;">${formatDataRealizadaHtml(p.dataRealizada)} ${arqSeloHtml(p)}</td>
         <td style="font-size:12px;color:var(--text-muted);">${formatDate(p.dataPublicacao)}</td>
         <td style="font-size:12.5px;">${pubPor}</td>
         <td>${checkStr}</td>
-        <td style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--text-secondary);">${p.notas || '<span style="color:var(--text-muted)">—</span>'}</td>
-        <td onclick="event.stopPropagation();" style="white-space:nowrap;">
-          ${canEditAtiv && editavel ? `<button class="btn btn-outline btn-icon" onclick="abrirEditarPublicacao('${p.id}')" title="Editar" style="padding:5px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg></button>` : ''}
-          ${canDelAtiv && editavel ? `<button class="btn btn-outline btn-icon" onclick="excluirPublicacao('${p.id}')" title="Excluir" style="padding:5px;color:var(--red);border-color:rgba(230,57,70,0.3);margin-left:4px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="width:13px;height:13px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>` : ''}
-        </td>
+        <td class="historico-notas" title="${_orgEsc(p.notas || '')}">${p.notas || '<span style="color:var(--text-muted)">—</span>'}</td>
       </tr>`;
     }).join('');
 
@@ -2538,7 +2524,7 @@
   function _renderHistoricoPagination(page, totalPages, total) {
     let el = document.getElementById('historico-pagination');
     if (!el) {
-      const wrapper = document.querySelector('#modal-historico .data-table-wrapper');
+      const wrapper = document.querySelector('#tdtab-atividades .data-table-wrapper');
       if (!wrapper) return;
       el = document.createElement('div');
       el.id = 'historico-pagination';
@@ -2957,7 +2943,7 @@
           <div style="font-size:13px;color:var(--text-secondary);white-space:pre-line;">${p.notas}</div>
         </div>` : ''}`;
 
-    const btnEditPub = document.querySelector('#modal-pub-view .modal-header button[onclick="editarPubView()"]');
+    const btnEditPub = document.getElementById('btn-editar-pub-view');
     if (btnEditPub) btnEditPub.style.display = (_can('atividades.editar') && !p._arq) ? '' : 'none';
 
     const btnExcluirPubView = document.getElementById('btn-excluir-pub-view');
@@ -3154,13 +3140,9 @@
   // ══════════════════════════════════════════
   let _rotinaStatusFilter = 'ativo';
   let _tarefaStatusFilter = 'ativo';
-  let _rvTarefaStatusFilter = 'ativo';
-  let _avTarefaStatusFilter = 'ativo';
   let _avRotinaStatusFilter = 'ativo';
 
   function getTarefaStatusFilter(ctx) {
-    if (ctx === 'rv') return _rvTarefaStatusFilter;
-    if (ctx === 'av') return _avTarefaStatusFilter;
     return _tarefaStatusFilter;
   }
 
@@ -3210,11 +3192,9 @@
   }
 
   function setTarefaStatusFilter(ctx, val) {
-    if (ctx === 'rv') _rvTarefaStatusFilter = val;
-    else if (ctx === 'av') _avTarefaStatusFilter = val;
-    else _tarefaStatusFilter = val;
+    _tarefaStatusFilter = val;
 
-    const prefix = ctx === 'rv' ? 'sfbtn-rv-tarefa' : ctx === 'av' ? 'sfbtn-av-tarefa' : 'sfbtn-tarefa';
+    const prefix = 'sfbtn-tarefa';
     ['ativo', 'inativo', 'ambos'].forEach(v => {
       const btn = document.getElementById(prefix + '-' + v);
       if (!btn) return;
@@ -3223,9 +3203,8 @@
         : '');
     });
 
-    if (ctx === 'rv') renderRotinaViewTarefas();
-    else if (ctx === 'av') _renderAtivoTarefas();
-    else { _tarefasPage = 0; renderTarefasTable(); }
+    _tarefasPage = 0;
+    renderTarefasTable();
     updateNotifBadge();
   }
 
@@ -4043,11 +4022,7 @@
 
   function viewRotina(id) {
     rotinaViewId = id;
-    _rotinaAtivPage = 0;
-    switchRotinaViewTab('info');
     renderRotinaViewInfo();
-    renderRotinaViewTarefas();
-    switchRotinaViewTab('info');
     openModal('modal-rotina-view');
     // Permissões
     _mbtn('btn-editar-rotina',  _can('rotinas.editar'));
@@ -4056,15 +4031,6 @@
     const temTarefasRotina = state.tarefas.some(t => t.rotinaId === rotinaViewId);
     const btnDelRotina = document.getElementById('btn-excluir-rotina');
     if (btnDelRotina) btnDelRotina.style.display = (!temTarefasRotina && _can('rotinas.excluir')) ? '' : 'none';
-  }
-
-  function switchRotinaViewTab(tab) {
-    ['info','tarefas','atividades'].forEach(t => {
-      document.getElementById('rvtab-' + t).style.display = t === tab ? 'block' : 'none';
-      document.getElementById('rvtab-btn-' + t).classList.toggle('active', t === tab);
-    });
-    if (tab === 'tarefas') renderRotinaViewTarefas();
-    if (tab === 'atividades') renderRotinaViewAtividades();
   }
 
   function renderRotinaViewInfo() {
@@ -4141,137 +4107,6 @@
             </div>` : ''}
         </div>` : ''}
     `;
-  }
-
-  function renderRotinaViewTarefas() {
-    const container = document.getElementById('rotina-view-tarefas-list');
-    const tarefas   = state.tarefas.filter(t => t.rotinaId === rotinaViewId && tarefaPassesStatusFilter(t, 'rv'));
-    const alerts    = getRotinaAlerts(rotinaViewId);
-
-    // Atualiza label da aba com badge de alertas
-    const tabBtn = document.getElementById('rvtab-btn-tarefas');
-    if (tabBtn) {
-      const badgeHtml = alerts.total > 0
-        ? ` <span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:20px;font-size:10px;font-weight:700;background:${alerts.danger > 0 ? 'var(--red)' : 'var(--amber)'};color:#fff;margin-left:4px;">${alerts.total}</span>`
-        : '';
-      tabBtn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg> Tarefas${badgeHtml}`;
-    }
-
-    // Botão de adicionar tarefa para esta rotina — apenas se tiver permissão
-    const addBtnHtml = _can('tarefas.criar') ? `
-      <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
-        <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="openTarefaDrawerParaRotina('${rotinaViewId}')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Nova Tarefa
-        </button>
-      </div>` : '';
-
-    if (tarefas.length === 0) {
-      const filtro = getTarefaStatusFilter('rv');
-      const msgFiltro = filtro !== 'ambos'
-        ? '<p>Nenhuma tarefa com o filtro selecionado. Tente "Ambos".</p>'
-        : _can('tarefas.criar') ? '<p>Clique em "Nova Tarefa" acima para criar uma tarefa para esta rotina</p>' : '';
-      container.innerHTML = addBtnHtml + `<div class="data-table-empty" style="padding:24px 16px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
-        <strong>Nenhuma tarefa encontrada</strong>
-        ${msgFiltro}
-      </div>`;
-      return;
-    }
-
-    // Cabeçalho resumo de alertas
-    let summaryHtml = '';
-    if (alerts.total > 0) {
-      const parts = [];
-      if (alerts.danger > 0)  parts.push(`<span class="task-flag flag-danger"  style="font-size:11px;padding:3px 10px;">${alerts.danger} vencida${alerts.danger > 1 ? 's' : ''}</span>`);
-      if (alerts.warning > 0) parts.push(`<span class="task-flag flag-warning" style="font-size:11px;padding:3px 10px;">${alerts.warning} próxima${alerts.warning > 1 ? 's' : ''}</span>`);
-      summaryHtml = `<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;padding:10px 14px;background:rgba(230,57,70,0.05);border:1px solid rgba(230,57,70,0.15);border-radius:8px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2" style="width:14px;height:14px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span style="font-size:12px;font-weight:600;color:var(--text-primary);">${alerts.total} tarefa${alerts.total > 1 ? 's' : ''} com alerta</span>
-        <div style="display:flex;gap:6px;margin-left:4px;">${parts.join('')}</div>
-      </div>`;
-    }
-
-    const rotina = state.rotinas.find(r => r.id === rotinaViewId);
-    container.innerHTML = addBtnHtml + summaryHtml + `<div style="display:flex;flex-direction:column;gap:8px;">` +
-      tarefas.map(t => {
-        const flag  = getTaskFlag(t);
-        const ativo = state.ativos[t.equipamentoIdx];
-        const nPubs = arqContarPubs(t.id);
-        const isAlert = flag.cls === 'flag-danger' || flag.cls === 'flag-warning';
-        return `<div class="list-item-row" style="cursor:pointer;${isAlert ? 'border-left:3px solid ' + (flag.cls === 'flag-danger' ? 'var(--red)' : 'var(--amber)') + ';' : ''}" onclick="openTarefaDetalhe('${t.id}')">
-          <div style="display:flex;flex-direction:column;gap:4px;flex:1;">
-            <div style="font-weight:600;font-size:13px;">${t.titulo || rotina?.nome || '—'}</div>
-            <div style="font-size:11px;color:var(--text-muted);">${ativo?.nome || '—'}${ativo?.codigo ? ' · ' + ativo.codigo : ''}</div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:2px;">
-              <span class="task-flag ${flag.cls}" style="font-size:11px;">${flag.label}</span>
-              <span style="font-size:12px;color:var(--text-muted);">Data: ${formatDate(t.dataTarefa)}</span>
-              ${nPubs > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${nPubs} pub.</span>` : ''}
-            </div>
-            <div style="font-size:12px;color:var(--text-muted);">Próxima: ${t.proximaData ? formatDate(t.proximaData) : '—'}</div>
-          </div>
-          <span class="chip ${t.status === 'Ativo' ? 'chip-green' : 'chip-gray'}">${t.status}</span>
-        </div>`;
-      }).join('') + `</div>`;
-  }
-
-  function _renderAtivPagination(fnName, page, totalPages, total) {
-    if (totalPages <= 1) return '';
-    const PER   = HISTORICO_PER_PAGE;
-    const start = page * PER + 1;
-    const end   = Math.min((page + 1) * PER, total);
-    return `<div class="atv-pagination">
-      <span class="atv-pag-info">${start}–${end} de ${total}</span>
-      <button class="btn btn-outline btn-icon" onclick="${fnName}(${page - 1})" ${page === 0 ? 'disabled' : ''}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="15 18 9 12 15 6"/></svg>
-      </button>
-      <button class="btn btn-outline btn-icon" onclick="${fnName}(${page + 1})" ${page >= totalPages - 1 ? 'disabled' : ''}>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><polyline points="9 18 15 12 9 6"/></svg>
-      </button>
-    </div>`;
-  }
-
-  let _rotinaAtivPage = 0;
-  function renderRotinaViewAtividades(page) {
-    if (page !== undefined) _rotinaAtivPage = page;
-    const container = document.getElementById('rotina-view-atividades-list');
-    const tarefaIds = state.tarefas.filter(t => t.rotinaId === rotinaViewId).map(t => t.id);
-    const rotina = state.rotinas.find(r => r.id === rotinaViewId);
-    const allPubs = todasPublicacoes()
-      .filter(p => tarefaIds.includes(p.tarefaId))
-      .sort((a, b) => {
-        const ka = dataRealizadaSortKey(a.dataRealizada) || a.dataPublicacao || '';
-        const kb = dataRealizadaSortKey(b.dataRealizada) || b.dataPublicacao || '';
-        return kb > ka ? 1 : kb < ka ? -1 : 0;
-      });
-    if (allPubs.length === 0) {
-      container.innerHTML = `<div class="data-table-empty" style="padding:32px 16px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
-        <strong>Nenhuma atividade registrada</strong>
-        <p>As atividades aparecem após publicar tarefas desta rotina</p>
-      </div>` + arqRodapeHtml(tarefaIds);
-      return;
-    }
-    const PER = HISTORICO_PER_PAGE;
-    const totalPages = Math.max(1, Math.ceil(allPubs.length / PER));
-    if (_rotinaAtivPage >= totalPages) _rotinaAtivPage = totalPages - 1;
-    const pubs = allPubs.slice(_rotinaAtivPage * PER, (_rotinaAtivPage + 1) * PER);
-
-    container.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;">` +
-      pubs.map(p => {
-        const t = state.tarefas.find(t => t.id === p.tarefaId);
-        return `
-        <div class="list-item-row" style="cursor:pointer;" onclick="viewPublicacao('${p.id}')">
-          <div style="display:flex;flex-direction:column;gap:3px;flex:1;">
-            <div style="font-weight:600;font-size:13px;">${t?.titulo ? `${t.titulo} · ` : ''}Realizada: ${formatDataRealizadaHtml(p.dataRealizada)} ${arqSeloHtml(p)}</div>
-            <div style="font-size:11px;color:var(--text-muted);">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
-            <div style="font-size:11px;color:var(--text-muted);">Publicada em ${formatDate(p.dataPublicacao)}${p.publicadoPorNome ? ` · Por: ${p.publicadoPorNome}` : ''}</div>
-          </div>
-          ${p.notas ? `<span style="font-size:12px;color:var(--text-secondary);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.notas}</span>` : ''}
-        </div>`;
-      }).join('') + `</div>` +
-      _renderAtivPagination('renderRotinaViewAtividades', _rotinaAtivPage, totalPages, allPubs.length) +
-      arqRodapeHtml(tarefaIds);
   }
 
   function toggleRotinaStatus() {
@@ -4616,7 +4451,7 @@
 
   function visualizarAtivo(index, initialTab = 'info') {
     ativoEdicaoIndex = index;
-    _ativoAtivPage = 0;
+    _avRotinasFechadas.clear();
     const ativo = state.ativos[index];
     document.getElementById('visualizar-title').textContent = ativo.nome;
     document.getElementById('visualizar-subtitle').textContent = `${_orgRotuloAtivo(ativo, { ambiente: true, compartilhado: true })} · ${ativo.categoria}`;
@@ -4754,13 +4589,7 @@
   };
 
   function _atualizarBadgesAtivoTabs(index) {
-    // Rotinas e Atividades: apenas o nome, sem contagem
-    const lbR = document.getElementById('avtab-label-rotinas');
-    const lbA = document.getElementById('avtab-label-atividades');
-    if (lbR) lbR.textContent = 'Rotinas';
-    if (lbA) lbA.textContent = 'Atividades';
-
-    // Tarefas: badge colorido apenas se houver tarefas vencidas ou próximas
+    // Rotinas: badge colorido apenas se houver tarefas vencidas ou próximas
     const tarefasAtivas = state.tarefas.filter(t => t.equipamentoIdx === index && t.status === 'Ativo');
     let danger = 0, warning = 0;
     tarefasAtivas.forEach(t => {
@@ -4769,13 +4598,13 @@
       else if (f.cls === 'flag-warning') warning++;
     });
     const total = danger + warning;
-    const lbT = document.getElementById('avtab-label-tarefas');
-    if (lbT) {
+    const lbR = document.getElementById('avtab-label-rotinas');
+    if (lbR) {
       if (total > 0) {
         const cor = danger > 0 ? 'var(--red)' : 'var(--amber)';
-        lbT.innerHTML = `Tarefas <span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:20px;font-size:10px;font-weight:700;background:${cor};color:#fff;margin-left:4px;">${total}</span>`;
+        lbR.innerHTML = `Rotinas <span style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 4px;border-radius:20px;font-size:10px;font-weight:700;background:${cor};color:#fff;margin-left:4px;">${total}</span>`;
       } else {
-        lbT.textContent = 'Tarefas';
+        lbR.textContent = 'Rotinas';
       }
     }
 
@@ -4793,14 +4622,12 @@
   }
 
   function switchAtivoTab(tab) {
-    ['info','rotinas','tarefas','ots','atividades','ocorrencias'].forEach(t => {
+    ['info','rotinas','ots','ocorrencias'].forEach(t => {
       document.getElementById('avtab-' + t).style.display = t === tab ? 'block' : 'none';
       document.getElementById('avtab-btn-' + t).classList.toggle('active', t === tab);
     });
     if (tab === 'rotinas')    _renderAtivoRotinas();
-    if (tab === 'tarefas')    _renderAtivoTarefas();
     if (tab === 'ots')        _renderAtivoOTs();
-    if (tab === 'atividades') _renderAtivoAtividades();
     if (tab === 'ocorrencias' && typeof _renderAtivoOcorrencias === 'function') _renderAtivoOcorrencias();
   }
 
@@ -4895,6 +4722,45 @@
   }
   window._renderAtivoOTs = _renderAtivoOTs;
 
+  // Rotinas expansíveis: cada rotina mostra/oculta as próprias tarefas (abertas por padrão)
+  const _avRotinasFechadas = new Set();
+
+  function toggleAtivoRotinaTarefas(rotinaId) {
+    if (_avRotinasFechadas.has(rotinaId)) _avRotinasFechadas.delete(rotinaId);
+    else _avRotinasFechadas.add(rotinaId);
+    _renderAtivoRotinas();
+  }
+
+  function _renderAtivoRotinaTarefasHtml(r) {
+    const tarefas = state.tarefas.filter(t => t.rotinaId === r.id)
+      .sort((a, b) => (a.status === 'Inativo') - (b.status === 'Inativo'));
+    const addBtn = _can('tarefas.criar') && r.status !== 'Inativo'
+      ? `<button class="btn btn-outline av-rotina-nova-tarefa" onclick="openTarefaDrawerParaRotina('${r.id}')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Nova Tarefa
+        </button>`
+      : '';
+    if (tarefas.length === 0) {
+      return `<div class="av-rotina-tarefas"><div class="av-rotina-tarefas-vazio">Nenhuma tarefa nesta rotina</div>${addBtn}</div>`;
+    }
+    return `<div class="av-rotina-tarefas">` + tarefas.map(t => {
+      const isInativo = t.status === 'Inativo';
+      const flag  = getTaskFlag(t);
+      const nPubs = arqContarPubs(t.id);
+      return `<div class="list-item-row av-rotina-tarefa${isInativo ? ' inativa' : ''}" onclick="openTarefaDetalhe('${t.id}')">
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <strong style="font-size:12.5px;">${t.titulo || r.nome || '—'}</strong>
+            ${isInativo ? '' : `<span class="task-flag ${flag.cls}" style="font-size:10.5px;">${flag.label}</span>`}
+            ${nPubs > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${nPubs} pub.</span>` : ''}
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Data: ${formatDate(t.dataTarefa)} · Próxima: ${t.proximaData ? formatDate(t.proximaData) : '—'}</div>
+        </div>
+        <span class="chip ${isInativo ? 'chip-gray' : 'chip-green'}" style="font-size:10px;">${t.status}</span>
+      </div>`;
+    }).join('') + addBtn + `</div>`;
+  }
+
   function _renderAtivoRotinas() {
     const idx = ativoEdicaoIndex;
     const container = document.getElementById('ativo-rotinas-list');
@@ -4918,96 +4784,27 @@
       rotinas.map(r => {
         const isInativo = r.status === 'Inativo';
         const alerts = getRotinaAlerts(r.id);
+        const aberta = !_avRotinasFechadas.has(r.id);
+        const nTarefas = state.tarefas.filter(t => t.rotinaId === r.id).length;
         let badge = '';
         if (!isInativo && alerts.total > 0) {
           const cls = alerts.danger > 0 ? 'flag-danger' : 'flag-warning';
           badge = `<span class="task-flag ${cls}" style="font-size:10px;padding:2px 7px;margin-left:6px;">${alerts.total}</span>`;
         }
-        return `<div class="list-item-row" style="cursor:pointer;${isInativo?'opacity:0.6;':''}" onclick="viewRotina('${r.id}')">
-          <div style="flex:1;">
-            <div style="display:flex;align-items:center;"><strong style="font-size:13px;">${r.nome}</strong>${badge}${isInativo?'<span class="chip chip-gray" style="margin-left:6px;font-size:10px;">Inativa</span>':''}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${r.tipo}</div>
-          </div>
-          <span class="chip ${tipoCls[r.tipo]||'chip-gray'}">${r.tipo}</span>
-        </div>`;
-      }).join('') + `</div>`;
-  }
-
-  function _renderAtivoTarefas() {
-    const idx = ativoEdicaoIndex;
-    const container = document.getElementById('ativo-tarefas-list');
-    const tarefas = state.tarefas.filter(t => t.equipamentoIdx === idx && tarefaPassesStatusFilter(t, 'av'));
-    const addBtn = _can('tarefas.criar') ? `<div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
-      <button class="btn btn-primary" style="font-size:12px;padding:7px 14px;" onclick="openTarefaDrawerParaAtivo(${idx})">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" style="width:14px;height:14px;"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-        Nova Tarefa
-      </button>
-    </div>` : '';
-    if (tarefas.length === 0) {
-      const filtro = getTarefaStatusFilter('av');
-      const msgFiltro = filtro !== 'ambos'
-        ? '<p>Nenhuma tarefa com o filtro selecionado. Tente "Ambos".</p>'
-        : _can('tarefas.criar') ? '<p>Clique em "Nova Tarefa" para criar uma</p>' : '';
-      container.innerHTML = addBtn + `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><strong>Nenhuma tarefa encontrada</strong>${msgFiltro}</div>`;
-      return;
-    }
-    container.innerHTML = addBtn + `<div style="display:flex;flex-direction:column;gap:8px;">` +
-      tarefas.map(t => {
-        const rotina = state.rotinas.find(r => r.id === t.rotinaId);
-        const flag   = getTaskFlag(t);
-        const nPubs  = arqContarPubs(t.id);
-        return `<div class="list-item-row" style="cursor:pointer;" onclick="openTarefaDetalhe('${t.id}')">
-          <div style="flex:1;">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <strong style="font-size:13px;">${t.titulo || '—'}</strong>
-              <span class="task-flag ${flag.cls}" style="font-size:11px;">${flag.label}</span>
-              ${nPubs > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${nPubs} pub.</span>` : ''}
+        return `<div class="av-rotina${aberta ? ' aberta' : ''}">
+          <div class="list-item-row" style="cursor:pointer;${isInativo?'opacity:0.6;':''}" onclick="viewRotina('${r.id}')">
+            <button class="av-rotina-toggle" onclick="event.stopPropagation();toggleAtivoRotinaTarefas('${r.id}')" title="${aberta ? 'Ocultar' : 'Mostrar'} tarefas (${nTarefas})" aria-expanded="${aberta}">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 6 15 12 9 18"/></svg>
+            </button>
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;"><strong style="font-size:13px;">${r.nome}</strong>${badge}${isInativo?'<span class="chip chip-gray" style="margin-left:6px;font-size:10px;">Inativa</span>':''}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">${r.tipo}</div>
             </div>
-            <div style="font-size:12px;color:var(--text-secondary);margin-top:1px;">Rotina: ${rotina?.nome || '—'}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Data: ${formatDate(t.dataTarefa)} · Próxima: ${t.proximaData ? formatDate(t.proximaData) : '—'}</div>
+            <span class="chip ${tipoCls[r.tipo]||'chip-gray'}">${r.tipo}</span>
           </div>
-          <span class="chip ${t.status==='Ativo'?'chip-green':'chip-gray'}">${t.status}</span>
+          ${aberta ? _renderAtivoRotinaTarefasHtml(r) : ''}
         </div>`;
       }).join('') + `</div>`;
-  }
-
-  let _ativoAtivPage = 0;
-  function _renderAtivoAtividades(page) {
-    if (page !== undefined) _ativoAtivPage = page;
-    const idx = ativoEdicaoIndex;
-    const container = document.getElementById('ativo-atividades-list');
-    const tarefaIds = state.tarefas.filter(t => t.equipamentoIdx === idx).map(t => t.id);
-    const allPubs = todasPublicacoes()
-      .filter(p => tarefaIds.includes(p.tarefaId))
-      .sort((a, b) => {
-        const ka = dataRealizadaSortKey(a.dataRealizada) || a.dataPublicacao || '';
-        const kb = dataRealizadaSortKey(b.dataRealizada) || b.dataPublicacao || '';
-        return kb > ka ? 1 : kb < ka ? -1 : 0;
-      });
-    if (allPubs.length === 0) {
-      container.innerHTML = `<div class="data-table-empty" style="padding:24px;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><strong>Nenhuma atividade registrada</strong><p>As atividades aparecem após publicar tarefas deste ativo</p></div>` + arqRodapeHtml(tarefaIds);
-      return;
-    }
-    const PER = HISTORICO_PER_PAGE;
-    const totalPages = Math.max(1, Math.ceil(allPubs.length / PER));
-    if (_ativoAtivPage >= totalPages) _ativoAtivPage = totalPages - 1;
-    const pubs = allPubs.slice(_ativoAtivPage * PER, (_ativoAtivPage + 1) * PER);
-
-    container.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;">` +
-      pubs.map(p => {
-        const t      = state.tarefas.find(t => t.id === p.tarefaId);
-        const rotina = t ? state.rotinas.find(r => r.id === t.rotinaId) : null;
-        return `<div class="list-item-row" style="cursor:pointer;" onclick="viewPublicacao('${p.id}')">
-          <div style="flex:1;">
-            <div style="font-weight:600;font-size:13px;">${t?.titulo ? `${t.titulo} · ` : ''}Realizada: ${formatDataRealizadaHtml(p.dataRealizada)} ${arqSeloHtml(p)}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Rotina: ${rotina?.nome || '—'} · Tarefa: ${getTarefaLabel(t)}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Publicada: ${formatDate(p.dataPublicacao)}${p.publicadoPorNome ? ` · Por: ${p.publicadoPorNome}` : ''}</div>
-          </div>
-          ${p.anexos?.length > 0 ? `<span class="chip chip-cyan" style="font-size:10px;">${p.anexos.length} anexo${p.anexos.length>1?'s':''}</span>` : ''}
-        </div>`;
-      }).join('') + `</div>` +
-      _renderAtivPagination('_renderAtivoAtividades', _ativoAtivPage, totalPages, allPubs.length) +
-      arqRodapeHtml(tarefaIds);
   }
 
   // Abrir drawer de rotina pré-selecionando o ativo
@@ -5020,15 +4817,6 @@
         document.getElementById('rotina-equip-input').value = ativo.nome;
         setRotinaEquipDisplay(idx);
       }
-    }, 50);
-  }
-
-  // Abrir drawer de tarefa pré-selecionando o ativo
-  function openTarefaDrawerParaAtivo(idx) {
-    openTarefaDrawer(null);
-    setTimeout(() => {
-      _tarefaSetAtivo(idx);
-      onTarefaEquipChange();
     }, 50);
   }
 
@@ -5178,7 +4966,7 @@
     const _ci = document.getElementById('ativo-categoria-input'); if (_ci) _ci.value = '';
     document.getElementById('modal-ativo').classList.remove('open');
     if (wasEditing && isModalOpen('modal-visualizar')) {
-      visualizarAtivo(editedIdx, getActiveSubTab('avtab', ['info', 'rotinas', 'tarefas', 'atividades']) || 'info');
+      visualizarAtivo(editedIdx, getActiveSubTab('avtab', ['info', 'rotinas', 'ots', 'ocorrencias']) || 'info');
     }
     showToast('Ativo salvo com sucesso!', 'success');
   }
@@ -5931,18 +5719,61 @@
     if (!row || !box) return;
     const opts = _formCompOpts();
     row.style.display = opts.length ? '' : 'none';
+    if (!opts.length) _formCompPopClose();
     box.innerHTML = opts.map(id => {
       const on = _formCompSel.has(id);
-      return `<button type="button" class="comp-chip${on ? ' on' : ''}" aria-pressed="${on}" onclick="formCompToggle(this,'${_orgJsAttr(id)}')">
-        <span class="org-toggle-chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span>${_orgEsc(_orgSetor(id)?.nome || id)}</button>`;
+      return `<button type="button" class="org-pop-item${on ? ' on' : ''}" role="menuitemcheckbox" aria-checked="${on}" onclick="formCompToggle(this,'${_orgJsAttr(id)}')">
+        <span class="org-toggle-chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg></span><span class="org-pop-nome">${_orgEsc(_orgSetor(id)?.nome || id)}</span></button>`;
     }).join('');
+    _formCompRotulo();
+  }
+
+  // Resumo no botão: nenhum / nome do setor / "N setores"
+  function _formCompRotulo() {
+    const btn = document.getElementById('ativo-comp-btn');
+    const rot = document.getElementById('ativo-comp-rot');
+    if (!btn || !rot) return;
+    const ids = _formCompOpts().filter(id => _formCompSel.has(id));
+    rot.textContent = !ids.length ? 'Nenhum setor'
+      : ids.length === 1 ? (_orgSetor(ids[0])?.nome || ids[0])
+      : `${ids.length} setores`;
+    btn.title = ids.map(id => _orgSetor(id)?.nome || id).join(', ');
+    btn.classList.toggle('vazio', !ids.length);
   }
 
   function formCompToggle(btn, id) {
     const on = !_formCompSel.has(id);
     if (on) _formCompSel.add(id); else _formCompSel.delete(id);
     btn.classList.toggle('on', on);
-    btn.setAttribute('aria-pressed', on);
+    btn.setAttribute('aria-checked', on);
+    _formCompRotulo();
+  }
+
+  let _formCompPopBound = false;
+  function formCompPopToggle() {
+    const pop = document.getElementById('ativo-comp-pop');
+    if (!pop) return;
+    if (pop.classList.contains('open')) { _formCompPopClose(); return; }
+    pop.classList.add('open');
+    document.getElementById('ativo-comp-btn')?.setAttribute('aria-expanded', 'true');
+    if (!_formCompPopBound) {
+      document.addEventListener('mousedown', (e) => {
+        if (!e.target.closest('#ativo-comp-wrap')) _formCompPopClose();
+      });
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && document.getElementById('ativo-comp-pop')?.classList.contains('open')) {
+          e.stopPropagation();
+          _formCompPopClose();
+          document.getElementById('ativo-comp-btn')?.focus();
+        }
+      }, true);
+      _formCompPopBound = true;
+    }
+  }
+
+  function _formCompPopClose() {
+    document.getElementById('ativo-comp-pop')?.classList.remove('open');
+    document.getElementById('ativo-comp-btn')?.setAttribute('aria-expanded', 'false');
   }
 
   function formAmbienteOpen() {
@@ -6245,7 +6076,7 @@
   }
 
   function openAtivoAlertasResumo(equipamentoIdx) {
-    visualizarAtivo(equipamentoIdx, 'tarefas');
+    visualizarAtivo(equipamentoIdx, 'rotinas');
   }
 
   // ══════════════════════════════════════════

@@ -418,17 +418,31 @@
     flex-shrink: 0; padding: 1px 6px; border-radius: 999px; font-size: 10.5px; font-weight: 700;
     color: var(--text-secondary); background: var(--bg-card); border: 1px solid var(--border);
   }
-  /* Formulário do ativo: setores compartilhados */
-  .comp-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-  .comp-chip {
-    display: inline-flex; align-items: center; gap: 7px; padding: 6px 12px 6px 7px; border-radius: 999px; cursor: pointer;
-    font: inherit; font-size: 12.5px; font-weight: 600; color: var(--text-secondary);
-    background: var(--bg-card); border: 1.5px solid var(--border); transition: background .15s ease, border-color .15s ease, color .15s ease;
+  /* Formulário do ativo: setores compartilhados (popover ao lado do ambiente) */
+  .comp-info { position: relative; display: inline-flex; vertical-align: -2px; margin-left: 3px; color: var(--text-muted); cursor: help; outline: none; }
+  .comp-info svg { width: 13px; height: 13px; }
+  .comp-info:hover, .comp-info:focus-visible { color: var(--cyan); }
+  .comp-info::after {
+    content: attr(data-tip); position: absolute; left: 50%; bottom: calc(100% + 8px); z-index: 40;
+    width: 230px; padding: 8px 10px; border-radius: 8px; transform: translateX(-50%) translateY(3px);
+    background: #0f1b2d; color: #fff; font-size: 11.5px; font-weight: 500; line-height: 1.4;
+    letter-spacing: 0; text-transform: none; white-space: normal; box-shadow: 0 6px 18px rgba(11,22,30,.22);
+    opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .12s ease, transform .12s ease;
   }
-  .comp-chip:hover { border-color: color-mix(in srgb, var(--cyan) 55%, var(--border)); color: var(--text-primary); }
-  .comp-chip.on { color: var(--cyan); border-color: var(--cyan); background: var(--cyan-light); }
-  .comp-chip.on .org-toggle-chk { background: var(--cyan); border-color: var(--cyan); color: #fff; }
-  .comp-chip:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .comp-info:hover::after, .comp-info:focus-visible::after { opacity: 1; visibility: visible; transform: translateX(-50%); }
+  .comp-pop-wrap { position: relative; --org-cor: var(--cyan); }
+  .comp-pop-btn {
+    display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 10px 0 11px;
+    cursor: pointer; text-align: left;
+  }
+  .comp-pop-btn > svg:first-child { flex-shrink: 0; width: 14px; height: 14px; color: var(--text-muted); }
+  .comp-pop-rot { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .comp-pop-btn.vazio .comp-pop-rot { color: var(--text-muted); }
+  .comp-pop-btn:not(.vazio) > svg:first-child { color: var(--cyan); }
+  .comp-pop-caret { flex-shrink: 0; width: 12px; height: 12px; opacity: .7; transition: transform .15s ease; }
+  .comp-pop-btn[aria-expanded="true"] { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0,168,204,0.12); }
+  .comp-pop-btn[aria-expanded="true"] .comp-pop-caret { transform: rotate(180deg); }
+  .comp-pop { left: 0; right: auto; width: 100%; min-width: 220px; transform-origin: top left; }
   .asset-loc-amb { display: inline-flex; align-items: center; gap: 4px; min-width: 0; flex: 1; color: var(--cyan); }
   .asset-loc-amb svg { flex-shrink: 0; width: 12px; height: 12px; }
   .asset-loc-amb > span { overflow: hidden; text-overflow: ellipsis; }
@@ -500,23 +514,19 @@
   #modal-tarefa-detalhe {
     z-index: 560;
   }
-  #modal-historico {
-    z-index: 570;
-  }
-  #modal-historico .modal {
-    width: min(900px, 95vw);
-  }
-  #modal-historico .modal-body {
-    padding: 16px 20px;
-    min-height: 0;
-    flex: 1;
-  }
-  #modal-historico .data-table-wrapper {
-    max-height: calc(80vh - 140px);
-  }
-  #modal-historico .data-table {
-    min-width: 600px;
-  }
+  /* Histórico da tarefa: cabe na largura do modal, sem rolagem horizontal */
+  #tdtab-atividades .data-table-wrapper { overflow: visible; }
+  #tdtab-atividades .data-table { table-layout: fixed; }
+  #tdtab-atividades .data-table th,
+  #tdtab-atividades .data-table td { padding-left: 12px; padding-right: 12px; }
+  #tdtab-atividades .data-table th:first-child,
+  #tdtab-atividades .data-table td:first-child { padding-left: 16px; width: 29%; }
+  #tdtab-atividades .data-table th:nth-child(2) { width: 18%; }
+  #tdtab-atividades .data-table th:nth-child(3) { width: 23%; }
+  #tdtab-atividades .data-table th:nth-child(4) { width: 14%; }
+  #tdtab-atividades .data-table th:last-child,
+  #tdtab-atividades .data-table td:last-child { padding-right: 16px; }
+  .historico-notas { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; color: var(--text-secondary); }
   #modal-pub-view {
     z-index: 580;
   }
@@ -846,16 +856,6 @@
   .avot-empty svg { width: 36px; height: 36px; opacity: .4; }
   .avot-empty strong { font-size: 14px; color: var(--text-secondary); }
   .avot-empty span   { font-size: 12px; }
-
-  /* Paginação de atividades */
-  .atv-pagination {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 6px;
-    padding: 12px 0 2px;
-  }
-  .atv-pag-info { font-size: 12px; color: var(--text-muted); margin-right: 4px; }
 
   .detail-card {
     background: var(--bg); border: 1.5px solid var(--border);
@@ -1706,6 +1706,30 @@
     border: 1px solid var(--border); gap: 10px; transition: var(--transition);
   }
   .list-item-row:hover { border-color: #c4cfe0; }
+
+  /* ── ROTINAS EXPANSÍVEIS (modal do ativo) ── */
+  .av-rotina-toggle {
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+    width: 30px; height: 30px; padding: 0; border-radius: 8px; cursor: pointer;
+    border: 1.5px solid color-mix(in srgb, var(--cyan) 40%, var(--border));
+    background: var(--cyan-light); color: var(--cyan); transition: var(--transition);
+  }
+  .av-rotina-toggle:hover { border-color: var(--cyan); }
+  .av-rotina-toggle:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .av-rotina-toggle svg { width: 15px; height: 15px; transition: transform .2s; }
+  .av-rotina.aberta .av-rotina-toggle { background: var(--cyan); border-color: var(--cyan); color: #fff; }
+  .av-rotina.aberta .av-rotina-toggle svg { transform: rotate(90deg); }
+  .av-rotina-tarefas {
+    display: flex; flex-direction: column; gap: 6px;
+    margin: 6px 0 2px 14px; padding-left: 12px; border-left: 2px solid var(--border);
+  }
+  .av-rotina-tarefa { cursor: pointer; padding: 8px 12px; background: var(--bg-card); }
+  .av-rotina-tarefa.inativa { opacity: .6; }
+  .av-rotina-tarefas-vazio { font-size: 12px; color: var(--text-muted); padding: 6px 0; }
+  .av-rotina-nova-tarefa {
+    align-self: flex-start; gap: 6px; font-size: 12px; padding: 5px 12px;
+  }
+  .av-rotina-nova-tarefa svg { width: 13px; height: 13px; }
 
   /* ══════════════════════════════════════════
      ── CONFIGURAÇÕES ──

@@ -793,7 +793,7 @@ function cqLancNR(tid, v) {
 function cqLancInsumo(tid, campo, v) {
   const l = _cqLanc.linhas[tid];
   l[campo] = v;
-  if (campo === 'lr') { delete l.prep; l.prepData = ''; l.prepResp = ''; }   // o preparo pertence ao lote escolhido
+  if (campo === 'lr') { delete l.prep; l.prepData = ''; l.prepResp = ''; delete l.prepLiberar; }   // o preparo pertence ao lote escolhido
   _cqRascunhoSalvar();
   if (campo === 'lr') { _cqLancRedesenharGrade(); return; }
   _cqGradeAtualizarLinha(cqState.config.testes[tid]);
@@ -824,23 +824,80 @@ function _cqLancPrepHTML(t, l) {
     return `<div class="cq-prep-novo">
       <div class="cq-prep-cab"><span>${unico ? 'Preparo (uso único)' : 'Preparo'}</span><button type="button" class="cq-icobtn" title="Informações do preparo" onclick="${info}">${CQ_ICO.info}</button></div>
       ${camposNovo}
-    </div>`;
+    </div>
+    <div class="cq-plib-slot" id="cq-g-plib-${t.id}"></div>`;
   }
   return `<div class="cq-prep">
       <select class="field-select cq-g-sel" title="Preparo do lote ${_cqEsc(ins.lote)}" onchange="cqLancPrep('${t.id}',this.value)">${ops}<option value="novo" ${l.prep === 'novo' ? 'selected' : ''}>+ Novo preparo</option></select>
       <button type="button" class="cq-icobtn" title="Informações do preparo" onclick="${info}">${CQ_ICO.info}</button>
     </div>
-    ${(() => { const p = l.prep && l.prep !== 'novo' ? preps.find(x => x.id === l.prep) : null; return p && !p.legado ? `<div class="cq-prep-sitlin">${_cqPrepSituacaoBtn(ins, p, 'lanc')}</div>` : ''; })()}
-    ${l.prep === 'novo' ? `<div class="cq-prep-novo">${camposNovo}</div>` : ''}`;
+    ${l.prep === 'novo' ? `<div class="cq-prep-novo">${camposNovo}</div>` : ''}
+    <div class="cq-plib-slot" id="cq-g-plib-${t.id}"></div>`;
 }
 function cqLancPrep(tid, v) {
   const l = _cqLanc.linhas[tid];
   l.prep = v;
+  delete l.prepLiberar;
   if (v !== 'novo') { l.prepData = ''; l.prepResp = ''; l.prepQtd = ''; }
   _cqRascunhoSalvar();
   _cqLancRedesenharGrade();
 }
 function cqLancPrepCampo(tid, campo, v) { _cqLanc.linhas[tid][campo] = v; _cqRascunhoSalvar(); }
+
+// ── Liberar o preparo em avaliação com a corrida ──
+// Corrida aceita aprova o preparo usado nela. Marcado aqui, ele passa a Liberado só quando a corrida
+// é publicada, com a justificativa automática "Corrida aprovada"; se algum teste da corrida que usa o
+// mesmo preparo não estiver aceito, ele continua em avaliação (decisão da corrida).
+const CQ_PREP_LIB_MOTIVO = 'Corrida aprovada';
+const CQ_ICO_SETA_LIB = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="13 6 19 12 13 18"/></svg>';
+// Preparo da linha que pode ser liberado: em avaliação (ou novo, que nasce em avaliação)
+function _cqLancPrepLibAlvo(l) {
+  const ins = l.lr ? cqState.config.insumos[l.lr] : null;
+  if (!ins?.preparoInterno || !l.prep || l.prep === 'legado') return null;
+  if (l.prep === 'novo') return ins.preparo?.liberaSemCIQ ? null : { rot: 'o novo preparo' };
+  const p = _cqPreparo(ins, l.prep);
+  return p && !p.legado && (p.situacao || 'em_avaliacao') === 'em_avaliacao' ? { rot: p.codigo ? `o preparo ${p.codigo}` : 'o preparo' } : null;
+}
+function _cqLancPrepLibChave(l) { return l.prep === 'novo' ? `${l.lr}|novo|${l.prepData}|${l.prepResp}` : `${l.lr}|${l.prep}`; }
+
+function _cqLancPrepLibAtualizar(t) {
+  const el = document.getElementById('cq-g-plib-' + t.id);
+  if (!el) return;
+  const l = _cqLanc.linhas[t.id];
+  const alvo = l && !l.nr && _cqPodeSituacaoPreparo() ? _cqLancPrepLibAlvo(l) : null;
+  if (!alvo) { el.innerHTML = ''; el._html = ''; return; }
+  const a = _cqAvaliarLinha(t);
+  const s = a.preenchidos && a.completo && !a.erros.length ? (a.r?.status || 'sem_alvo') : null;
+  const pode = s === 'aceito';
+  // Política da área que já libera corridas aceitas ao salvar: o preparo vai junto
+  const g = pode ? _cqGruposLanc(_cqLanc.u).find(x => x.key === _cqLanc.grupo) : null;
+  const auto = pode && !!_cqPolitica(_cqLanc.u).liberarAceitosAoSalvar && _cqCan('liberar') && g?.ativo?.statusUso !== 'em_pausa';
+  const on = auto || (pode && !!l.prepLiberar);
+  const titulo = on ? 'Liberado ao publicar a corrida' : 'Liberar preparo com esta corrida';
+  const sub = auto ? ''   // automático: título e fluxo bastam
+    : on ? `Justificativa automática: “${CQ_PREP_LIB_MOTIVO}”. Só vale depois de publicar.`
+    : pode ? `Corrida aceita: ${alvo.rot} pode passar a Liberado.`
+    : s === 'rejeitado' ? 'Resultado rejeitado: o preparo continua em avaliação.'
+    : s === 'alerta' ? 'Resultado com alerta: libere pela decisão da corrida.'
+    : s === 'sem_alvo' ? 'Sem alvo para avaliar: libere pela decisão da corrida.'
+    : 'Disponível quando o resultado for aceito.';
+  const fluxo = on ? `<span class="cq-plib-fluxo"><span class="cq-badge cq-st-pendente">Em avaliação</span>${CQ_ICO_SETA_LIB}<span class="cq-badge cq-st-aceito">Liberado</span></span>` : '';
+  const html = `<button type="button" class="cq-plib${on ? ' on' : ''}${pode ? '' : ' bloq'}${auto ? ' auto' : ''}" role="switch" aria-checked="${on}"
+      ${pode && !auto ? '' : 'disabled'} onclick="cqLancPrepLiberar('${t.id}')" title="${on ? 'Clique para não liberar o preparo' : 'Liberar o preparo quando a corrida for publicada'}">
+      <span class="cq-plib-ico">${on ? CQ_ICO.check : CQ_ICO.shield}</span>
+      <span class="cq-plib-txt"><b>${titulo}</b>${sub ? `<small>${sub}</small>` : ''}${fluxo}</span>
+      ${pode && !auto ? '<span class="cq-plib-sw" aria-hidden="true"><span></span></span>' : ''}
+    </button>`;
+  // Só redesenha quando muda (a cada tecla a linha é reavaliada; o brilho não deve repetir)
+  if (el._html !== html) { el.innerHTML = html; el._html = html; }
+}
+function cqLancPrepLiberar(tid) {
+  const l = _cqLanc?.linhas[tid];
+  if (!l) return;
+  l.prepLiberar = !l.prepLiberar;
+  _cqRascunhoSalvar();
+  _cqLancPrepLibAtualizar(cqState.config.testes[tid]);
+}
 
 function cqLancTecla(e) {
   if (e.key !== 'Enter' && e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
@@ -966,6 +1023,7 @@ function _cqGradeAtualizarLinha(t) {
   const an = _cqAnalito(t.analitoId);
   const dec = an?.decimais ?? 2;
   const l = _cqLanc.linhas[t.id];
+  _cqLancPrepLibAtualizar(t);
   if (_cqTesteQual(t)) { _cqGradeAtualizarLinhaQual(t, st, l); return; }
   _cqNiveisTeste(t).forEach(n => {
     const lid = t.lotesAtivos?.[n];
@@ -1079,6 +1137,7 @@ async function cqLancSalvar() {
   if (btn) btn.disabled = true;
   _cqSalvando = true;
   let reservaLote = null;     // caminho do lote da carga reservado; liberado se a corrida não for gravada
+  let reservaNum = null;      // nº do ciclo automático reservado; devolvido se a corrida não for gravada
   let gravou = false;
   try {
     // Reavalia com o histórico atualizado (outra estação pode ter salvo agora)
@@ -1089,8 +1148,11 @@ async function cqLancSalvar() {
     const mes = CQEngine.mesDe(dh);
     if (ciclo && !ciclo.vinculo) {
       const res = await _cqEsterReservarLote(u, ciclo.loteCarga, { corridaKey: ck, mes, dataHora: dh, equip: g.key });
-      if (!res.ok) { showToast(res.msg, 'error'); return; }
+      if (!res.ok) { showToast(res.msg, 'error'); if (typeof _cqEsterLoteConflito === 'function') _cqEsterLoteConflito(); return; }
       reservaLote = res.path;
+      const rn = typeof _cqEsterReservarNumCiclo === 'function' ? await _cqEsterReservarNumCiclo(u, g.key) : null;
+      if (rn === false) { showToast('Não foi possível gerar o nº do ciclo. Verifique a conexão e tente novamente.', 'error'); return; }
+      if (rn) { reservaNum = rn; ciclo.numeroCicloEquip = String(rn.n); }
     }
     const numero = await _cqProximoNumero(u, 'corridas');
     if (!numero) { showToast('Não foi possível gerar o número da corrida. Tente novamente.', 'error'); return; }
@@ -1102,6 +1164,18 @@ async function cqLancSalvar() {
     const testesHdr = {};
     const idxUltimo = (cqState.indices[u] || {}).ultimo || {};
     const resumoTxt = [];
+    // Preparos marcados para liberar com a corrida: valem se todos os testes que usam o preparo estão aceitos
+    const prepLib = {};
+    if (_cqPodeSituacaoPreparo()) realizados.forEach(t => {
+      const l = lanc.linhas[t.id];
+      if (!_cqLancPrepLibAlvo(l)) return;
+      const k = _cqLancPrepLibChave(l);
+      const x = prepLib[k] || (prepLib[k] = { pedido: false, ok: true });
+      x.pedido = x.pedido || !!l.prepLiberar;
+      x.ok = x.ok && _cqAvaliarLinha(t).r?.status === 'aceito';
+    });
+    const libPedida = l => { const x = prepLib[_cqLancPrepLibChave(l)]; return !!(x?.pedido && x.ok); };
+    const prepLibFeitos = new Map();   // `${lr}|${prep}` → código (para o aviso e para não repetir)
     const prepNovos = {};      // `${lr}|${chave}` → objeto do preparo criado nesta corrida (compartilhado entre testes)
     const prepSeqUsado = {};   // lr → números de preparo já usados nesta corrida
     const prepDoTeste = (t, l, autoLib) => {
@@ -1109,6 +1183,11 @@ async function cqLancSalvar() {
       if (!ins?.preparoInterno || !l.prep) return null;
       const uso = { numero, mes, dataHora: dh, testeId: t.id };
       const avaliacao = { numero, corridaKey: ck, mes, ..._cqAssinatura() };
+      // Liberação pedida no lançamento: mesma origem (corrida), com a justificativa automática
+      const libMan = !autoLib && libPedida(l);
+      const avalLib = { ...avaliacao, acao: 'liberado', motivo: CQ_PREP_LIB_MOTIVO, comPublicacao: true };
+      const histLib = { de: 'em_avaliacao', para: 'liberado', motivo: `${CQ_PREP_LIB_MOTIVO} — corrida ${numero}`, ...ass };
+      const trilhaLib = cod => _cqTrilhaEntry('edicao', `Preparo ${cod} liberado com a publicação da corrida ${numero}: ${CQ_PREP_LIB_MOTIVO.toLowerCase()}`);
       if (l.prep === 'novo' || l.prep === 'legado') {
         const leg = l.prep === 'legado' ? _cqPreparo(ins, 'legado') : null;
         const k = `${l.lr}|${l.prep}|${l.prepData}|${l.prepResp}`;
@@ -1131,14 +1210,30 @@ async function cqLancSalvar() {
         const obj = prepNovos[k];
         obj.corridas[ck] = uso;
         if (autoLib && obj.situacao === 'em_avaliacao') { obj.situacao = 'liberado'; obj.avaliacao = avaliacao; }
+        else if (libMan && obj.situacao === 'em_avaliacao') {
+          obj.situacao = 'liberado';
+          obj.avaliacao = avalLib;
+          obj.historico = { [_cqTk()]: histLib };
+          updates[`${CQ_KEYS.config}/insumos/${l.lr}/trilha/${_cqTk()}${obj.id.slice(-3)}l`] = trilhaLib(obj.codigo);
+          prepLibFeitos.set(`${l.lr}|${obj.id}`, obj.codigo);
+        }
         return obj.id;
       }
       updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${l.prep}/corridas/${ck}`] = uso;
       // Uso único registrado antes (aba Preparos): consumido nesta corrida
       if (ins.preparoUsoUnico && !_cqPreparo(ins, l.prep)?.finalizado) updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${l.prep}/finalizado`] = { auto: true, motivo: `uso único — corrida ${numero}`, ...ass };
-      if (autoLib && _cqPreparo(ins, l.prep)?.situacao === 'em_avaliacao') {
+      const pAtual = _cqPreparo(ins, l.prep);
+      if (autoLib && pAtual?.situacao === 'em_avaliacao') {
         updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${l.prep}/situacao`] = 'liberado';
         updates[`${CQ_KEYS.config}/insumos/${l.lr}/preparos/${l.prep}/avaliacao`] = avaliacao;
+      } else if (libMan && pAtual?.situacao === 'em_avaliacao' && !prepLibFeitos.has(`${l.lr}|${l.prep}`)) {
+        const pb = `${CQ_KEYS.config}/insumos/${l.lr}/preparos/${l.prep}`;
+        const cod = pAtual.codigo || `de ${_cqFmtData(pAtual.data)}`;
+        updates[`${pb}/situacao`] = 'liberado';
+        updates[`${pb}/avaliacao`] = avalLib;
+        updates[`${pb}/historico/${_cqTk()}`] = histLib;
+        updates[`${CQ_KEYS.config}/insumos/${l.lr}/trilha/${_cqTk()}${l.prep.slice(-3)}l`] = trilhaLib(cod);
+        prepLibFeitos.set(`${l.lr}|${l.prep}`, cod);
       }
       return l.prep;
     };
@@ -1242,7 +1337,10 @@ async function cqLancSalvar() {
     });
     _cqRascunhoLimpar();
     const nRej = realizados.filter(t => testesHdr[t.id].avaliacao.status === 'rejeitado').length;
-    showToast(`Corrida ${numero} salva.${nRej ? ` ${nRej} teste(s) rejeitado(s): avalie e registre a ação corretiva.` : pend ? ' Aguardando avaliação.' : ' Todos os testes liberados.'}`, nRej ? 'error' : 'success');
+    const libTxt = prepLibFeitos.size ? ` Preparo ${[...prepLibFeitos.values()].join(', ')} liberado.` : '';
+    const numImp = lanc.ciclo?.etqNumImpresso;
+    const numTxt = reservaNum && numImp && numImp !== String(reservaNum.n) ? ` Atenção: o ciclo ficou com nº ${reservaNum.n}; a etiqueta impressa mostra nº ${numImp} — reimprima pela ficha da corrida.` : '';
+    showToast(`Corrida ${numero} salva.${nRej ? ` ${nRej} teste(s) rejeitado(s): avalie e registre a ação corretiva.` : pend ? ' Aguardando avaliação.' : ' Todos os testes liberados.'}${libTxt}${numTxt}`, nRej || numTxt ? 'error' : 'success');
     const repet = lanc.repeticaoDe;
     _cqLanc = _cqLancNovo(lanc.grupo);
     if (!repet) _cqLanc.modo = lanc.modo;   // fracionada: próxima corrida começa vazia, no mesmo modo
@@ -1252,6 +1350,7 @@ async function cqLancSalvar() {
   } finally {
     // Corrida não gravada: libera o lote da carga reservado
     if (reservaLote && !gravou) await window.dbUpdate({ [reservaLote]: null });
+    if (reservaNum && !gravou) await reservaNum.desfazer();
     _cqSalvando = false;
     if (btn) btn.disabled = false;
   }
