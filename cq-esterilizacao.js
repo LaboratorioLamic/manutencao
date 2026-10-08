@@ -31,7 +31,7 @@ function _cqEsterResumoCfg(cfg) {
   if (!cfg) return 'não configurada';
   const ps = _cqEsterProgramas(cfg);
   return `${cfg.ativo ? 'ativa' : 'desativada'} · prefixo ${cfg.prefixo || '—'} · lote ${cfg.loteModo === 'auto' ? 'automático' : 'gerado ao clicar'} · nº do ciclo ${cfg.cicloModo === 'auto' ? 'automático' : 'digitado'} · ` + (ps.length
-    ? ps.map(p => `${p.nome} (${_cqEsterEspTxt(p, 'temp', cfg.unPressao)}; ${_cqEsterEspTxt(p, 'tempo')}; ${_cqEsterEspTxt(p, 'pressao', cfg.unPressao)})`).join(' | ')
+    ? ps.map(p => `${p.nome} (${_cqEsterEspTxt(p, 'temp', cfg.unPressao)}; ${_cqEsterEspTxt(p, 'tempo')}; ${_cqEsterEspTxt(p, 'pressao', cfg.unPressao)}; ${p.validadeAtiva === false ? 'sem validade' : `validade ${p.validadeDias ?? '—'} dia(s)`})`).join(' | ')
     : 'sem programas');
 }
 // Texto da especificação de um parâmetro do programa
@@ -86,14 +86,21 @@ function _cqEsterTemIndicadores(testes) {
 }
 
 // ── FORMULÁRIO DE CONFIGURAÇÃO ───────────────────────────────
-function _cqEsterProgNovo() { return { id: _cqUid(), nome: '', tempMin: '', tempMax: '', tempoMin: '', pressaoMin: '', pressaoMax: '' }; }
+function _cqEsterProgNovo() { return { id: _cqUid(), nome: '', tempMin: '', tempMax: '', tempoMin: '', pressaoMin: '', pressaoMax: '', validadeAtiva: true, validadeDias: '' }; }
+// Validade da esterilização: data do ciclo + dias (AAAA-MM-DD)
+function _cqEsterValData(dh, dias) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(dh || ''));
+  if (!m || !(dias >= 1)) return '';
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + Number(dias))).toISOString().slice(0, 10);
+}
+function _cqEsterDiasOk(v) { const n = Number(String(v ?? '').trim()); return Number.isInteger(n) && n >= 1 && n <= 3650 ? n : null; }
 
 function cqEsterConfigForm(u, grupoKey) {
   if (!_cqCan('configurar')) { showToast('Sem permissão para configurar.', 'error'); return; }
   const g = _cqGruposLanc(u).find(x => x.key === grupoKey);
   const cfg = _cqEsterCfgRaw(u, grupoKey);
   const nome = g?.nome || String(grupoKey || '').replace(/^[am]:/, '');
-  _cqEsterDraft = { u, grupoKey, nome, programas: _cqEsterProgramas(cfg).map(p => ({ ...p, tempMax: p.tempMax ?? '', pressaoMax: p.pressaoMax ?? '' })) };
+  _cqEsterDraft = { u, grupoKey, nome, programas: _cqEsterProgramas(cfg).map(p => ({ ...p, tempMax: p.tempMax ?? '', pressaoMax: p.pressaoMax ?? '', validadeAtiva: p.validadeAtiva !== false, validadeDias: p.validadeDias ?? '' })) };
   if (!_cqEsterDraft.programas.length) _cqEsterDraft.programas.push(_cqEsterProgNovo());
   const prefixo = cfg?.prefixo || String(g?.ativo?.codigo || '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12) || 'AC';
   const loteModo = cfg?.loteModo === 'auto' ? 'auto' : 'manual', cicloModo = cfg?.cicloModo === 'auto' ? 'auto' : 'manual';
@@ -150,6 +157,12 @@ function _cqEsterProgsHTML() {
       <div class="cq-es-prog-head"><input type="text" class="field-input" maxlength="60" value="${_cqEsc(p.nome)}" placeholder="Ex.: 134 °C — instrumental embalado" oninput="cqEsterProgCampo(${i},'nome',this.value)">
         ${ps.length > 1 ? `<button type="button" class="cq-icobtn" title="Remover programa" onclick="cqEsterProgRemover(${i})">${CQ_ICO.close}</button>` : ''}</div>
       <div class="cq-es-prog-campos">${campo(i, 'tempMin', 'Temp. mín. (°C)', true)}${campo(i, 'tempMax', 'Temp. máx. (°C)')}${campo(i, 'tempoMin', 'Tempo mín. (min)', true)}${campo(i, 'pressaoMin', 'Pressão mín.', true)}${campo(i, 'pressaoMax', 'Pressão máx.')}</div>
+      <div class="cq-es-prog-val${p.validadeAtiva === false ? ' off' : ''}">
+        <button type="button" class="cq-es-sw" role="switch" aria-checked="${p.validadeAtiva !== false}" title="Validade da esterilização ligada por padrão no lançamento" onclick="cqEsterProgVal(${i})"><span></span></button>
+        <span class="cq-es-prog-val-rot">Validade da esterilização</span>
+        <input type="number" class="field-input" min="1" max="3650" step="1" value="${_cqEsc(p.validadeDias)}" placeholder="dias" ${p.validadeAtiva === false ? 'disabled' : ''} oninput="cqEsterProgCampo(${i},'validadeDias',this.value)">
+        <span class="cq-muted">${p.validadeAtiva === false ? 'desligada por padrão no lançamento' : 'dias · padrão no lançamento (editável)'}</span>
+      </div>
     </div>`).join('');
 }
 // Opções em cartão (modo do lote e do nº do ciclo)
@@ -165,6 +178,12 @@ function cqEsterOpcao(id, k) {
   if (id === 'cq-es-ciclomodo') document.getElementById('cq-es-prox-wrap')?.toggleAttribute('hidden', k !== 'auto');
 }
 function cqEsterProgCampo(i, f, v) { if (_cqEsterDraft?.programas[i]) _cqEsterDraft.programas[i][f] = v; }
+function cqEsterProgVal(i) {
+  const p = _cqEsterDraft?.programas[i];
+  if (!p) return;
+  p.validadeAtiva = p.validadeAtiva === false;
+  document.getElementById('cq-es-progs').innerHTML = _cqEsterProgsHTML();
+}
 function cqEsterProgAdd() {
   if (!_cqEsterDraft) return;
   _cqEsterDraft.programas.push(_cqEsterProgNovo());
@@ -187,7 +206,7 @@ async function cqEsterConfigSalvar() {
   const nomes = new Set();
   for (const [i, p] of d.programas.entries()) {
     const nome = String(p.nome || '').trim();
-    const vazio = !nome && ['tempMin', 'tempMax', 'tempoMin', 'pressaoMin', 'pressaoMax'].every(f => !String(p[f] ?? '').trim());
+    const vazio = !nome && ['tempMin', 'tempMax', 'tempoMin', 'pressaoMin', 'pressaoMax', 'validadeDias'].every(f => !String(p[f] ?? '').trim());
     if (vazio) continue;
     const tit = nome || `Programa ${i + 1}`;
     if (!nome) { showToast(`${tit}: informe o nome.`, 'error'); return false; }
@@ -201,6 +220,10 @@ async function cqEsterConfigSalvar() {
     if (rec.tempoMin <= 0) { showToast(`${nome}: o tempo mínimo deve ser maior que zero.`, 'error'); return false; }
     if (rec.tempMax !== null && rec.tempMax < rec.tempMin) { showToast(`${nome}: temperatura máxima menor que a mínima.`, 'error'); return false; }
     if (rec.pressaoMax !== null && rec.pressaoMax < rec.pressaoMin) { showToast(`${nome}: pressão máxima menor que a mínima.`, 'error'); return false; }
+    rec.validadeAtiva = p.validadeAtiva !== false;
+    rec.validadeDias = String(p.validadeDias ?? '').trim() ? _cqEsterDiasOk(p.validadeDias) : null;
+    if (String(p.validadeDias ?? '').trim() && rec.validadeDias === null) { showToast(`${nome}: validade em dias inteiros, de 1 a 3650.`, 'error'); return false; }
+    if (rec.validadeAtiva && rec.validadeDias === null) { showToast(`${nome}: informe a validade da esterilização em dias (ou desligue a validade).`, 'error'); return false; }
     programas[rec.id] = rec;
   }
   if (ativo && !Object.keys(programas).length) { showToast('Cadastre ao menos um programa do equipamento.', 'error'); return false; }
@@ -322,6 +345,7 @@ function _cqEsterLancHTML() {
       <div class="form-field"><label class="field-label">Nº do ciclo no equipamento</label>
         ${campoNumCiclo}
         ${numAuto ? '<span class="cq-ester-esp">Automático: confirmado ao publicar a corrida.</span>' : ''}</div>
+      ${_cqEsterValCampoHTML(s, p)}
     </div>
     <div class="cq-ester-grid">
       ${campoNum('temp', 'Temperatura de esterilização (°C)', _cqEsterEspTxt(p, 'temp', cfg.unPressao))}
@@ -497,7 +521,61 @@ function cqEsterModo(m) {
   _cqRascunhoSalvar();
   _cqEsterRedesenhar();
 }
-function cqEsterProg(v) { _cqEsterEstado().programaId = v; _cqRascunhoSalvar(); _cqEsterRedesenhar(); }
+function cqEsterProg(v) {
+  const s = _cqEsterEstado();
+  s.programaId = v;
+  delete s.valAtiva; delete s.valDias;   // volta ao padrão do novo programa
+  _cqRascunhoSalvar();
+  _cqEsterRedesenhar();
+}
+
+// ── VALIDADE DA ESTERILIZAÇÃO ──
+// Padrão do programa (ligada/desligada e dias), editável no lançamento: s.valAtiva / s.valDias
+function _cqEsterValEstado(s, p) {
+  const ativa = s.valAtiva ?? (p ? p.validadeAtiva !== false : true);
+  const diasTxt = s.valDias ?? (p?.validadeDias != null ? String(p.validadeDias) : '');
+  return { ativa, diasTxt, dias: _cqEsterDiasOk(diasTxt) };
+}
+function _cqEsterValDataTxt(s, p) {
+  const v = _cqEsterValEstado(s, p);
+  if (!v.ativa) return 'Sem validade na etiqueta';
+  const dh = (typeof _cqVal === 'function' && _cqVal('cq-l-dh')) || _cqLanc?.dataHora || _cqNowLocal();
+  const d = v.dias ? _cqEsterValData(dh, v.dias) : '';
+  return d ? `Válido até ${_cqFmtData(d)}` : 'Informe os dias (1 a 3650)';
+}
+function _cqEsterValCampoHTML(s, p) {
+  const v = _cqEsterValEstado(s, p);
+  const padrao = p ? (p.validadeAtiva === false ? 'desligada' : `${p.validadeDias ?? '—'} dia(s)`) : '';
+  return `<div class="form-field"><label class="field-label">Validade da esterilização ${v.ativa ? '<span class="required">*</span>' : ''}</label>
+      <div class="cq-es-val${v.ativa ? '' : ' off'}${v.ativa && !v.dias ? ' erro' : ''}" id="cq-es-val">
+        <button type="button" class="cq-es-sw" role="switch" aria-checked="${v.ativa}" title="${v.ativa ? 'Desligar a validade' : 'Ligar a validade'}" onclick="cqEsterValToggle()" ${p ? '' : 'disabled'}><span></span></button>
+        <input type="number" class="cq-es-val-dias" id="cq-es-valdias" min="1" max="3650" step="1" value="${_cqEsc(v.diasTxt)}" ${v.ativa && p ? '' : 'disabled'} oninput="cqEsterValDias(this.value)" aria-label="Validade em dias">
+        <span class="cq-es-val-un">dias</span>
+        <span class="cq-es-val-data" id="cq-es-valdata">${_cqEsc(_cqEsterValDataTxt(s, p))}</span>
+      </div>
+      <span class="cq-ester-esp">${p ? `Padrão do programa: ${_cqEsc(padrao)}` : 'Escolha o programa'}</span></div>`;
+}
+function _cqEsterLancProg() {
+  const cfg = _cqEsterLancCfg(), s = _cqLanc?.ciclo;
+  return cfg && s ? _cqEsterProgramas(cfg).find(x => x.id === s.programaId) : null;
+}
+function cqEsterValToggle() {
+  const s = _cqEsterEstado(), p = _cqEsterLancProg();
+  if (!p) return;
+  s.valAtiva = !_cqEsterValEstado(s, p).ativa;
+  _cqRascunhoSalvar();
+  _cqEsterRedesenhar();
+  if (s.valAtiva) document.getElementById('cq-es-valdias')?.focus();
+}
+function cqEsterValDias(v) {
+  const s = _cqEsterEstado(), p = _cqEsterLancProg();
+  s.valDias = v;
+  _cqRascunhoSalvar();
+  const box = document.getElementById('cq-es-val'), dt = document.getElementById('cq-es-valdata');
+  if (dt) dt.textContent = _cqEsterValDataTxt(s, p);
+  if (box) box.classList.toggle('erro', !_cqEsterValEstado(s, p).dias);
+  _cqEsterEtqBtnAtualizar();
+}
 function cqEsterVinc(v) { _cqEsterEstado().vinc = v; _cqRascunhoSalvar(); _cqEsterRedesenhar(); }
 function cqEsterCampo(c, v, redesenhar) {
   if (!_cqLanc) return;
@@ -783,10 +861,13 @@ function _cqEsterValidar(dh) {
   if (semQtd.length) return { erro: `Informe a quantidade (1 ou mais) dos pacotes: ${semQtd.join(', ')}.` };
   const unPressao = cfg.unPressao || 'kgf/cm²';
   const falhas = _cqEsterFalhas(p, unPressao, { temp, tempo, pressao });
+  const val = _cqEsterValEstado(s, p);
+  if (val.ativa && !val.dias) return { erro: 'Informe a validade da esterilização em dias (1 a 3650) ou desligue a validade.' };
   return { ciclo: {
     loteCarga: lote, numeroCicloEquip: cfg.cicloModo === 'auto' ? null : (String(s.numEquip || '').trim() || null), dataHoraCiclo: dh,
     programa: { id: p.id, nome: p.nome, tempMin: p.tempMin, tempMax: p.tempMax ?? null, tempoMin: p.tempoMin, pressaoMin: p.pressaoMin, pressaoMax: p.pressaoMax ?? null, unPressao },
     temperatura: temp, tempo, pressao, pacotes, conforme: !falhas.length, falhas,
+    validade: val.ativa ? { dias: val.dias, data: _cqEsterValData(dh, val.dias) } : null,
   } };
 }
 
@@ -838,6 +919,7 @@ function _cqEsterDetalheHTML(c) {
       <div><span class="cq-muted">Lote da carga</span><b>${_cqEsc(ci.loteCarga)}</b></div>
       <div><span class="cq-muted">Programa</span><b>${_cqEsc(p.nome || '—')}</b></div>
       <div><span class="cq-muted">Nº do ciclo no equipamento</span><b>${_cqEsc(ci.numeroCicloEquip || '—')}</b></div>
+      <div><span class="cq-muted">Validade da esterilização</span><b>${ci.validade?.data ? `${_cqFmtData(ci.validade.data)} (${_cqEsc(ci.validade.dias)} dia${ci.validade.dias !== 1 ? 's' : ''})` : 'sem validade'}</b></div>
       <div><span class="cq-muted">Operador do equipamento</span><b>${_cqEsc(vinc ? vinc.operadorNome || '—' : c.operadorNome || '—')}</b></div>
     </div>
     <table class="cq-ester-tbl"><thead><tr><th>Parâmetro físico</th><th>Registrado</th><th>Especificação</th><th>Situação</th></tr></thead><tbody>
@@ -860,6 +942,7 @@ function _cqEsterImpressaoHTML(c) {
     <div class="meta">
       <div><b>Data do ciclo:</b> ${_cqFmtDH(vinc ? vinc.dataHora : (ci.dataHoraCiclo || c.dataHora))}</div><div><b>Lote da carga:</b> ${_cqEsc(ci.loteCarga)}</div>
       <div><b>Programa:</b> ${_cqEsc(p.nome || '—')}</div><div><b>Nº do ciclo no equipamento:</b> ${_cqEsc(ci.numeroCicloEquip || '—')}</div>
+      <div><b>Validade da esterilização:</b> ${ci.validade?.data ? `${_cqFmtData(ci.validade.data)} (${_cqEsc(ci.validade.dias)} dia(s))` : 'sem validade'}</div>
       <div><b>Operador do equipamento:</b> ${_cqEsc(vinc ? vinc.operadorNome || '—' : c.operadorNome || '—')}</div><div><b>Parâmetros físicos:</b> ${ci.conforme === false ? 'FORA DA ESPECIFICAÇÃO' : 'conformes'}</div>
       ${vinc ? `<div style="grid-column:1/-1;"><b>Leitura de indicador do ciclo registrado na corrida</b> ${_cqEsc(vinc.numero || vinc.key)}${ci.incubacao ? ` · incubação ${ci.incubacao.inicio ? 'iniciada ' + _cqFmtDH(ci.incubacao.inicio) : ''}${ci.incubacao.horasAposCiclo != null ? ` (${_cqEsterN(ci.incubacao.horasAposCiclo)} h após o ciclo)` : ''}${ci.incubacao.temperatura != null ? ` a ${_cqEsterN(ci.incubacao.temperatura)} °C` : ''}` : ''}</div>` : ''}
     </div>
@@ -873,17 +956,18 @@ function _cqEsterImpressaoHTML(c) {
 // Identifica os pacotes da carga: lote da carga em destaque, data/hora e nº do ciclo, parâmetros físicos,
 // operador e equipamento (RDC 1002/2025, art. 91). Carga com parâmetro fora da especificação não é
 // liberada e não recebe etiqueta. Usa a mesma janela de impressão das etiquetas de preparo.
-function _cqEsterEtqDados({ lote, dataHora, numEquip, programa, temp, tempo, pressao, unPressao, operador, equip }) {
+function _cqEsterEtqDados({ lote, dataHora, numEquip, programa, temp, tempo, pressao, unPressao, operador, equip, validade, validadeDias }) {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})/.exec(String(dataHora || ''));
   const quando = m ? `${m[3]}/${m[2]}/${m[1].slice(2)} ${m[4]}` : '—';
   const n = _cqEsterN;
   const segs = {
     ciclo: [['Ciclo ', 0], [quando, 1], [numEquip ? ` · nº ${numEquip}` : '', 0]],
+    val: validade ? [['Validade: ', 0], [`${validade.slice(8, 10)}/${validade.slice(5, 7)}/${validade.slice(2, 4)}`, 1], [validadeDias ? ` · ${validadeDias} dia${Number(validadeDias) !== 1 ? 's' : ''}` : '', 0]] : null,
     param: [[`${n(temp)} °C · ${n(tempo)} min · ${n(pressao)} ${unPressao || 'kgf/cm²'}`, 0]],
     op: [[`Op: ${_cqEtqNomeCurto(operador) || '—'}`, 0]],
     equip: equip ? [[String(equip), 0]] : null,
   };
-  const niveis = [{ tit: 2, linhas: ['ciclo', 'param', 'op', 'equip'] }, { tit: 1, linhas: ['ciclo', 'param', 'op'] }, { tit: 1, linhas: ['ciclo', 'param'] }, { tit: 1, linhas: ['ciclo'] }]
+  const niveis = [{ tit: 2, linhas: ['ciclo', 'val', 'param', 'op', 'equip'] }, { tit: 1, linhas: ['ciclo', 'val', 'param', 'op'] }, { tit: 1, linhas: ['ciclo', 'val', 'param'] }, { tit: 1, linhas: ['ciclo', 'val'] }]
     .map(nv => ({ ...nv, linhas: nv.linhas.filter(k => segs[k]) }));
   return { produto: `Esterilizado · ${programa || 'autoclave'}`, codigo: String(lote || ''), segs, niveis };
 }
@@ -907,9 +991,12 @@ function _cqEsterEtqLanc() {
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dh || '')) return { erro: 'informe a data/hora da corrida.' };
   const op = _cqUsuarios().find(x => x.id === _cqLanc.operadorId);
   if (!op) return { erro: 'informe quem executou a corrida.' };
+  const val = _cqEsterValEstado(s, p);
+  if (val.ativa && !val.dias) return { erro: 'informe a validade da esterilização em dias.' };
   const g = _cqGruposLanc(_cqLanc.u).find(x => x.key === _cqLanc.grupo);
   return { numEquip, d: _cqEsterEtqDados({ lote, dataHora: dh, numEquip, programa: p.nome, temp, tempo, pressao,
-    unPressao: cfg.unPressao, operador: op.nomeCompleto || op.username, equip: g?.nome || cfg.equipNome || '' }) };
+    unPressao: cfg.unPressao, operador: op.nomeCompleto || op.username, equip: g?.nome || cfg.equipNome || '',
+    validade: val.ativa ? _cqEsterValData(dh, val.dias) : '', validadeDias: val.ativa ? val.dias : null }) };
 }
 function _cqEsterEtqBtnHTML() {
   const r = _cqEsterEtqLanc();
@@ -945,7 +1032,7 @@ async function cqEsterEtqCorrida() {
   const vinc = ci.vinculo, p = ci.programa || {};
   const d = _cqEsterEtqDados({ lote: ci.loteCarga, dataHora: vinc ? vinc.dataHora : (ci.dataHoraCiclo || c.dataHora), numEquip: ci.numeroCicloEquip,
     programa: p.nome, temp: ci.temperatura, tempo: ci.tempo, pressao: ci.pressao, unPressao: p.unPressao,
-    operador: vinc ? vinc.operadorNome : c.operadorNome, equip: c.ativoSnap?.nome || c.sistemaAnalitico || '' });
+    operador: vinc ? vinc.operadorNome : c.operadorNome, equip: c.ativoSnap?.nome || c.sistemaAnalitico || '', validade: ci.validade?.data || '', validadeDias: ci.validade?.dias || null });
   // Indicador rejeitado (sem decisão que libere): avisa antes de etiquetar os pacotes
   const rej = Object.values(c.testes || {}).some(ct => !ct.naoRealizado && (ct.decisao ? ct.decisao.acao !== 'liberado' : ct.avaliacao?.status === 'rejeitado'));
   _cqEtqDialogo(d, 'Etiqueta do ciclo', `Lote da carga ${ci.loteCarga} · corrida ${c.numero}`,

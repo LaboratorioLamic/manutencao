@@ -495,6 +495,29 @@ body.dark-mode .cq-ester-st.ok { color: #4fd1c5; }
 .cq-es-prog-campos { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 6px; }
 .cq-es-prog-campos label { display: flex; flex-direction: column; justify-content: flex-end; gap: 3px; min-width: 0; font-size: 11px; color: var(--text-muted); }
 .cq-es-prog-rot { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Interruptor (validade da esterilização) */
+.cq-es-sw { position: relative; flex-shrink: 0; width: 34px; height: 20px; padding: 0; border: none; border-radius: 999px; cursor: pointer; background: var(--border); transition: background .2s ease; }
+.cq-es-sw span { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px rgba(11,22,30,.25); transition: transform .2s cubic-bezier(.34,1.56,.64,1); }
+.cq-es-sw[aria-checked="true"] { background: var(--cyan); }
+.cq-es-sw[aria-checked="true"] span { transform: translateX(14px); }
+.cq-es-sw:disabled { opacity: .5; cursor: not-allowed; }
+.cq-es-sw:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+/* Configuração do programa: validade padrão */
+.cq-es-prog-val { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); font-size: 12px; }
+.cq-es-prog-val-rot { font-weight: 600; color: var(--text-secondary); }
+.cq-es-prog-val .field-input { width: 80px; padding: 5px 8px; font-size: 12.5px; }
+.cq-es-prog-val.off .cq-es-prog-val-rot { color: var(--text-muted); }
+/* Lançamento: validade da esterilização */
+.cq-es-val { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 0 10px; border-radius: 8px; border: 1.5px solid var(--border); background: var(--bg); transition: border-color .15s ease, background .15s ease; }
+.cq-es-val:focus-within { border-color: var(--cyan); background: var(--bg-card); }
+.cq-es-val.erro { border-color: rgba(230,57,70,.55); }
+.cq-es-val-dias { width: 54px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-card); outline: none; font: inherit; font-size: 13px; font-weight: 700; text-align: center; color: var(--text-primary); }
+.cq-es-val-dias:focus { border-color: var(--cyan); }
+.cq-es-val-un { font-size: 12px; color: var(--text-muted); }
+.cq-es-val-data { margin-left: auto; font-size: 12px; font-weight: 700; color: var(--cyan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cq-es-val.erro .cq-es-val-data { color: var(--red); }
+.cq-es-val.off .cq-es-val-dias, .cq-es-val.off .cq-es-val-un { opacity: .45; }
+.cq-es-val.off .cq-es-val-data { color: var(--text-muted); font-weight: 600; }
 .cq-es-prog-campos .field-input { padding: 6px 8px; font-size: 12.5px; }
 #cq-prompt.cq-prompt-largo .modal { width: min(760px, 96vw); }
 @media (max-width: 640px) { .cq-es-prog-campos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
