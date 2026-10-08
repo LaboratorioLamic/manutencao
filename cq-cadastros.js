@@ -1776,7 +1776,7 @@ async function cqLoteSalvar() {
 // Produto (insumoProdutos): tipo, fabricante, equipamentos/analitos e preparo interno.
 // Os lotes (insumos) apontam para o produto e herdam esses dados (ver _cqHidratarInsumos).
 let _cqInsProdFormId = null;
-const CQ_LBL_INS_PRODUTO = { tipo: 'Tipo', nome: 'Produto', fabricante: 'Fabricante', regAnvisa: 'Registro ANVISA', equips: 'Equipamentos / sistemas', analitoIds: 'Analitos',
+const CQ_LBL_INS_PRODUTO = { setorIds: 'Setores', tipo: 'Tipo', nome: 'Produto', fabricante: 'Fabricante', regAnvisa: 'Registro ANVISA', equips: 'Equipamentos / sistemas', analitoIds: 'Analitos',
                              preparoInterno: 'Preparado no laboratório', preparo: 'Dados do preparo', unidadeIds: 'Áreas', ativo: 'Ativo' };
 const _cqFmtPreparo = v => v ? [v.especificacao, v.armazenamento, v.riscos ? 'riscos: ' + v.riscos : '', v.validadeDias ? `validade ${v.validadeDias} dia(s) após preparo` : '',
   v.liberaSemCIQ ? 'liberado no registro (sem CIQ)' : '', v.avisoDias != null ? `avisa a troca ${v.avisoDias} dia(s) antes` : ''].filter(Boolean).join(' · ') : '—';
@@ -1809,6 +1809,16 @@ function cqInsumoProdutoForm(id, opts = {}) {
         <div class="form-field"><label class="field-label">Analitos <span class="cq-muted" id="cq-ins-an-escopo">${equips.length ? '(vazio = todos dos equipamentos)' : '(vazio = todos)'}</span></label>
           ${_cqMultiHTML('cq-ins-an', _cqOpcoesAnalitosEquip(equips, sel), sel, { placeholder: 'Todos os analitos', disabled: !pode, vazio: 'Nenhum analito vinculado a estes equipamentos/sistemas (vincule no cadastro do analito).' })}
           <div class="cq-nota">Com equipamento ou sistema selecionado, só aparecem os analitos vinculados a ele no cadastro de analitos.</div></div>
+        ${(() => {
+          // Setores: para o filtro de setor do CQ achar o produto sem equipamento/analito (ou além deles)
+          // Só os setores das áreas marcadas no campo Áreas (atualiza quando as áreas mudam)
+          if (_cqMulti['cq-ins-un']) _cqMulti['cq-ins-un'].onchange = cqInsSetoresAreas;
+          const ops = _cqInsSetoresOps(_cqMultiVal('cq-ins-un'));
+          if (!Object.values(cqState.config.unidades).some(un => _cqSetoresDaUnidade(un.id).length) && !_cqArr(p?.setorIds).length) return '';
+          return `<div class="form-field"><label class="field-label">Setores</label>
+            ${_cqMultiHTML('cq-ins-setores', ops, _cqArr(p?.setorIds), { placeholder: 'Pelos testes, equipamentos e analitos vinculados', disabled: !pode, vazio: 'Nenhum setor nas áreas selecionadas.' })}
+            <div class="cq-nota">Use para produto sem equipamento ou analito vinculado: ele passa a aparecer no filtro desses setores. Os testes, equipamentos e analitos vinculados continuam valendo.</div></div>`;
+        })()}
         <input type="checkbox" id="cq-ins-ativo" hidden ${p?.ativo === false ? '' : 'checked'}>
       </div>
       <div class="form-section"><div class="form-section-title">${CQ_ICO.beaker}Preparo no laboratório (RDC 978, art. 101)</div>
@@ -2041,6 +2051,17 @@ function cqInsumoEquipChange(equips) {
   if (esc) esc.textContent = _cqArr(equips).length ? '(vazio = todos dos equipamentos)' : '(vazio = todos)';
 }
 
+// Setores das áreas escolhidas no produto (grupo = sigla da área)
+function _cqInsSetoresOps(unidadeIds) {
+  const ops = [], vistos = new Set();
+  _cqArr(unidadeIds).map(id => cqState.config.unidades[id]).filter(Boolean).forEach(un => _cqSetoresDaUnidade(un.id).forEach(st => {
+    if (vistos.has(st.id)) return;
+    vistos.add(st.id);
+    ops.push({ value: st.id, label: _cqRotuloSetor(st.id), grupo: un.sigla || '' });
+  }));
+  return ops;
+}
+function cqInsSetoresAreas(unidadeIds) { _cqMultiOpcoes('cq-ins-setores', _cqInsSetoresOps(unidadeIds)); }
 async function cqInsumoProdutoSalvar() {
   if (_cqSalvando || !_cqPodeEditarCad(!!_cqInsProdFormId)) return;
   const antes = _cqInsProdFormId ? cqState.config.insumoProdutos[_cqInsProdFormId] : null;
@@ -2075,10 +2096,11 @@ async function cqInsumoProdutoSalvar() {
   const lotesFora = antes ? _cqLotesDoProduto(antes.id).filter(l => _cqUnidadesRec(l).some(x => !unidadeIds.includes(x))) : [];
   if (lotesFora.length) { showToast(`Lote(s) ${lotesFora.map(l => l.lote).join(', ')} deste produto estão em áreas que você removeu. Ajuste os lotes antes.`, 'error'); return; }
   const rec = { ...(antes || {}), id: _cqInsProdFormId || _cqUid(), tipo, nome, fabricante, regAnvisa: _cqVal('cq-ins-anvisa'),
-                equips, analitoIds, preparoInterno, preparo, unidadeIds, ativo: _cqChk('cq-ins-ativo') };
+                equips, analitoIds, setorIds: document.getElementById('cq-ins-setores') ? _cqMultiVal('cq-ins-setores') : _cqArr(antes?.setorIds),
+                preparoInterno, preparo, unidadeIds, ativo: _cqChk('cq-ins-ativo') };
   if (!antes) { rec.criadoEm = _cqAgora(); rec.criadoPor = _cqAssinatura(); }
   const fmt = { tipo: v => CQ_TIPOS_INSUMO[v] || v, analitoIds: v => _cqArr(v).map(a => _cqAnalito(a)?.nome || a).join(', ') || 'Todos',
-                equips: v => _cqArr(v).map(_cqRotuloEquip).join(', ') || 'Qualquer', unidadeIds: _cqSiglasUnidades, preparoInterno: v => v ? 'Sim' : 'Não',
+                equips: v => _cqArr(v).map(_cqRotuloEquip).join(', ') || 'Qualquer', setorIds: v => _cqArr(v).map(_cqRotuloSetor).join(', ') || '—', unidadeIds: _cqSiglasUnidades, preparoInterno: v => v ? 'Sim' : 'Não',
                 preparo: _cqFmtPreparo, ativo: v => v === false ? 'Não' : 'Sim' };
   const diffs = antes ? _cqDiff(antes, rec, CQ_LBL_INS_PRODUTO, fmt) : [];
   if (antes && !diffs.length) { cqDrawerClose(); return; }

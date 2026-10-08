@@ -1009,6 +1009,7 @@ function _cqTestesDoFiltro(u, opts) { const f = _cqSetorAtivoId(u); return _cqTe
 // Sem vínculo nenhum: fora do filtro.
 function _cqProdutoPassaSetor(p, u, f = _cqSetorAtivoId(u)) {
   if (!f || !p) return true;
+  if (_cqArr(p.setorIds).includes(f)) return true;   // setor marcado no cadastro do produto
   const ans = _cqArr(p.analitoIds), eqs = _cqArr(p.equips ?? (typeof _cqEquipsInsumo === 'function' ? _cqEquipsInsumo(p) : []));
   return _cqTestesDaUnidade(u, { incluirInativos: true }).some(t => _cqTestePassaSetor(t, f) && (t.insumoProdutoId === p.id || t.materialId === p.id
     || Object.values(t.controlesQual || {}).some(c => c?.materialId === p.id)
