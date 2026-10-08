@@ -224,7 +224,7 @@ function _cqTrocaFracItem(pid, u) {
 // (os mais urgentes primeiro); quem não está em conjunto fica em "Fora de conjunto"
 function _cqTrocaAddPopHTML(u, dia) {
   const t = _cqTroca;
-  const prods = _cqTrocaProdutos(u);
+  const prods = _cqTrocaProdutos(u).filter(p => _cqProdutoPassaSetor(p, u));
   const ord = { vencida: 0, proxima: 1, nova: 2, ok: 3 };
   const sits = {};
   prods.forEach(p => { sits[p.id] = _cqProdutoTrocaSit(p.id, u); });
@@ -548,7 +548,7 @@ function _cqTrocasAlertas(u) {
   if (!u || !_cqConfigReady) return [];
   const hoje = _cqHoje(cqState.config.unidades[u]?.fuso);
   const out = [];
-  _cqDaUnidade('insumoProdutos', u).filter(p => p.ativo !== false && p.preparoInterno && p.preparo?.avisoDias != null).forEach(p => {
+  _cqDaUnidade('insumoProdutos', u).filter(p => p.ativo !== false && p.preparoInterno && p.preparo?.avisoDias != null && _cqProdutoPassaSetor(p, u)).forEach(p => {
     const preps = _cqLotesDoProduto(p.id).filter(i => _cqNaUnidade(i, u)).flatMap(i => _cqPreparosDe(i));
     if (!preps.length) return;
     const emUso = preps.filter(x => !x.finalizado && x.situacao !== 'reprovado');
@@ -608,7 +608,7 @@ function _cqTrocasFaixaHTML(u) {
 const CQ_PAINEL_PREP_MAX = 12;
 const CQ_PAINEL_PREP_TC = { vencida: 'rejeitado', proxima: 'alerta', ok: 'aceito', nova: 'nenhum' };
 function _cqPainelPreparosHTML(u) {
-  const prods = _cqTrocaProdutos(u);
+  const prods = _cqTrocaProdutos(u).filter(p => _cqProdutoPassaSetor(p, u));
   if (!prods.length) return '';
   const hoje = _cqHoje(cqState.config.unidades[u]?.fuso);
   const desde = _cqSomarDias(hoje, -30);
@@ -644,7 +644,7 @@ function _cqPainelPreparosHTML(u) {
   </div>`;
 
   const pode = _cqPodeRegistrarPreparo();
-  const cjs = _cqConjuntosDaUnidade(u);
+  const cjs = _cqConjuntosDaUnidade(u).filter(c => _cqConjuntoItens(c).some(it => _cqProdutoPassaSetor(cqState.config.insumoProdutos[it.produtoId], u)));
   const conjuntos = cjs.map(c => {
     const s = _cqConjuntoSituacao(c, u);
     const itens = _cqConjuntoItens(c);
@@ -707,7 +707,7 @@ function _cqPainelPreparosHTML(u) {
 const CQ_PAINEL_INS_MAX = 10;
 function cqAbrirInsumos() { _cqCadTab = 'insumos'; _cqCadExp.clear(); cqNav('cadastros'); }
 function _cqPainelInsumosHTML(u) {
-  const prods = _cqDaUnidade('insumoProdutos', u).filter(p => p.ativo !== false);
+  const prods = _cqDaUnidade('insumoProdutos', u).filter(p => p.ativo !== false && _cqProdutoPassaSetor(p, u));
   if (!prods.length) return '';
   const hoje = _cqHoje(cqState.config.unidades[u]?.fuso);
   const lotesU = _cqDaUnidade('insumos', u);

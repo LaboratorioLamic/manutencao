@@ -116,8 +116,8 @@ function cqRenderCadastros(body) {
   _cqCadBusca = '';   // as abas usam os filtros de analito, equipamento, situação e ativos no lugar da busca
   const cfg = cqState.config;
   const uAt = _cqUnidadeAtivaId();
-  const qtd = { analitos: _cqDaUnidade('analitos', uAt).length, materiais: _cqDaUnidade('materiais', uAt).length,
-                insumos: _cqDaUnidade('insumoProdutos', uAt).length + _cqDaUnidade('insumos', uAt).filter(i => !_cqProdutoInsumo(i)).length,
+  const qtd = { analitos: _cqDaUnidade('analitos', uAt).length, materiais: _cqDaUnidade('materiais', uAt).filter(m => _cqProdutoPassaSetor(m, uAt)).length,
+                insumos: _cqDaUnidade('insumoProdutos', uAt).filter(p => _cqProdutoPassaSetor(p, uAt)).length + _cqDaUnidade('insumos', uAt).filter(i => !_cqProdutoInsumo(i) && _cqProdutoPassaSetor(i, uAt)).length,
                 preparos: _cqPrepAbaItens(uAt).filter(x => !x.p.finalizado).length };
   const tabsHTML = `<div class="ot-modal-tabs cq-subtabs">${Object.entries(tabs).map(([k, l], i) => `<button class="ot-modal-tab-btn${k === _cqCadTab ? ' active' : ''}" onclick="cqCadTab('${k}')"${k === 'preparos' ? ' title="Preparos em uso"' : ''}><span class="cq-step${qtd[k] ? ' feito' : ''}">${i + 1}</span>${l}${qtd[k] ? `<span class="cq-step-qtd">${qtd[k]}</span>` : ''}</button>`).join('')}</div>`;
   // Preparos: formulário de registro + lista, com filtros próprios
@@ -209,16 +209,30 @@ function _cqCadAnalitoNoEquip(a, chaves, testesU) {
     || testesU.some(t => t.analitoId === a.id && chaves.has(_cqEquipChave(_cqEquipDoTeste(t))));
 }
 // Opções do filtro de analitos: todos os da unidade ou só os dos equipamentos/sistemas marcados
+// Filtro de setor nos filtros de Cadastros: analito ou equipamento com teste no setor
+// (ou equipamento lotado no setor, para o que ainda não tem teste)
+function _cqCadEquipNoSetor(eq, u, f = _cqSetorAtivoId(u)) {
+  if (!f) return true;
+  const k = _cqEquipChave(eq);
+  if (_cqTestesDaUnidade(u, { incluirInativos: true }).some(t => _cqTestePassaSetor(t, f) && _cqEquipChave(_cqEquipDoTeste(t)) === k)) return true;
+  const at = String(eq).startsWith('a:') && typeof _ativoById === 'function' ? _ativoById(String(eq).slice(2)) : null;
+  return !!at && typeof _orgSetorIdsDoAtivo === 'function' && _orgSetorIdsDoAtivo(at).some(id => _cqSetorPassa(id, f));
+}
+function _cqCadAnalitoNoSetor(a, u, f = _cqSetorAtivoId(u)) {
+  if (!f) return true;
+  return _cqTestesDaUnidade(u, { incluirInativos: true }).some(t => t.analitoId === a.id && _cqTestePassaSetor(t, f))
+    || _cqEquipsDoAnalito(a).some(o => o.ativo && _cqCadEquipNoSetor(o.value, u, f));
+}
 function _cqCadOpsAnalitos(u, equipsSel) {
   const chaves = new Set(_cqArr(equipsSel).map(_cqEquipChave));
   const testesU = chaves.size ? _cqTestesDaUnidade(u, { incluirInativos: true }) : [];
-  return _cqDaUnidade('analitos', u).filter(a => !chaves.size || _cqCadAnalitoNoEquip(a, chaves, testesU))
+  return _cqDaUnidade('analitos', u).filter(a => (!chaves.size || _cqCadAnalitoNoEquip(a, chaves, testesU)) && _cqCadAnalitoNoSetor(a, u))
     .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
     .map(a => ({ value: a.id, label: a.codigo ? `${a.codigo} — ${a.nome}` : a.nome, sub: a.tipo && a.tipo !== 'quantitativo' ? CQ_TIPOS_ANALITO[a.tipo] : (a.unidadeMedida || '') }));
 }
 // Opções do filtro de equipamentos/sistemas: todos ou só os dos analitos marcados
 function _cqCadOpsEquips(u, anSel) {
-  const ops = _cqCadOpcoesEquip(u);
+  const ops = _cqCadOpcoesEquip(u).filter(o => _cqCadEquipNoSetor(o.value, u));
   const ids = new Set(_cqArr(anSel));
   if (!ids.size) return ops;
   const testesU = _cqTestesDaUnidade(u, { incluirInativos: true });
@@ -241,7 +255,7 @@ function _cqCadFiltrosCruzar(origem) {
 function _cqCadOpsProdutos(u) {
   const hoje = _cqHoje();
   const lotesU = _cqDaUnidade('insumos', u);
-  return _cqDaUnidade('insumoProdutos', u).filter(p => _cqCadAtivoBate(p) && _cqCadFiltroServe(p, _cqEquipsInsumo(p)))
+  return _cqDaUnidade('insumoProdutos', u).filter(p => _cqCadAtivoBate(p) && _cqCadFiltroServe(p, _cqEquipsInsumo(p)) && _cqProdutoPassaSetor(p, u))
     .sort((a, b) => (CQ_TIPOS_INSUMO[a.tipo] || '').localeCompare(CQ_TIPOS_INSUMO[b.tipo] || '') || (a.nome || '').localeCompare(b.nome || '', 'pt'))
     .map(p => {
       const ls = lotesU.filter(i => _cqLoteCru(i).produtoId === p.id);
@@ -446,13 +460,13 @@ function _cqCadRenderLista() {
   if (_cqCadTab === 'materiais') {
     // Testes da unidade com o lote em uso (abre a aba "Uso nos testes" do lote)
     const usoTxt = l => {
-      const ts = _cqTestesDaUnidade(u).filter(t => Object.values(t.lotesAtivos || {}).includes(l.id));
+      const ts = _cqTestesDoFiltro(u).filter(t => Object.values(t.lotesAtivos || {}).includes(l.id));
       return ts.length ? `<a href="#" onclick="event.preventDefault();event.stopPropagation();cqLoteVer('${l.id}','uso')" title="${_cqEsc(ts.map(t => `${_cqNomeTeste(t)} · ${_cqEquipTeste(t)}`).join('; '))}">${ts.length} teste(s)</a>` : '<span class="cq-muted">—</span>';
     };
     const todosLotes = _cqDaUnidade('lotesControle', u);
     const linhas = [];
     _cqDaUnidade('materiais', u).sort((a, b) => (a.nome || '').localeCompare(b.nome || '')).forEach(m => {
-      if (!_cqCadAtivoBate(m) || !_cqCadFiltroServe(m, m.equips)) return;
+      if (!_cqCadAtivoBate(m) || !_cqCadFiltroServe(m, m.equips) || !_cqProdutoPassaSetor(m, u)) return;
       const todos = todosLotes.filter(l => l.materialId === m.id).sort((a, b) => (b.validade || '').localeCompare(a.validade || ''));
       let ls = todos.filter(l => _cqLoteNaSituacao(l, sit, hoje));
       if (!bate(`${m.nome} ${m.fabricante || ''} ${m.codigoReferencia || ''} ${m.matriz || ''}`)) { ls = ls.filter(l => bate(l.lote)); if (!ls.length) return; }
@@ -491,7 +505,7 @@ function _cqCadRenderLista() {
     lotesU.forEach(i => { const p = _cqProdutoInsumo(i); if (p) prods.set(p.id, p); });
     const linhas = [];
     [...prods.values()].sort((a, b) => (CQ_TIPOS_INSUMO[a.tipo] || '').localeCompare(CQ_TIPOS_INSUMO[b.tipo] || '') || (a.nome || '').localeCompare(b.nome || '', 'pt')).forEach(p => {
-      if (!_cqCadAtivoBate(p) || !_cqCadFiltroServe(p, _cqEquipsInsumo(p))) return;
+      if (!_cqCadAtivoBate(p) || !_cqCadFiltroServe(p, _cqEquipsInsumo(p)) || !_cqProdutoPassaSetor(p, u)) return;
       if (_cqCadProds.length && !_cqCadProds.includes(p.id)) return;
       const todos = lotesU.filter(i => _cqLoteCru(i).produtoId === p.id).sort((a, b) => (b.validade || '').localeCompare(a.validade || ''));
       let ls = todos.filter(l => _cqLoteNaSituacao(l, sit, hoje));
@@ -1401,7 +1415,7 @@ const CQ_LBL_LOTE = { materialId: 'Material', lote: 'Lote', niveis: 'Níveis', v
 function _cqLoteUsoCandidatos(l) {
   const niveisLote = _cqArr(l.niveis).map(Number);
   return Object.values(cqState.config.testes)
-    .filter(t => _cqNaUnidade(l, t.unidadeId) && (t.ativo !== false || Object.values(t.lotesAtivos || {}).includes(l.id)))
+    .filter(t => _cqNaUnidade(l, t.unidadeId) && (!_cqSetorAtivoId() || t.unidadeId !== _cqUnidadeAtivaId() || _cqTestePassaSetor(t)) && (t.ativo !== false || Object.values(t.lotesAtivos || {}).includes(l.id)))
     .map(t => {
       const qual = _cqTesteQual(t);
       const niveis = _cqNiveisTeste(t).filter(n => qual ? _cqControleQual(t, n)?.materialId === l.materialId : t.materialId === l.materialId && niveisLote.includes(n));
@@ -1570,7 +1584,8 @@ function cqLoteForm(id, opts = {}) {
 
 // Testes (de qualquer área) com algum nível usando o lote de controle
 function _cqTestesDoLoteControle(lid) {
-  return Object.values(cqState.config.testes).filter(t => Object.values(t.lotesAtivos || {}).includes(lid));
+  const f = _cqSetorAtivoId();
+  return Object.values(cqState.config.testes).filter(t => Object.values(t.lotesAtivos || {}).includes(lid) && (!f || _cqTestePassaSetor(t, f)));
 }
 
 // Visualização do material de controle (clique na linha): dados, níveis, lotes (Ativos / Inativos) e trilha.
@@ -3204,7 +3219,7 @@ function _cqPrepUltimaUnidade(produtoId) {
 }
 // Produtos preparados no laboratório da unidade (ativos)
 function _cqPrepProdutos(u) {
-  return _cqDaUnidade('insumoProdutos', u).filter(p => p.preparoInterno && p.ativo !== false)
+  return _cqDaUnidade('insumoProdutos', u).filter(p => p.preparoInterno && p.ativo !== false && _cqProdutoPassaSetor(p, u))
     .sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt'));
 }
 // Lotes do produto que aceitam preparo: na unidade, em uso ou em avaliação e dentro da validade (em uso primeiro)
@@ -3215,7 +3230,7 @@ function _cqPrepLotesValidos(produtoId, u, dia) {
 }
 // Todos os preparos dos lotes da unidade preparados no laboratório
 function _cqPrepAbaItens(u) {
-  return _cqDaUnidade('insumos', u).filter(i => i.preparoInterno).flatMap(i => _cqPreparosDe(i).map(p => ({ i, p })));
+  return _cqDaUnidade('insumos', u).filter(i => i.preparoInterno && _cqProdutoPassaSetor(_cqProdutoInsumo(i) || i, u)).flatMap(i => _cqPreparosDe(i).map(p => ({ i, p })));
 }
 function _cqPrepDias(de, ate) { return Math.round((Date.parse(ate + 'T00:00:00Z') - Date.parse(de + 'T00:00:00Z')) / 864e5); }
 

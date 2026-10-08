@@ -1004,6 +1004,16 @@ function _cqSetorPassa(setorId, filtro) { return !filtro || (filtro === '__sem__
 function _cqTestePassaSetor(t, filtro = _cqSetorAtivoId()) { return _cqSetorPassa(_cqSetorDoTeste(t), filtro); }
 // Testes da unidade que passam no filtro de setor do CQ
 function _cqTestesDoFiltro(u, opts) { const f = _cqSetorAtivoId(u); return _cqTestesDaUnidade(u, opts).filter(t => _cqTestePassaSetor(t, f)); }
+// Produto de insumo ou material de controle no filtro de setor: usado por teste do setor, ou vinculado
+// (analitos ou, sem analitos, equipamentos/sistemas) ao analito ou equipamento de um teste do setor.
+// Sem vínculo nenhum: fora do filtro.
+function _cqProdutoPassaSetor(p, u, f = _cqSetorAtivoId(u)) {
+  if (!f || !p) return true;
+  const ans = _cqArr(p.analitoIds), eqs = _cqArr(p.equips ?? (typeof _cqEquipsInsumo === 'function' ? _cqEquipsInsumo(p) : []));
+  return _cqTestesDaUnidade(u, { incluirInativos: true }).some(t => _cqTestePassaSetor(t, f) && (t.insumoProdutoId === p.id || t.materialId === p.id
+    || Object.values(t.controlesQual || {}).some(c => c?.materialId === p.id)
+    || (ans.length ? ans.includes(t.analitoId) : eqs.length && _cqMaterialServe({ equips: eqs }, _cqEquipDoTeste(t), t.analitoId))));
+}
 // Corrida/pendência no setor? Usa os setores gravados (setorIds) ou deriva dos testes
 function _cqSetoresDeRegistro(r) {
   if (Array.isArray(r?.setorIds)) return r.setorIds;
