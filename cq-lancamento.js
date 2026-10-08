@@ -647,6 +647,7 @@ function _cqGradeHTML() {
     const optIns = (lista, atual) => `<option value="">—</option>` + lista.map(i => `<option value="${i.id}" ${i.id === atual ? 'selected' : ''} ${i.vencido || i.bloqueado ? 'class="cq-opt-bloq"' : ''}>${_cqEsc(i.lote)}${i.vencido ? ' (vencido)' : i.bloqueado ? ' (quarentena)' : ''}</option>`).join('');
     const linhaTeste = `<td class="cq-g-teste"><div class="cq-g-nome">${_cqEsc(_cqNomeTeste(t))}</div><div class="cq-muted">${qual ? _cqEsc(CQ_TIPOS_ANALITO[an?.tipo] || '') : `${_cqEsc(an?.unidadeMedida || '')}${t.metodo ? ' · ' + _cqEsc(t.metodo) : ''}`}</div>
         ${_cqLancFrac() ? `<button type="button" class="cq-icobtn cq-g-remover" title="Remover este teste da corrida" onclick="cqLancRemover('${t.id}')">${CQ_ICO.close}</button>` : ''}
+        ${typeof _cqEsterIncubSlotHTML === 'function' ? _cqEsterIncubSlotHTML(t) : ''}
         ${l.nr ? `<input type="text" class="field-input cq-g-nrmot" placeholder="Motivo do não realizado *" value="${_cqEsc(l.motivoNR)}" oninput="_cqLanc.linhas['${t.id}'].motivoNR=this.value;_cqRascunhoSalvar()">` : ''}</td>`;
     // Coluna à esquerda: Realizado ⇄ Não realizado
     const colReal = `<td class="cq-g-real"><button type="button" class="cq-g-realbtn${l.nr ? ' nr' : ''}" onclick="cqLancNR('${t.id}',${!l.nr})"
@@ -1014,7 +1015,10 @@ function _cqGradeAtualizarLinhaQual(t, st, l) {
     ${!a.completo ? '<div class="cq-muted cq-g-zs"><span class="cq-txt-amarelo">níveis faltando</span></div>' : ''}`;
 }
 
-function _cqGradeAtualizarTudo() { _cqLancTestes().forEach(_cqGradeAtualizarLinha); }
+function _cqGradeAtualizarTudo() {
+  _cqLancTestes().forEach(_cqGradeAtualizarLinha);
+  if (typeof _cqEsterIncubSync === 'function') _cqEsterIncubSync();   // incubação na linha do indicador biológico
+}
 
 function _cqGradeAtualizarLinha(t) {
   if (!t || !_cqLanc?.linhas[t.id]) return;
@@ -1127,11 +1131,12 @@ async function cqLancSalvar() {
     showToast(problemas.slice(0, 3).join(' · ') + (problemas.length > 3 ? ` (+${problemas.length - 3})` : ''), 'error');
     return;
   }
-  if (!realizados.length) { showToast(_cqLancFrac() && !testes.length ? 'Adicione ao menos um teste à corrida.' : 'Nenhum resultado digitado.', 'error'); return; }
   // Ficha do ciclo de esterilização (RDC 1002, art. 91)
   const ester = typeof _cqEsterValidar === 'function' ? _cqEsterValidar(dh) : { ciclo: null };
   if (ester.erro) { showToast(ester.erro, 'error'); return; }
   const ciclo = ester.ciclo;
+  // Ciclo novo pode ser publicado sem testes (preparado): fica em análise até os indicadores
+  if (!realizados.length && !(ciclo && !ciclo.vinculo)) { showToast(_cqLancFrac() && !testes.length ? 'Adicione ao menos um teste à corrida.' : 'Nenhum resultado digitado.', 'error'); return; }
 
   const btn = document.getElementById('cq-l-salvar');
   if (btn) btn.disabled = true;
@@ -1301,21 +1306,32 @@ async function cqLancSalvar() {
     };
     hdr.status = _cqStatusCorrida(hdr);
     if (_cqLancFrac()) hdr.fracionada = true;
-    let txtCiclo = '';
+    let txtCiclo = '', sitCiclo = null;
     if (ciclo) {
       hdr.ciclo = ciclo;
       if (ciclo.vinculo) {
-        // Leitura do indicador biológico: referência cruzada no ciclo de origem
+        // Testes de um ciclo já registrado: referência cruzada no ciclo de origem, que recalcula a situação
         const v = ciclo.vinculo;
-        updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/ciclo/leituras/${ck}`] = { numero, mes, dataHora: dh };
-        updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/trilha/${_cqTk()}`] = _cqTrilhaEntry('edicao', `Leitura de indicador do ciclo ${ciclo.loteCarga} registrada na corrida ${numero}`);
-        txtCiclo = ` · leitura do ciclo ${ciclo.loteCarga} (corrida ${v.numero || v.key})`;
+        const leitura = { numero, mes, dataHora: dh, testes: _cqEsterResumoTestes(testesHdr) };
+        updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/ciclo/leituras/${ck}`] = leitura;
+        updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/trilha/${_cqTk()}`] = _cqTrilhaEntry('edicao', `Testes do ciclo ${ciclo.loteCarga} lançados na corrida ${numero}`);
+        const st = await _cqEsterStatusOrigem(u, v.mes, v.key, o => { o.ciclo.leituras[ck] = leitura; }, `testes da corrida ${numero}`);
+        Object.assign(updates, st.up);
+        if (st.novo) sitCiclo = { lote: ciclo.loteCarga, ...st };
+        txtCiclo = ` · testes do ciclo ${ciclo.loteCarga} (corrida ${v.numero || v.key})`;
       } else {
         updates[`${reservaLote}/numero`] = numero;
-        txtCiclo = ` · ciclo ${ciclo.loteCarga}, ${ciclo.programa.nome}, ${ciclo.pacotes.length} pacote(s)${ciclo.conforme ? '' : ` — parâmetros físicos fora da especificação: ${ciclo.falhas.join('; ')}`}`;
+        // Situação do ciclo novo: em análise sem testes; os testes desta corrida já contam
+        const cc = { ...hdr, key: ck, mes };
+        ciclo.status = _cqEsterCalcStatus(cc);
+        ciclo.statusAss = { ...ass, auto: true, motivo: realizados.length ? `testes da corrida ${numero}` : 'ciclo preparado sem testes' };
+        if (ciclo.status === 'em_analise') updates[`${CQ_KEYS.indices}/${u}/ciclosPendentes/${ck}`] = _cqEsterPendResumo(cc);
+        sitCiclo = { lote: ciclo.loteCarga, novo: ciclo.status, antes: null };
+        txtCiclo = ` · ciclo ${ciclo.loteCarga}, ${ciclo.programa.nome}, ${ciclo.pacotes.length} pacote(s), ${CQ_CICLO_STATUS[ciclo.status].label.toLowerCase()}${ciclo.conforme ? '' : ` — parâmetros físicos fora da especificação: ${ciclo.falhas.join('; ')}`}`;
       }
+      hdr.status = _cqStatusCorrida(hdr);
     }
-    hdr.trilha[_cqTk()] = _cqTrilhaEntry('criacao', `Corrida ${numero} lançada${hdr.fracionada ? ' (fracionada)' : ''}${txtCiclo} — ${resumoTxt.join('; ')}`);
+    hdr.trilha[_cqTk()] = _cqTrilhaEntry('criacao', `Corrida ${numero} lançada${hdr.fracionada ? ' (fracionada)' : ''}${txtCiclo} — ${resumoTxt.join('; ') || 'sem testes'}`);
     updates[`${CQ_KEYS.corridas}/${u}/${mes}/${ck}`] = hdr;
     const pend = _cqResumoPendencia({ ...hdr, key: ck, mes });
     if (pend) updates[`${CQ_KEYS.indices}/${u}/pendentes/${ck}`] = pend;
@@ -1338,9 +1354,12 @@ async function cqLancSalvar() {
     _cqRascunhoLimpar();
     const nRej = realizados.filter(t => testesHdr[t.id].avaliacao.status === 'rejeitado').length;
     const libTxt = prepLibFeitos.size ? ` Preparo ${[...prepLibFeitos.values()].join(', ')} liberado.` : '';
+    const cicloTxt = !sitCiclo ? ''
+      : !realizados.length ? ` Ciclo ${sitCiclo.lote} em análise: lance os indicadores escolhendo este ciclo.`
+      : sitCiclo.novo !== sitCiclo.antes ? ` Ciclo ${sitCiclo.lote}: ${CQ_CICLO_STATUS[sitCiclo.novo].label.toLowerCase()}.` : '';
     const numImp = lanc.ciclo?.etqNumImpresso;
     const numTxt = reservaNum && numImp && numImp !== String(reservaNum.n) ? ` Atenção: o ciclo ficou com nº ${reservaNum.n}; a etiqueta impressa mostra nº ${numImp} — reimprima pela ficha da corrida.` : '';
-    showToast(`Corrida ${numero} salva.${nRej ? ` ${nRej} teste(s) rejeitado(s): avalie e registre a ação corretiva.` : pend ? ' Aguardando avaliação.' : ' Todos os testes liberados.'}${libTxt}${numTxt}`, nRej || numTxt ? 'error' : 'success');
+    showToast(`Corrida ${numero} salva.${nRej ? ` ${nRej} teste(s) rejeitado(s): avalie e registre a ação corretiva.` : pend ? ' Aguardando avaliação.' : ' Todos os testes liberados.'}${cicloTxt}${libTxt}${numTxt}`, nRej || numTxt || sitCiclo?.novo === 'reprovado' ? 'error' : 'success');
     const repet = lanc.repeticaoDe;
     _cqLanc = _cqLancNovo(lanc.grupo);
     if (!repet) _cqLanc.modo = lanc.modo;   // fracionada: próxima corrida começa vazia, no mesmo modo
@@ -1429,8 +1448,16 @@ function _cqCorrRenderLista() {
 }
 
 // ── DETALHE DA CORRIDA ───────────────────────────────────────
+// Aba aberta no detalhe da corrida (mantida ao redesenhar após uma decisão)
+let _cqCorrAba = 'pend';
+function cqCorrAba(k) {
+  _cqCorrAba = k;
+  document.querySelectorAll('.cq-cr-aba').forEach(b => b.classList.toggle('on', b.dataset.k === k));
+  document.querySelectorAll('.cq-cr-lista').forEach(l => { l.hidden = l.dataset.k !== k; });
+}
 async function cqAbrirCorrida(mes, key) {
   const u = _cqUnidadeAtivaId();
+  _cqCorrAba = 'pend';
   _cqCorrAberta = { u, mes, key };
   cqModalOpen({ titulo: 'Corrida', subtitulo: 'Carregando…', corpo: '<div class="cq-vazio-p">Carregando…</div>', icone: 'lista' });
   await _cqCorrRenderDetalhe(true);
@@ -1452,24 +1479,26 @@ async function _cqCorrRenderDetalhe(forcar) {
     const t = cqState.config.testes[tid];
     const ct = c.testes[tid];
     const nome = t ? _cqNomeTeste(t) : 'Teste removido';
-    if (ct.naoRealizado) return `<tr class="cq-g-nr"><td><b>${_cqEsc(nome)}</b></td><td colspan="3" class="cq-muted">Não realizado: ${_cqEsc(ct.motivo)}</td><td></td></tr>`;
+    if (ct.naoRealizado) return `<div class="cq-cr-card nr"><div class="cq-cr-top"><div class="cq-cr-tit"><b>${_cqEsc(nome)}</b><small>Não realizado: ${_cqEsc(ct.motivo)}</small></div><span class="cq-badge cq-st-semalvo">não realizado</span></div></div>`;
     const dec = _cqAnalito(t?.analitoId)?.decimais ?? 2;
     const nivs = Object.entries(ct.niveis || {}).sort(([a], [b]) => a - b).map(([n, rk]) => {
       const r = resPorTeste[tid]?.[rk];
-      if (!r) return `<div class="cq-det-nivel">N${n}: <span class="cq-muted">—</span></div>`;
+      if (!r) return `<div class="cq-cr-nv"><span class="cq-det-n">N${n}</span><div class="cq-cr-nv-txt"><span class="cq-muted">—</span></div></div>`;
       const est = CQ_SIGLA_ESTADO[r.estado] || 'sem_alvo';
       const podeCorr = !r.invalidado && (_cqCan('invalidar') || (c.lancadoPorId === me && !ct.decisao));
       const q = r.obtido !== undefined;
-      return `<div class="cq-det-nivel ${r.invalidado ? 'cq-det-inval' : ''}">
+      return `<div class="cq-cr-nv est-${r.invalidado ? 'inval' : est}${r.invalidado ? ' cq-det-inval' : ''}">
         <span class="cq-det-n" title="${_cqEsc(t ? _cqRotuloNivel(t, n) : '')}">N${n}</span>
-        <b class="${{ aceito: '', alerta: 'cq-txt-amarelo', rejeitado: 'cq-txt-vermelho' }[est] || ''}">${q ? _cqEsc(r.obtido) : _cqNum(r.valor, dec)}</b>
-        ${r.valorOriginal !== undefined ? `<span class="cq-muted" title="Valor original">(orig. ${q ? _cqEsc(r.valorOriginal) : _cqNum(r.valorOriginal, dec)})</span>` : ''}
-        <span class="cq-muted">${q ? `${_cqEsc(t ? _cqRotuloNivel(t, n) : '')} · esperado ${_cqEsc(r.esperado || '—')}`
-          : `z ${r.z === undefined || r.z === null ? '—' : _cqNum(r.z, 2)} · alvo ${r.media !== undefined ? `${_cqNum(r.media, dec)} ± ${_cqNum(r.dp, dec + 1)}` : '—'}`}</span>
-        ${_cqArr(r.regras).length ? `<span class="cq-g-regras">${_cqArr(r.regras).map(x => CQEngine.rotuloRegra(x)).join(', ')}</span>` : ''}
-        ${r.invalidado ? `<span class="cq-badge cq-st-semalvo" title="${_cqEsc(r.invalidacao?.motivo)}">invalidado</span>` : ''}
-        ${r.observacao ? `<span class="cq-badge cq-st-alerta" title="${_cqEsc(r.observacao)}">sem lote</span>` : ''}
-        ${podeCorr ? `<span class="cq-det-acoes"><button class="cq-icobtn" title="Corrigir valor" onclick="cqCorrigirResultado('${tid}','${rk}')">${CQ_ICO.edit}</button>
+        <div class="cq-cr-nv-txt">
+          <div class="cq-cr-nv-val"><b>${q ? _cqEsc(r.obtido) : _cqNum(r.valor, dec)}</b>
+            ${r.valorOriginal !== undefined ? `<span class="cq-muted" title="Valor original">(orig. ${q ? _cqEsc(r.valorOriginal) : _cqNum(r.valorOriginal, dec)})</span>` : ''}
+            ${_cqArr(r.regras).length ? `<span class="cq-g-regras">${_cqArr(r.regras).map(x => CQEngine.rotuloRegra(x)).join(', ')}</span>` : ''}
+            ${r.invalidado ? `<span class="cq-badge cq-st-semalvo" title="${_cqEsc(r.invalidacao?.motivo)}">invalidado</span>` : ''}
+            ${r.observacao ? `<span class="cq-badge cq-st-alerta" title="${_cqEsc(r.observacao)}">sem lote</span>` : ''}</div>
+          <small>${q ? `${_cqEsc(t ? _cqRotuloNivel(t, n) : '')} · esperado ${_cqEsc(r.esperado || '—')}`
+            : `z ${r.z === undefined || r.z === null ? '—' : _cqNum(r.z, 2)} · alvo ${r.media !== undefined ? `${_cqNum(r.media, dec)} ± ${_cqNum(r.dp, dec + 1)}` : '—'}`}</small>
+        </div>
+        ${podeCorr ? `<span class="cq-cr-nv-acoes"><button class="cq-icobtn" title="Corrigir valor" onclick="cqCorrigirResultado('${tid}','${rk}')">${CQ_ICO.edit}</button>
           <button class="cq-icobtn" title="Invalidar resultado" onclick="cqInvalidarResultado('${tid}','${rk}')">${CQ_ICO.ban}</button></span>` : ''}
       </div>`;
     }).join('');
@@ -1478,7 +1507,7 @@ async function _cqCorrRenderDetalhe(forcar) {
     let decisaoHTML = '';
     if (ct.decisao) {
       const d = ct.decisao;
-      decisaoHTML = `${_cqBadge(CQ_DECISAO, d.acao)}<div class="cq-muted">${_cqEsc(d.porNome)} · ${_cqFmtDH(d.em)}${d.auto ? ' · automática' : ''}</div>${d.comentario && !d.auto ? `<div class="cq-det-com">“${_cqEsc(d.comentario)}”</div>` : ''}
+      decisaoHTML = `<div class="cq-cr-dec-linha">${_cqBadge(CQ_DECISAO, d.acao)}<span class="cq-muted">${_cqEsc(_cqPvNome(d.porNome))} · ${_cqFmtDH(d.em)}${d.auto ? ' · automática' : ''}</span></div>${d.comentario && !d.auto ? `<div class="cq-det-com">“${_cqEsc(d.comentario)}”</div>` : ''}
         ${ct.ncId ? `<a href="#" class="cq-link" onclick="cqAbrirNC('${ctx.u}','${_cqEsc(ct.ncAno || ctx.mes.slice(0, 4))}','${ct.ncId}');return false;">${CQ_ICO.alerta} Não conformidade</a>` : ''}
         ${d.acao === 'rejeitado' && _cqCan('lancar') ? `<button class="btn btn-outline btn-sm" style="margin-top:4px;" onclick="cqRepetirControle('${ctx.mes}','${ctx.key}','${tid}')">${CQ_ICO.repeat} Repetir controle</button>` : ''}`;
     } else if (podeLib) {
@@ -1494,30 +1523,55 @@ async function _cqCorrRenderDetalhe(forcar) {
     const prepLr = ct.prep && insLr ? _cqPreparo(insLr, ct.prep) : null;
     const ins = [ct.lr ? (t && _cqTesteQual(t) ? `${insLr?.nome || 'Insumo'} lote ${insLr?.lote || '?'}` : `Reag. ${insLr?.lote || '?'}`) + (prepLr ? ` · preparo ${_cqPrepTxt(prepLr)}` : '') : '',
                  ct.lk ? `Cal. ${cqState.config.insumos[ct.lk]?.lote || '?'}` : ''].filter(Boolean);
-    return `<tr><td><b>${_cqEsc(nome)}</b><div class="cq-muted">${_cqEsc(_cqAnalito(t?.analitoId)?.unidadeMedida || '')}${ins.length ? ' · ' + _cqEsc(ins.join(' · ')) : ''}</div>
-        ${extras.length ? `<div class="cq-txt-amarelo" style="font-size:11px;">${_cqEsc(extras.join(' · '))}</div>` : ''}
-        ${ct.observacao ? `<div class="cq-txt-amarelo" style="font-size:11px;">Obs.: ${_cqEsc(ct.observacao)}</div>` : ''}
-        ${t ? `<a href="#" class="cq-link" onclick="cqModalClose();cqAbrirGrafico('${tid}');return false;">${CQ_ICO.grafico} gráfico</a>` : ''}</td>
-      <td>${nivs}</td><td>${_cqBadge(CQ_STATUS, av.status || 'sem_alvo')}${viol}</td><td>${decisaoHTML}</td></tr>`;
-  }).join('');
+    const um = _cqAnalito(t?.analitoId)?.unidadeMedida || '';
+    return `<div class="cq-cr-card st-${av.status || 'sem_alvo'}">
+      <div class="cq-cr-top">
+        <div class="cq-cr-tit"><b>${_cqEsc(nome)}</b>${um || ins.length ? `<small>${_cqEsc([um, ...ins].filter(Boolean).join(' · '))}</small>` : ''}</div>
+        ${_cqBadge(CQ_STATUS, av.status || 'sem_alvo')}
+      </div>
+      ${extras.length || ct.observacao ? `<div class="cq-cr-avisos">${extras.map(x => `<span>${_cqEsc(x)}</span>`).join('')}${ct.observacao ? `<span>Obs.: ${_cqEsc(ct.observacao)}</span>` : ''}</div>` : ''}
+      <div class="cq-cr-niveis">${nivs}</div>
+      ${viol ? `<div class="cq-cr-viol">${viol}</div>` : ''}
+      <div class="cq-cr-pe"><div class="cq-cr-dec">${decisaoHTML}</div>
+        ${t ? `<button type="button" class="cq-cr-graf" title="Abrir o gráfico de controle" onclick="cqModalClose();cqAbrirGrafico('${tid}')">${CQ_ICO.grafico} Gráfico</button>` : ''}</div>
+    </div>`;
+  });
+  // Abas: pendentes (sem decisão), liberados e rejeitados; não realizados ficam numa aba própria
+  const grupoDe = tid => { const ct = c.testes[tid]; return ct.naoRealizado ? 'nr' : !ct.decisao ? 'pend' : ct.decisao.acao === 'rejeitado' ? 'rej' : 'lib'; };
+  const grupos = [['pend', 'Pendentes'], ['lib', 'Liberados'], ['rej', 'Rejeitados'], ['nr', 'Não realizados']]
+    .map(([k, rot]) => ({ k, rot, itens: testesIds.map((tid, i) => grupoDe(tid) === k ? linhas[i] : null).filter(Boolean) }))
+    .filter(g => g.itens.length || g.k !== 'nr');
+  if (!grupos.some(g => g.k === _cqCorrAba && g.itens.length)) _cqCorrAba = (grupos.find(g => g.itens.length) || grupos[0]).k;
+  const vazioAba = { pend: 'Nenhum teste aguardando avaliação.', lib: 'Nenhum teste liberado.', rej: 'Nenhum teste rejeitado.' };
   const flags = [c.fracionada ? 'Corrida fracionada' : '', c.flags?.posManutPrev ? 'Após manutenção preventiva' : '', c.flags?.posManutCorr ? 'Após manutenção corretiva' : '', c.flags?.reinicioEquip ? 'Após reinício' : '',
                  c.flags?.verificacao ? 'Verificação (equipamento em pausa)' : '', c.flags?.otRef && !c.flags?.otId ? `Ref.: ${c.flags.otRef}` : ''].filter(Boolean);
   const aceitosPend = testesIds.filter(tid => !c.testes[tid].naoRealizado && !c.testes[tid].decisao && c.testes[tid].avaliacao?.status === 'aceito');
   document.getElementById('cq-modal-title').textContent = `Corrida ${c.numero}`;
   document.getElementById('cq-modal-sub').textContent = `${c.ativoSnap?.nome || c.sistemaAnalitico || ''} · ${_cqFmtDH(c.dataHora)}`;
   document.getElementById('cq-modal-body').innerHTML = `
-    <div class="cq-det-head">
-      <div><span class="cq-muted">Situação</span>${_cqBadge(CQ_CORRIDA_STATUS, st)}</div>
-      <div><span class="cq-muted">Executado por</span><b>${_cqEsc(c.operadorNome)}</b></div>
-      <div><span class="cq-muted">Lançado por</span><b>${_cqEsc(c.lancadoPorNome)}</b><span class="cq-muted">${_cqFmtDH(c.lancadoEm)} · ${_cqEsc(c.estacao || '')}</span></div>
-      ${c.retroativo ? `<div><span class="cq-muted">Retroativo</span><b>${_cqEsc(c.retroativo.justificativa)}</b></div>` : ''}
-      ${c.observacao ? `<div><span class="cq-muted">Observação</span><b class="cq-txt-amarelo">${_cqEsc(c.observacao)}</b></div>` : ''}
-      ${c.repeticaoDe ? `<div><span class="cq-muted">Repetição de</span><a href="#" onclick="cqAbrirCorrida('${CQEngine.mesDe(c.repeticaoDe)}','${c.repeticaoDe}');return false;">${_cqEsc(c.repeticaoDe)}</a></div>` : ''}
+    <div class="cq-cr-head">
+      <div class="cq-cr-resumo">
+        ${_cqBadge(CQ_CORRIDA_STATUS, st)}
+        <span class="cq-cr-cont">${(() => {
+          const sts = testesIds.map(tid => c.testes[tid]).filter(x => !x.naoRealizado).map(x => x.avaliacao?.status || 'sem_alvo');
+          const n = k => sts.filter(x => x === k).length;
+          return [`<b>${testesIds.length}</b> teste${testesIds.length === 1 ? '' : 's'}`, n('aceito') && `<i class="ok"></i>${n('aceito')} aceito${n('aceito') === 1 ? '' : 's'}`,
+            n('alerta') && `<i class="al"></i>${n('alerta')} em alerta`, n('rejeitado') && `<i class="rj"></i>${n('rejeitado')} rejeitado${n('rejeitado') === 1 ? '' : 's'}`].filter(Boolean).join('<span class="cq-cr-sep"></span>');
+        })()}</span>
+      </div>
+      <div class="cq-cr-pessoas">
+        <div><small>Executado por</small><b>${_cqEsc(c.operadorNome)}</b></div>
+        <div><small>Lançado por</small><b>${_cqEsc(c.lancadoPorNome)}</b><span>${_cqFmtDH(c.lancadoEm)}${c.estacao ? ` · ${_cqEsc(c.estacao)}` : ''}</span></div>
+        ${c.repeticaoDe ? `<div><small>Repetição de</small><a href="#" class="cq-link" onclick="cqAbrirCorrida('${CQEngine.mesDe(c.repeticaoDe)}','${c.repeticaoDe}');return false;">${_cqEsc(c.repeticaoDe)}</a></div>` : ''}
+      </div>
+      ${c.retroativo ? `<div class="cq-cr-nota"><b>Retroativo:</b> ${_cqEsc(c.retroativo.justificativa)}</div>` : ''}
+      ${c.observacao ? `<div class="cq-cr-nota al"><b>Observação:</b> ${_cqEsc(c.observacao)}</div>` : ''}
     </div>
     ${flags.length || c.flags?.otId ? `<div class="cq-det-flags">${flags.map(f => `<span class="cq-tag">${_cqEsc(f)}</span>`).join('')}${c.flags?.otId ? `<a href="#" class="cq-tag cq-tag-ot" title="Abrir a ordem de trabalho" onclick="${typeof otOpenView === 'function' ? `cqModalClose();setTimeout(()=>otOpenView('${_cqEsc(c.flags.otId)}'),60)` : ''};return false;">OT ${_cqEsc(c.flags.otRef || '')}</a>` : ''}</div>` : ''}
     ${typeof _cqEsterDetalheHTML === 'function' ? _cqEsterDetalheHTML(c) : ''}
-    <div class="oc-table-scroll"><table class="ot-list-table cq-table cq-det-tbl"><thead><tr><th class="ot-list-th">Teste</th><th class="ot-list-th">Resultados</th><th class="ot-list-th">Avaliação</th><th class="ot-list-th">Decisão</th></tr></thead><tbody>${linhas}</tbody></table></div>
-    <details class="cq-det-trilha"><summary>Rastreabilidade da corrida</summary>${_cqTrilhaHTML(c)}</details>`;
+    <div class="cq-cr-abas" role="tablist">${grupos.map(g => `<button type="button" role="tab" class="cq-cr-aba ${g.k}${g.k === _cqCorrAba ? ' on' : ''}" data-k="${g.k}" onclick="cqCorrAba('${g.k}')">${g.rot}<span>${g.itens.length}</span></button>`).join('')}</div>
+    ${grupos.map(g => `<div class="cq-cr-lista" data-k="${g.k}" ${g.k === _cqCorrAba ? '' : 'hidden'}>${g.itens.join('') || `<div class="cq-cr-vazio">${vazioAba[g.k] || ''}</div>`}</div>`).join('')}
+    <details class="cq-det-trilha cq-cr-trilha"><summary>Rastreabilidade da corrida <span class="cq-step-qtd">${_cqTrilhaLista(c).length}</span></summary>${_cqTrilhaHTML(c)}</details>`;
   document.getElementById('cq-modal-foot').innerHTML = `
     <div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="btn btn-outline" onclick="cqImprimirCorrida()">${CQ_ICO.print} Imprimir</button>${_cqCorrBtnExcluir(c)}</div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -1605,6 +1659,20 @@ async function _cqAplicarDecisao(ctx, testeId, acao, comentario, opts = {}) {
     updates[`${pb}/situacao`] = sit;
     updates[`${pb}/avaliacao`] = { numero: c.numero, corridaKey: ctx.key, mes: ctx.mes, acao, ..._cqAssinatura() };
     updates[`${CQ_KEYS.config}/insumos/${ct.lr}/trilha/${_cqTk()}`] = _cqTrilhaEntry('edicao', `Preparo de ${_cqFmtData(prepP.data)} ${sit === 'liberado' ? 'liberado' : 'reprovado'} pela decisão da corrida ${c.numero}`);
+  }
+
+  // Ciclo de esterilização: a decisão pode liberar ou reprovar o ciclo
+  if (c.ciclo && typeof _cqEsterStatusUpdates === 'function') {
+    if (c.ciclo.vinculo) {
+      const v = c.ciclo.vinculo, est = _cqEsterEstadoTeste(ct);
+      updates[`${CQ_KEYS.corridas}/${ctx.u}/${v.mes}/${v.key}/ciclo/leituras/${ctx.key}/testes/${testeId}`] = est;
+      Object.assign(updates, (await _cqEsterStatusOrigem(ctx.u, v.mes, v.key, o => {
+        const l = o.ciclo.leituras[ctx.key] = { ...(o.ciclo.leituras[ctx.key] || { numero: c.numero, mes: ctx.mes, dataHora: c.dataHora }) };
+        l.testes = { ...(l.testes || {}), [testeId]: est };
+      }, `decisão na corrida ${c.numero}`)).up);
+    } else {
+      Object.assign(updates, _cqEsterStatusUpdates(ctx.u, c, `decisão na corrida ${c.numero}`).up);
+    }
   }
 
   let ncNumero = null;
@@ -1933,7 +2001,7 @@ async function _cqCorrExcluirGravar(ctx, motivo) {
   if (!_cqCorrPodeExcluir(c)) { showToast('Sem permissão ou prazo de exclusão encerrado.', 'error'); return true; }
   const ass = _cqAssinatura();
   const base = `${CQ_KEYS.corridas}/${u}/${mes}/${key}`;
-  const updates = { [base]: null, [`${CQ_KEYS.indices}/${u}/pendentes/${key}`]: null };
+  const updates = { [base]: null, [`${CQ_KEYS.indices}/${u}/pendentes/${key}`]: null, [`${CQ_KEYS.indices}/${u}/ciclosPendentes/${key}`]: null };
   Object.entries(resultados).forEach(([tid, rks]) => Object.keys(rks).forEach(rk => { updates[`${CQ_KEYS.resultados}/${u}/${mes}/${tid}/${rk}`] = null; }));
 
   // Última corrida de cada teste: volta para a anterior (até 3 meses)
@@ -1986,7 +2054,8 @@ async function _cqCorrExcluirGravar(ctx, motivo) {
   if (c.ciclo?.vinculo) {
     const v = c.ciclo.vinculo;
     updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/ciclo/leituras/${key}`] = null;
-    updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/trilha/${_cqTk()}`] = _cqTrilhaEntry('exclusao', `Leitura do indicador da corrida ${c.numero} removida (corrida excluída): ${motivo}`);
+    updates[`${CQ_KEYS.corridas}/${u}/${v.mes}/${v.key}/trilha/${_cqTk()}`] = _cqTrilhaEntry('exclusao', `Testes da corrida ${c.numero} removidos do ciclo (corrida excluída): ${motivo}`);
+    if (typeof _cqEsterStatusOrigem === 'function') Object.assign(updates, (await _cqEsterStatusOrigem(u, v.mes, v.key, o => { delete o.ciclo.leituras[key]; }, `corrida ${c.numero} excluída`)).up);
   }
   updates[`${CQ_KEYS.exclusoes}/${_cqTk()}`] = {
     colecao: 'corridas', id: key, unidadeId: u, mes, numero: c.numero, motivo,

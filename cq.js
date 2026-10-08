@@ -77,6 +77,7 @@ const CQ_CORRIDA_STATUS = {
   liberada:  { label: 'Liberada',             cls: 'cq-st-aceito' },
   parcial:   { label: 'Parcialmente liberada', cls: 'cq-st-alerta' },
   rejeitada: { label: 'Rejeitada',            cls: 'cq-st-rejeitado' },
+  em_analise: { label: 'Ciclo em análise',    cls: 'cq-st-pendente' },
 };
 const CQ_DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const CQ_FUSOS = {
@@ -590,22 +591,25 @@ document.addEventListener('mousedown', e => {
 // ── LISTA DE ITENS (adicionar, remover, ordenar) ─────────────
 // Campo de cadastro de itens de texto: cada item numa linha, "Adicionar" (ou Enter) inclui, × remove,
 // setas reordenam (`ordenavel`). `travados`: itens em uso que não podem sair. `sugestoes`: itens já
-// cadastrados (ex.: na unidade) oferecidos como atalho, filtrados pelo texto digitado.
+// cadastrados (ex.: na unidade) num popover que abre ao focar o campo e filtra pelo texto digitado.
 // O estado fica em _cqItens; _cqItensVal lê a lista.
 const _cqItens = {};
 const _cqItensChave = s => _cqNormBusca(String(s || '').trim().replace(/\s+/g, ' '));
 function _cqItensHTML(id, itens, opts = {}) {
   const vistos = new Set();
   const lista = _cqArr(itens).map(x => String(x).trim()).filter(x => x && !vistos.has(_cqItensChave(x)) && vistos.add(_cqItensChave(x)));
-  _cqItens[id] = { ...opts, itens: lista, travados: new Set(_cqArr(opts.travados).map(_cqItensChave)), sugestoes: _cqArr(opts.sugestoes) };
+  _cqItens[id] = { ...opts, itens: lista, travados: new Set(_cqArr(opts.travados).map(_cqItensChave)), sugestoes: _cqArr(opts.sugestoes), ativo: -1, vis: [] };
   const m = _cqItens[id];
+  const sug = m.sugestoes.length;
   return `<div class="cq-itens${m.disabled ? ' cq-itens-off' : ''}" id="${id}">
     <div class="cq-itens-lista" id="${id}-lista">${_cqItensListaHTML(id)}</div>
     ${m.disabled ? '' : `<div class="cq-itens-add">
-      <input type="text" class="field-input" id="${id}-in" maxlength="${m.max || 80}" placeholder="${_cqEsc(m.placeholder || 'Novo item')}" autocomplete="off"
-        oninput="_cqItensSugAtualizar('${id}')" onkeydown="if(event.key==='Enter'){event.preventDefault();cqItensAdicionar('${id}')}">
-      <button type="button" class="btn btn-primary btn-sm" onclick="cqItensAdicionar('${id}')">${CQ_ICO.plus} Adicionar</button></div>
-    <div class="cq-itens-sug" id="${id}-sug">${_cqItensSugHTML(id)}</div>`}
+      <div class="cq-itens-in">
+        <input type="text" class="field-input" id="${id}-in" maxlength="${m.max || 80}" placeholder="${_cqEsc(m.placeholder || 'Novo item')}${sug ? ' — ou escolha um já cadastrado' : ''}" autocomplete="off"
+          ${sug ? `onfocus="cqItensPopAbrir('${id}')" onclick="cqItensPopAbrir('${id}')" oninput="cqItensPopAbrir('${id}')" onblur="cqItensPopFechar('${id}')"` : ''} onkeydown="cqItensTecla(event,'${id}')">
+        ${sug ? `<div class="cq-ms-pop cq-itens-pop" id="${id}-pop" style="display:none;" onmousedown="event.preventDefault()"></div>` : ''}
+      </div>
+      <button type="button" class="btn btn-primary btn-sm" onclick="cqItensAdicionar('${id}')">${CQ_ICO.plus} Adicionar</button></div>`}
   </div>`;
 }
 function _cqItensVal(id) { return [...(_cqItens[id]?.itens || [])]; }
@@ -626,17 +630,57 @@ function _cqItensListaHTML(id) {
     </div>`;
   }).join('');
 }
-function _cqItensSugHTML(id) {
+// Popover de sugestões: itens ainda fora da lista, filtrados pelo texto (sem acentos, por termos)
+function _cqItensPopHTML(id) {
   const m = _cqItens[id];
-  if (!m.sugestoes.length) return '';
   const ja = new Set(m.itens.map(_cqItensChave));
-  const q = _cqItensChave(document.getElementById(id + '-in')?.value || '');
+  const termos = _cqItensChave(document.getElementById(id + '-in')?.value || '').split(' ').filter(Boolean);
   const livres = m.sugestoes.filter(s => !ja.has(_cqItensChave(s)));
-  const lista = livres.filter(s => !q || _cqItensChave(s).includes(q));
   if (!livres.length) return '';
-  return `<div class="cq-itens-sug-tit">${_cqEsc(m.sugestoesRotulo || 'Já cadastrados')}</div>
-    <div class="cq-itens-chips">${lista.slice(0, 24).map(s => `<button type="button" class="cq-itens-chip" title="Adicionar" onclick="cqItensAdicionarSug('${id}',${m.sugestoes.indexOf(s)})">${CQ_ICO.plus}<span>${_cqEsc(s)}</span></button>`).join('')
-      || '<span class="cq-muted">Nenhum já cadastrado corresponde ao texto digitado.</span>'}${lista.length > 24 ? `<span class="cq-muted">+${lista.length - 24} — digite para filtrar</span>` : ''}</div>`;
+  m.vis = livres.filter(s => { const k = _cqItensChave(s); return termos.every(t => k.includes(t)); });
+  if (m.ativo >= m.vis.length) m.ativo = -1;
+  const realce = s => typeof _cqPickRealce === 'function' ? _cqPickRealce(s, termos[0]) : _cqEsc(s);
+  const lista = m.vis.map((s, i) => `<div class="cq-ms-op cq-pick-op${i === m.ativo ? ' ativo' : ''}" role="option" data-i="${i}"
+      onclick="cqItensSugEscolher('${id}',${i})" onmousemove="cqItensSugHover('${id}',${i})">${CQ_ICO.plus}<span class="cq-ms-op-txt"><span>${realce(s)}</span></span></div>`).join('')
+    || '<div class="cq-ms-vazio">Nenhum já cadastrado corresponde. <b>Enter</b> adiciona o texto digitado.</div>';
+  return `<div class="cq-ms-grupo">${_cqEsc(m.sugestoesRotulo || 'Já cadastrados')}</div>
+    <div class="cq-ms-lista" role="listbox">${lista}</div>
+    <div class="cq-pick-rodape"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> adicionar</span><span><kbd>Esc</kbd> fechar</span></div>`;
+}
+function cqItensPopAbrir(id) {
+  const m = _cqItens[id], pop = document.getElementById(id + '-pop');
+  if (!m || m.disabled || !pop) return;
+  m.ativo = -1;
+  const html = _cqItensPopHTML(id);
+  pop.innerHTML = html;
+  pop.style.display = html ? '' : 'none';
+}
+function cqItensPopFechar(id) {
+  const pop = document.getElementById(id + '-pop');
+  if (pop) pop.style.display = 'none';
+  if (_cqItens[id]) _cqItens[id].ativo = -1;
+}
+function cqItensSugHover(id, i, rolar) {
+  const m = _cqItens[id];
+  if (!m) return;
+  m.ativo = i;
+  document.querySelectorAll(`#${id}-pop .cq-pick-op`).forEach(el => el.classList.toggle('ativo', Number(el.dataset.i) === i));
+  if (rolar) document.querySelector(`#${id}-pop .cq-pick-op[data-i="${i}"]`)?.scrollIntoView({ block: 'nearest' });
+}
+function cqItensSugEscolher(id, i) { const s = _cqItens[id]?.vis[i]; if (s !== undefined) cqItensAdicionar(id, s); }
+// Enter: sugestão destacada (setas) ou o texto digitado; Esc fecha o popover
+function cqItensTecla(e, id) {
+  const m = _cqItens[id], pop = document.getElementById(id + '-pop');
+  const aberto = !!pop && pop.style.display !== 'none';
+  if (e.key === 'Enter') { e.preventDefault(); if (aberto && m.vis[m.ativo] !== undefined) cqItensSugEscolher(id, m.ativo); else cqItensAdicionar(id); return; }
+  if (e.key === 'Escape' && aberto) { e.preventDefault(); e.stopPropagation(); cqItensPopFechar(id); return; }
+  if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+  if (!aberto) cqItensPopAbrir(id);
+  const n = m.vis.length;
+  if (!n || !pop || pop.style.display === 'none') return;
+  e.preventDefault();
+  const d = e.key === 'ArrowDown' ? 1 : -1;
+  cqItensSugHover(id, m.ativo < 0 ? (d > 0 ? 0 : n - 1) : (m.ativo + d + n) % n, true);
 }
 function _cqItensAtualizar(id) {
   const l = document.getElementById(id + '-lista');
@@ -645,8 +689,8 @@ function _cqItensAtualizar(id) {
   if (typeof _cqItens[id]?.onchange === 'function') _cqItens[id].onchange(_cqItensVal(id));
 }
 function _cqItensSugAtualizar(id) {
-  const s = document.getElementById(id + '-sug');
-  if (s && _cqItens[id]) s.innerHTML = _cqItensSugHTML(id);
+  const pop = document.getElementById(id + '-pop');
+  if (pop && pop.style.display !== 'none') cqItensPopAbrir(id);   // lista mudou: atualiza o popover aberto
 }
 function cqItensAdicionar(id, valor) {
   const m = _cqItens[id];
@@ -660,7 +704,6 @@ function cqItensAdicionar(id, valor) {
   _cqItensAtualizar(id);
   inp?.focus();
 }
-function cqItensAdicionarSug(id, idx) { const s = _cqItens[id]?.sugestoes[idx]; if (s !== undefined) cqItensAdicionar(id, s); }
 function cqItensRemover(id, idx) {
   const m = _cqItens[id];
   if (!m || m.disabled || m.travados.has(_cqItensChave(m.itens[idx]))) return;
@@ -1540,6 +1583,7 @@ function _cqRenderPainel(body) {
   const testes = _cqTestesDoFiltro(u);
   const pend = Object.entries(idx.pendentes || {}).map(([k, p]) => ({ key: k, ...p })).filter(p => _cqRegistroPassaSetor(p, fSetor)).sort((a, b) => (a.dataHora || '').localeCompare(b.dataHora || ''));
   const ncs = Object.entries(idx.ncAbertas || {}).map(([k, n]) => ({ id: k, ...n })).filter(n => !fSetor || !n.testeId || _cqTestePassaSetor(cqState.config.testes[n.testeId], fSetor));
+  const ciclosPend = Object.entries(idx.ciclosPendentes || {}).map(([k, p]) => ({ key: k, ...p })).filter(p => _cqRegistroPassaSetor(p, fSetor)).sort((a, b) => (a.dataHora || '').localeCompare(b.dataHora || ''));
   const vencendo = _cqLotesVencendo(u, 30, testes);
   const semHoje = testes.filter(t => _cqTesteSemCQHoje(t, ultimo[t.id], un));
   const provisorios = [];
@@ -1626,6 +1670,12 @@ function _cqRenderPainel(body) {
       ${cards ? equipamentos + preparos : preparos + equipamentos}
     </div>
     <div class="cq-painel-side">
+      ${ciclosPend.length ? `<div class="cq-card"><div class="cq-card-tit">${CQ_ICO.clock} Ciclos de esterilização em análise</div>
+        ${ciclosPend.slice(0, 8).map(p => `<div class="cq-pend-item" onclick="cqAbrirCorrida('${p.mes || CQEngine.mesDe(p.key)}','${p.key}')">
+          <span class="cq-dot cq-dot-amarelo"></span>
+          <div style="flex:1;min-width:0;"><div class="cq-pend-tit">${_cqEsc(p.lote || p.numero || p.key)} · ${_cqEsc(p.equipNome || '')}</div>
+          <div class="cq-pend-sub">${_cqFmtDH(p.dataHora)}${p.programa ? ' · ' + _cqEsc(p.programa) : ''} · ${_cqArr(p.faltam).length ? 'aguardando ' + _cqEsc(_cqArr(p.faltam).join(', ')) : 'aguardando indicadores'}</div></div></div>`).join('')}
+        ${ciclosPend.length > 8 ? `<div class="cq-muted" style="font-size:12px;">+${ciclosPend.length - 8} ciclo(s)</div>` : ''}</div>` : ''}
       <div class="cq-card"><div class="cq-card-tit">Aguardando avaliação</div>${listaPend || '<div class="cq-vazio-p">Nenhuma corrida pendente.</div>'}
         ${pend.length > 8 ? `<a href="#" class="cq-link" onclick="cqNav('corridas');return false;">Ver todas (${pend.length})</a>` : ''}</div>
       <div class="cq-card"><div class="cq-card-tit">Lotes e frascos</div>${listaVenc || '<div class="cq-vazio-p">Nenhum vencimento nos próximos 30 dias.</div>'}</div>
@@ -2675,7 +2725,7 @@ async function cqReconstruirIndices() {
   const mesAtual = CQEngine.mesDe(_cqNowLocal());
   const meses = CQEngine.mesesAnteriores(mesAtual, 12);
   const corridas = (await Promise.all(meses.map(m => cqCarregarCorridasMes(u, m)))).flatMap(o => Object.values(o));
-  const idx = { ultimo: {}, pendentes: {}, ncAbertas: {} };
+  const idx = { ultimo: {}, pendentes: {}, ncAbertas: {}, ciclosPendentes: {} };
   corridas.sort((a, b) => a.key.localeCompare(b.key)).forEach(c => {
     Object.entries(c.testes || {}).forEach(([t, ct]) => {
       if (ct.naoRealizado) return;
@@ -2684,6 +2734,7 @@ async function cqReconstruirIndices() {
     });
     const p = _cqResumoPendencia(c);
     if (p) idx.pendentes[c.key] = p;
+    if (c.ciclo && !c.ciclo.vinculo && c.ciclo.status === 'em_analise' && typeof _cqEsterPendResumo === 'function') idx.ciclosPendentes[c.key] = _cqEsterPendResumo(c);
   });
   const ano = Number(mesAtual.slice(0, 4));
   for (const a of [ano, ano - 1]) {
@@ -2758,6 +2809,8 @@ function _cqResumoPendencia(c) {
 
 function _cqStatusCorrida(c) {
   const ts = Object.values(c.testes || {}).filter(ct => !ct.naoRealizado);
+  // Ciclo de esterilização publicado sem testes: segue a situação do ciclo
+  if (!ts.length && c.ciclo && !c.ciclo.vinculo && c.ciclo.status) return { em_analise: 'em_analise', reprovado: 'rejeitada' }[c.ciclo.status] || 'liberada';
   if (!ts.length) return 'liberada';
   if (ts.some(ct => !ct.decisao)) return 'pendente';
   const acoes = ts.map(ct => ct.decisao.acao);

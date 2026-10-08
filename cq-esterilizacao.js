@@ -11,7 +11,8 @@
 
 const CQ_UN_PRESSAO = ['kgf/cm²', 'bar', 'kPa', 'MPa', 'psi'];
 const CQ_ESTER_DIAS_VINCULO = 10;     // ciclos oferecidos para a leitura do indicador biológico
-const CQ_ESTER_INCUB_HORAS = 2;       // bula do indicador biológico: incubar até 2 h após o ciclo
+const CQ_ESTER_INCUB_HORAS = 2;       // bula do indicador biológico: incubar até 2 h após o ciclo (padrão da configuração)
+const CQ_ESTER_INCUB_TEMP = [55, 60]; // faixa usual da incubadora para indicador de vapor (padrão da configuração)
 let _cqEsterDraft = null;
 const CQ_ICO_ESTER_CFG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>';             // configuração em edição { u, grupoKey, nome, programas: [] }
 
@@ -71,18 +72,136 @@ function _cqEsterAplicar(r, falhas) {
   return { ...r, statusIndicadores: r.statusIndicadores || r.status, status: 'rejeitado', violacoes: [..._cqArr(r.violacoes).filter(x => x.regra !== 'FIS_ESP'), v] };
 }
 
+// ── SITUAÇÃO DO CICLO ────────────────────────────────────────
+// O ciclo pode ser publicado sem testes (preparado) e fica Em análise. Os indicadores lançados na
+// própria corrida ou em corridas vinculadas definem a situação: Conforme quando os testes exigidos
+// pelo programa estão aprovados (sem exigidos: todos os lançados aprovados), Reprovado com qualquer
+// teste reprovado ou parâmetro físico fora da especificação. Calculada sempre, nunca digitada.
+const CQ_CICLO_STATUS = {
+  em_analise: { label: 'Em análise', cls: 'cq-st-pendente' },
+  liberado:   { label: 'Conforme',   cls: 'cq-st-aceito' },
+  reprovado:  { label: 'Reprovado',  cls: 'cq-st-rejeitado' },
+};
+// Estado final de um teste: A aprovado (liberado, com ou sem justificativa), R reprovado, P aguardando decisão
+function _cqEsterEstadoTeste(ct) {
+  if (!ct || ct.naoRealizado) return null;
+  if (!ct.decisao) return 'P';
+  return ct.decisao.acao === 'rejeitado' ? 'R' : 'A';
+}
+function _cqEsterResumoTestes(testes) {
+  const out = {};
+  Object.entries(testes || {}).forEach(([tid, ct]) => { const e = _cqEsterEstadoTeste(ct); if (e) out[tid] = e; });
+  return out;
+}
+// Estados de cada teste no ciclo: os da corrida do ciclo + os das corridas vinculadas (leituras)
+function _cqEsterEstadosCiclo(c) {
+  const est = {};
+  const add = (tid, e) => { (est[tid] = est[tid] || []).push(e); };
+  Object.entries(_cqEsterResumoTestes(c.testes)).forEach(([t, e]) => add(t, e));
+  Object.values(c.ciclo?.leituras || {}).forEach(l => Object.entries(l?.testes || {}).forEach(([t, e]) => add(t, e)));
+  return est;
+}
+function _cqEsterCalcStatus(c) {
+  const ci = c.ciclo;
+  if (ci.conforme === false) return 'reprovado';
+  const est = _cqEsterEstadosCiclo(c);
+  const todos = Object.values(est).flat();
+  if (todos.includes('R')) return 'reprovado';
+  const exig = _cqArr(ci.testesExigidos).map(x => x.id);
+  if (exig.length) return exig.every(t => (est[t] || []).includes('A')) ? 'liberado' : 'em_analise';
+  return todos.length && !todos.includes('P') ? 'liberado' : 'em_analise';
+}
+// Testes do equipamento cujo analito libera o ciclo (Cadastros › Analitos › Analito de autoclave)
+function _cqEsterExigidosEquip(testes) {
+  return _cqArr(testes).filter(t => { const a = _cqAnalito(t.analitoId); return !!a?.indicadorEster && !!a.liberaCiclo; })
+    .map(t => ({ id: t.id, nome: _cqNomeTeste(t) }));
+}
+// Testes exigidos ainda sem aprovação (para o painel e o detalhe)
+function _cqEsterFaltam(c) {
+  const est = _cqEsterEstadosCiclo(c);
+  return _cqArr(c.ciclo?.testesExigidos).filter(x => !(est[x.id] || []).includes('A')).map(x => x.nome);
+}
+// Resumo gravado no índice dos ciclos em análise (painel e seletor do lançamento)
+function _cqEsterPendResumo(c) {
+  const ci = c.ciclo;
+  return { numero: c.numero || null, mes: c.mes, dataHora: c.dataHora, lote: ci.loteCarga, programa: ci.programa?.nome || '',
+           equipNome: c.ativoSnap?.nome || c.sistemaAnalitico || '', grupo: _cqEsterGrupoDaCorrida(c), setorIds: _cqArr(c.setorIds),
+           validade: ci.validade?.data || null, faltam: _cqEsterFaltam(c) };
+}
+// Atualizações da situação de um ciclo já gravado (c = corrida do ciclo com as mudanças aplicadas)
+function _cqEsterStatusUpdates(u, c, motivo) {
+  const ci = c.ciclo;
+  const antes = ci.status || null;
+  const novo = _cqEsterCalcStatus(c);
+  const base = `${CQ_KEYS.corridas}/${u}/${c.mes}/${c.key}`;
+  const c2 = { ...c, ciclo: { ...ci, status: novo } };
+  const up = { [`${CQ_KEYS.indices}/${u}/ciclosPendentes/${c.key}`]: novo === 'em_analise' ? _cqEsterPendResumo(c2) : null };
+  if (novo !== antes) {
+    up[`${base}/ciclo/status`] = novo;
+    up[`${base}/ciclo/statusAss`] = { ..._cqAssinatura(), auto: true, motivo };
+    up[`${base}/status`] = _cqStatusCorrida(c2);
+    up[`${base}/trilha/${_cqTk()}cs`] = _cqTrilhaEntry('edicao', `Ciclo ${ci.loteCarga}: ${CQ_CICLO_STATUS[antes]?.label || 'sem situação'} → ${CQ_CICLO_STATUS[novo].label} (${motivo})`);
+  }
+  return { up, novo, antes };
+}
+// Recalcula a situação do ciclo de origem lido do banco; ajuste(c) aplica a mudança ainda não gravada
+async function _cqEsterStatusOrigem(u, mes, key, ajuste, motivo) {
+  let raw = null;
+  try { raw = await window.dbGet(`${CQ_KEYS.corridas}/${u}/${mes}/${key}`); } catch (e) { raw = null; }
+  if (!raw?.ciclo || raw.ciclo.vinculo) return { up: {} };
+  const c = { ...raw, key, mes, ciclo: { ...raw.ciclo, leituras: { ...(raw.ciclo.leituras || {}) } } };
+  ajuste?.(c);
+  return _cqEsterStatusUpdates(u, c, motivo);
+}
+function _cqEsterStBadge(ci) {
+  const st = ci?.status || (ci?.conforme === false ? 'reprovado' : '');
+  return st ? `<span class="cq-badge ${CQ_CICLO_STATUS[st].cls}">${CQ_CICLO_STATUS[st].label}</span>` : '<span class="cq-badge cq-st-semalvo">registrado</span>';
+}
+
 function _cqEsterGrupoDaCorrida(c) { return c.ativoId ? 'a:' + c.ativoId : 'm:' + (c.sistemaAnalitico || 'Bancada / manual'); }
 function _cqEsterMs(dh) {
   const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(dh || ''));
   return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : null;
 }
+// Data/hora do ciclo: informada na ficha (dataHoraCiclo); corridas antigas usam a da corrida
+function _cqEsterDHC(o) { return o?.ciclo?.dataHoraCiclo || o?.dataHora || ''; }
+// Ciclo novo em lançamento: campo da ficha, pré-preenchido com a data/hora da corrida
+function _cqEsterDHCicloLanc() {
+  const s = _cqLanc?.ciclo;
+  return (s?.dhCiclo || (typeof _cqVal === 'function' && _cqVal('cq-l-dh')) || _cqLanc?.dataHora || _cqNowLocal()).slice(0, 16);
+}
 function _cqEsterHoras(de, ate) { const a = _cqEsterMs(de), b = _cqEsterMs(ate); return a === null || b === null ? null : (b - a) / 3600000; }
 function _cqEsterPacotes(txt) {
   return String(txt || '').split(/\r?\n/).map(s => s.trim().slice(0, 120)).filter(Boolean).slice(0, 200);
 }
+// Incubação do indicador biológico (bula do produto): prazo após o ciclo e faixa de temperatura da
+// incubadora, cadastrados no analito (Cadastros › Analitos). Sem cadastro: padrões; faixa vazia = sem conferência
+function _cqEsterIncubCfg(an) {
+  const ib = an?.incubacao;
+  return {
+    horas: Number(ib?.horas) > 0 ? Number(ib.horas) : CQ_ESTER_INCUB_HORAS,
+    tmin: ib ? ib.tmin ?? null : CQ_ESTER_INCUB_TEMP[0],
+    tmax: ib ? ib.tmax ?? null : CQ_ESTER_INCUB_TEMP[1],
+  };
+}
+// Analito do teste biológico que recebe a incubação na corrida em lançamento
+function _cqEsterIncubAn() {
+  const tid = _cqEsterIncubAlvo();
+  return tid ? _cqAnalito(cqState.config.testes[tid]?.analitoId) : null;
+}
+function _cqEsterTempForaFaixa(ib, v) { return ib.tmin != null && Number.isFinite(v) && (v < ib.tmin || v > ib.tmax); }
+// Teste de indicador biológico: analito marcado como "de autoclave", tipo biológico (Cadastros › Analitos)
+function _cqEsterEhBiologico(t) {
+  return (t ? _cqAnalito(t.analitoId) : null)?.indicadorEster === 'biologico';
+}
+// A corrida em lançamento tem indicador biológico realizado?
+function _cqEsterLancTemBI() {
+  return typeof _cqLancTestes === 'function' && !!_cqLanc && _cqLancTestes().some(t => !_cqLanc.linhas[t.id]?.nr && _cqEsterEhBiologico(t));
+}
+
 // Equipamento com testes de indicadores de esterilização (sugere ativar a ficha)
 function _cqEsterTemIndicadores(testes) {
-  return testes.some(t => { const a = _cqAnalito(t.analitoId); return /^EST-/i.test(a?.codigo || '') || /esteriliz|autoclave|integrador|indicador biol|bowie/i.test(a?.nome || ''); });
+  return testes.some(t => !!_cqAnalito(t.analitoId)?.indicadorEster);
 }
 
 // ── FORMULÁRIO DE CONFIGURAÇÃO ───────────────────────────────
@@ -100,7 +219,8 @@ function cqEsterConfigForm(u, grupoKey) {
   const g = _cqGruposLanc(u).find(x => x.key === grupoKey);
   const cfg = _cqEsterCfgRaw(u, grupoKey);
   const nome = g?.nome || String(grupoKey || '').replace(/^[am]:/, '');
-  _cqEsterDraft = { u, grupoKey, nome, programas: _cqEsterProgramas(cfg).map(p => ({ ...p, tempMax: p.tempMax ?? '', pressaoMax: p.pressaoMax ?? '', validadeAtiva: p.validadeAtiva !== false, validadeDias: p.validadeDias ?? '' })) };
+  _cqEsterDraft = { u, grupoKey, nome, programas: _cqEsterProgramas(cfg).map(p => ({ ...p, tempMax: p.tempMax ?? '', pressaoMax: p.pressaoMax ?? '', validadeAtiva: p.validadeAtiva !== false, validadeDias: p.validadeDias ?? '' })),
+    testes: (g?.testes || []).map(t => ({ id: t.id, nome: _cqNomeTeste(t) })).sort((a, b) => a.nome.localeCompare(b.nome)) };
   if (!_cqEsterDraft.programas.length) _cqEsterDraft.programas.push(_cqEsterProgNovo());
   const prefixo = cfg?.prefixo || String(g?.ativo?.codigo || '').trim().toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 12) || 'AC';
   const loteModo = cfg?.loteModo === 'auto' ? 'auto' : 'manual', cicloModo = cfg?.cicloModo === 'auto' ? 'auto' : 'manual';
@@ -144,7 +264,14 @@ function cqEsterConfigForm(u, grupoKey) {
       </div>
       <div class="form-field"><label class="field-label">Programas do equipamento — especificação do fabricante para a fase de esterilização <span class="required">*</span></label>
         <div id="cq-es-progs">${_cqEsterProgsHTML()}</div>
-        <button type="button" class="btn btn-outline btn-sm" onclick="cqEsterProgAdd()">${CQ_ICO.plus} Adicionar programa</button></div>`,
+        <button type="button" class="btn btn-outline btn-sm" onclick="cqEsterProgAdd()">${CQ_ICO.plus} Adicionar programa</button></div>
+      ${(() => {
+        const exig = _cqEsterExigidosEquip(g?.testes);
+        return `<div class="cq-nota">${CQ_ICO.info} ${exig.length
+          ? `Liberam o ciclo: <b>${exig.map(x => _cqEsc(x.nome)).join(', ')}</b> — o ciclo fica em análise até serem aprovados.`
+          : 'Nenhum analito deste equipamento marcado para liberar o ciclo: fica conforme quando todos os testes lançados forem aprovados.'}
+          Defina em Cadastros › Analitos › Analito de autoclave. Qualquer teste reprovado reprova o ciclo.</div>`;
+      })()}`,
     confirmar: 'Salvar',
     onConfirm: cqEsterConfigSalvar,
   });
@@ -239,7 +366,8 @@ async function cqEsterConfigSalvar() {
   if (!_cqPodeGravar()) return false;
   const k = _cqChaveModoEquip(d.grupoKey);
   const antes = _cqEsterCfgRaw(d.u, d.grupoKey);
-  const rec = { ativo, prefixo, unPressao, loteModo, cicloModo, programas, equipNome: d.nome, atualizadoEm: _cqAgora(), atualizadoPor: _cqAssinatura() };
+  const rec = { ativo, prefixo, unPressao, loteModo, cicloModo,
+    programas, equipNome: d.nome, atualizadoEm: _cqAgora(), atualizadoPor: _cqAssinatura() };
   const txtAntes = antes ? _cqEsterResumoCfg(antes) : 'não configurada', txtDepois = _cqEsterResumoCfg(rec);
   if (antes && txtAntes === txtDepois && prox === null) return true;
   const C = CQ_KEYS.config;
@@ -286,7 +414,7 @@ function _cqEsterAtualizarResumosUnidade() {
 // ── FICHA NO LANÇAMENTO ──────────────────────────────────────
 function _cqEsterLancCfg() { return _cqLanc?.grupo ? _cqEsterCfg(_cqLanc.u, _cqLanc.grupo) : null; }
 function _cqEsterVazio(programaId) {
-  return { modo: 'novo', programaId: programaId || '', lote: '', numEquip: '', temp: '', tempo: '', pressao: '', pacotes: '', vinc: '', incubIni: '', incubTemp: '' };
+  return { modo: '', programaId: programaId || '', lote: '', numEquip: '', temp: '', tempo: '', pressao: '', pacotes: '', vinc: '', incubIni: '', incubTemp: '', dhCiclo: '' };
 }
 function _cqEsterEstado() {
   if (!_cqLanc.ciclo) _cqLanc.ciclo = _cqEsterVazio();
@@ -313,12 +441,21 @@ function _cqEsterLancHTML() {
   const progs = _cqEsterProgramas(cfg);
   if (!progs.some(p => p.id === s.programaId)) s.programaId = progs.length === 1 ? progs[0].id : '';
   const cfgBtn = _cqCan('configurar') ? `<button type="button" class="btn btn-outline btn-sm cq-ester-cfg" data-k="${_cqEsc(_cqLanc.grupo)}" title="Programas, lote da carga e nº do ciclo deste equipamento" onclick="cqEsterConfigForm('${_cqLanc.u}', this.dataset.k)">${CQ_ICO_ESTER_CFG} Configurar programas</button>` : '';
+  if (s.recentes === undefined) _cqEsterCarregarRecentes();
+  // Padrão: o ciclo pendente (em análise) mais recente; sem pendentes, um ciclo novo
+  if (!s.modo && s.recentes !== undefined && !s.carregando) _cqEsterModoPadrao(s);
   const head = `<div class="cq-ester-head"><span class="cq-ester-tit">${CQ_ICO.clock} Ciclo de esterilização</span>
-      <div class="cq-seg">${[['novo', 'Novo ciclo'], ['vinculado', 'Leitura de ciclo já registrado']].map(([k, l]) => `<button type="button" class="${s.modo === k ? 'active' : ''}" onclick="cqEsterModo('${k}')">${l}</button>`).join('')}</div>
       <span class="cq-muted">RDC 1002/2025, art. 91</span>
       <span class="cq-ester-acoes">${cfgBtn}${s.modo === 'novo' ? _cqEsterEtqBtnHTML() : ''}</span></div>`;
-  if (s.modo === 'vinculado') return `<div class="cq-ester" id="cq-l-ester">${head}${_cqEsterVincHTML(s)}</div>`;
+  if (!s.modo) return `<div class="cq-ester" id="cq-l-ester">${head}<div class="cq-vazio-p">Carregando ciclos deste equipamento…</div></div>`;
+  const topo = `<div class="cq-esv-topo">
+      <div class="form-field cq-esv-campo"><label class="field-label">Ciclo <span class="required">*</span></label>${_cqEsterSeletorHTML(s)}</div>
+      ${s.modo === 'vinculado' ? _cqEsterVincResumoHTML(s)
+        : `<div class="cq-esv-resumo vazio">${CQ_ICO.info}<span>Ciclo novo: preencha a ficha abaixo. Pode publicar <b>sem testes</b> — o ciclo fica <b>em análise</b> até os indicadores serem aprovados.</span></div>`}
+    </div>`;
+  if (s.modo === 'vinculado') return `<div class="cq-ester" id="cq-l-ester">${head}${topo}</div>`;
   const p = progs.find(x => x.id === s.programaId);
+  if (!s.dhCiclo) s.dhCiclo = _cqEsterDHCicloLanc();
   const campoNum = (c, rot, esp) => `<div class="form-field"><label class="field-label">${rot} <span class="required">*</span></label>
       <input type="text" inputmode="decimal" class="field-input" id="cq-es-${c}" value="${_cqEsc(s[c])}" oninput="cqEsterCampo('${c}',this.value)" autocomplete="off">
       <span class="cq-ester-esp">${p ? 'Especificação: ' + _cqEsc(esp) : 'Escolha o programa'}</span></div>`;
@@ -334,7 +471,7 @@ function _cqEsterLancHTML() {
   const campoNumCiclo = numAuto
     ? `<span id="cq-es-numauto">${travado(s.numPrevisto ? `nº ${_cqEsc(s.numPrevisto)}` : '<span class="cq-muted">…</span>', 'Contador do sistema: confirmado ao publicar a corrida')}</span>`
     : `<input type="text" class="field-input" maxlength="20" value="${_cqEsc(s.numEquip)}" oninput="cqEsterCampo('numEquip',this.value)" placeholder="Contador do display/impressão" autocomplete="off">`;
-  return `<div class="cq-ester" id="cq-l-ester">${head}
+  return `<div class="cq-ester" id="cq-l-ester">${head}${topo}
     <div class="cq-ester-grid">
       <div class="form-field"><label class="field-label">Programa <span class="required">*</span></label>
         <select class="field-select" onchange="cqEsterProg(this.value)"><option value="">— Selecione —</option>${progs.map(x => `<option value="${x.id}" ${x.id === s.programaId ? 'selected' : ''}>${_cqEsc(x.nome)}</option>`).join('')}</select>
@@ -348,6 +485,9 @@ function _cqEsterLancHTML() {
       ${_cqEsterValCampoHTML(s, p)}
     </div>
     <div class="cq-ester-grid">
+      <div class="form-field"><label class="field-label">Data/hora do ciclo <span class="required">*</span></label>
+        <input type="datetime-local" class="field-input" id="cq-es-dhciclo" value="${_cqEsc(s.dhCiclo)}" onchange="cqEsterCampo('dhCiclo',this.value,true)">
+        <span class="cq-ester-esp">Início do ciclo na autoclave</span></div>
       ${campoNum('temp', 'Temperatura de esterilização (°C)', _cqEsterEspTxt(p, 'temp', cfg.unPressao))}
       ${campoNum('tempo', 'Tempo de esterilização (min)', _cqEsterEspTxt(p, 'tempo', cfg.unPressao))}
       ${campoNum('pressao', `Pressão (${_cqEsc(cfg.unPressao || 'kgf/cm²')})`, _cqEsterEspTxt(p, 'pressao', cfg.unPressao))}
@@ -359,65 +499,157 @@ function _cqEsterLancHTML() {
 }
 
 // Leitura do indicador biológico: escolhe o ciclo já registrado (outra corrida) deste equipamento
-function _cqEsterVincHTML(s) {
-  if (s.recentes === undefined) { _cqEsterCarregarRecentes(); return '<div class="cq-vazio-p">Carregando ciclos registrados…</div>'; }
-  if (s.carregando) return '<div class="cq-vazio-p">Carregando ciclos registrados…</div>';
+// Ciclos do seletor: em análise (sem limite de tempo) e os demais dos últimos dias
+function _cqEsterCiclosLista(s) {
   const dh = _cqLanc.dataHora || _cqNowLocal();
-  const lista = s.recentes.filter(r => r.dataHora <= dh && (_cqEsterHoras(r.dataHora, dh) ?? 0) <= CQ_ESTER_DIAS_VINCULO * 24);
-  const o = lista.find(r => `${r.mes}|${r.key}` === s.vinc);
+  const todos = _cqArr(s.recentes).filter(r => r.dataHora <= dh);
+  return {
+    pend: todos.filter(r => r.ciclo.status === 'em_analise'),
+    outros: todos.filter(r => r.ciclo.status !== 'em_analise' && (_cqEsterHoras(r.dataHora, dh) ?? 0) <= CQ_ESTER_DIAS_VINCULO * 24),
+  };
+}
+function _cqEsterModoPadrao(s) {
+  const { pend } = _cqEsterCiclosLista(s);
+  if (pend.length) { s.modo = 'vinculado'; s.vinc = `${pend[0].mes}|${pend[0].key}`; } else s.modo = 'novo';
+}
+function _cqEsterCicloSel(s) {
+  if (s.modo !== 'vinculado') return null;
+  const { pend, outros } = _cqEsterCiclosLista(s);
+  const o = [...pend, ...outros].find(r => `${r.mes}|${r.key}` === s.vinc) || null;
   if (s.vinc && !o) s.vinc = '';
-  const atraso = o && s.incubIni ? _cqEsterHoras(o.dataHora, s.incubIni) : null;
-  // Há quanto tempo o ciclo rodou (em relação à data/hora desta corrida)
+  return o;
+}
+function _cqEsterSeletorHTML(s) {
+  const dh = _cqLanc.dataHora || _cqNowLocal();
+  const { pend, outros } = _cqEsterCiclosLista(s);
+  const novo = s.modo === 'novo';
+  const o = _cqEsterCicloSel(s);
   const ha = r => {
     const h = _cqEsterHoras(r.dataHora, dh);
     return h === null ? '' : h < 1 ? 'há menos de 1 h' : h < 48 ? `há ${Math.round(h)} h` : `há ${Math.round(h / 24)} dias`;
   };
-  const conforme = r => r.ciclo.conforme !== false;
-  const itens = lista.map(r => {
+  const dot = r => ({ em_analise: 'pend', reprovado: 'fora' }[r.ciclo.status] || (r.ciclo.conforme === false ? 'fora' : 'ok'));
+  const item = r => {
     const v = `${r.mes}|${r.key}`;
-    const busca = `${r.ciclo.loteCarga} ${r.ciclo.programa?.nome || ''} ${r.numero} ${_cqFmtDH(r.dataHora)}`.toLowerCase();
-    return `<button type="button" role="option" aria-selected="${v === s.vinc}" class="cq-esv-item${v === s.vinc ? ' sel' : ''}" data-busca="${_cqEsc(busca)}" onclick="cqEsterVinc('${_cqEsc(v)}')">
-        <span class="cq-esv-dot ${conforme(r) ? 'ok' : 'fora'}"></span>
-        <span class="cq-esv-item-txt"><b>${_cqEsc(r.ciclo.loteCarga)}</b><small>${_cqFmtDH(r.dataHora)} · ${_cqEsc(r.ciclo.programa?.nome || '—')}</small></span>
-        <span class="cq-esv-item-dir">${conforme(r) ? '<span class="cq-badge cq-st-aceito">conforme</span>' : '<span class="cq-badge cq-st-rejeitado">fora da especificação</span>'}
-          <small>corrida ${_cqEsc(r.numero)} · ${ha(r)}</small></span>
+    const busca = `${r.ciclo.loteCarga} ${r.ciclo.programa?.nome || ''} ${r.numero} ${_cqFmtDH(_cqEsterDHC(r))}`.toLowerCase();
+    return `<button type="button" role="option" aria-selected="${v === s.vinc && !novo}" class="cq-esv-item${v === s.vinc && !novo ? ' sel' : ''}" data-busca="${_cqEsc(busca)}" onclick="cqEsterVinc('${_cqEsc(v)}')">
+        <span class="cq-esv-dot ${dot(r)}"></span>
+        <span class="cq-esv-item-txt"><b>${_cqEsc(r.ciclo.loteCarga)}</b><small>${_cqFmtDH(_cqEsterDHC(r))} · ${_cqEsc(r.ciclo.programa?.nome || '—')}</small></span>
+        <span class="cq-esv-item-dir">${_cqEsterStBadge(r.ciclo)}<small>corrida ${_cqEsc(r.numero)} · ${ha(r)}</small></span>
       </button>`;
-  }).join('');
-  const pop = `<div class="cq-esv-pop" id="cq-esv-pop" role="listbox" aria-label="Ciclos registrados">
-      <div class="cq-esv-pop-head"><b>Ciclos dos últimos ${CQ_ESTER_DIAS_VINCULO} dias</b><span>${lista.length}</span></div>
-      ${lista.length > 5 ? `<div class="cq-esv-busca">${CQ_ICO.busca}<input type="text" placeholder="Buscar lote, programa ou corrida" oninput="cqEsterVincBuscar(this.value)" autocomplete="off"></div>` : ''}
-      <div class="cq-esv-lista">${itens || '<div class="cq-esv-vazio">Nenhum ciclo registrado</div>'}<div class="cq-esv-vazio" id="cq-esv-semres" hidden>Nenhum ciclo encontrado</div></div>
+  };
+  const grupo = (tit, lista) => (lista.length ? `<div class="cq-esv-grupo">${tit}</div>${lista.map(item).join('')}` : '');
+  const n = pend.length + outros.length;
+  const pop = `<div class="cq-esv-pop" id="cq-esv-pop" role="listbox" aria-label="Ciclos deste equipamento">
+      <div class="cq-esv-pop-head"><b>Ciclos deste equipamento</b><span>${n}</span></div>
+      ${n > 5 ? `<div class="cq-esv-busca">${CQ_ICO.busca}<input type="text" placeholder="Buscar lote, programa ou corrida" oninput="cqEsterVincBuscar(this.value)" autocomplete="off"></div>` : ''}
+      <div class="cq-esv-lista">
+        <button type="button" class="cq-esv-item cq-esv-item-novo${novo ? ' sel' : ''}" onclick="cqEsterNovoCiclo()">
+          <span class="cq-esv-novo-ico">${CQ_ICO.plus}</span>
+          <span class="cq-esv-item-txt"><b>Novo ciclo</b><small>Preencher a ficha de um ciclo novo</small></span></button>
+        ${grupo(`Em análise · ${pend.length}`, pend)}
+        ${grupo(`Conformes e reprovados · últimos ${CQ_ESTER_DIAS_VINCULO} dias`, outros)}
+        <div class="cq-esv-vazio" id="cq-esv-semres" hidden>Nenhum ciclo encontrado</div>
+      </div>
     </div>`;
-  const botao = `<button type="button" class="cq-esv-btn${o ? '' : ' vazio'}" id="cq-esv-btn" aria-haspopup="listbox" aria-expanded="false" onclick="cqEsterVincPop()" ${lista.length ? '' : 'disabled'}>
-      <span class="cq-esv-btn-ico">${CQ_ICO.clock}</span>
-      <span class="cq-esv-btn-txt">${o
-        ? `<b>${_cqEsc(o.ciclo.loteCarga)}</b><small>${_cqFmtDH(o.dataHora)} · corrida ${_cqEsc(o.numero)}</small>`
-        : `<b>${lista.length ? 'Selecione o ciclo' : 'Nenhum ciclo disponível'}</b><small>${lista.length ? `${lista.length} ciclo(s) nos últimos ${CQ_ESTER_DIAS_VINCULO} dias` : `Sem ciclos deste equipamento nos últimos ${CQ_ESTER_DIAS_VINCULO} dias antes da corrida`}</small>`}</span>
+  const botao = `<button type="button" class="cq-esv-btn${novo ? ' novo' : o ? '' : ' vazio'}" id="cq-esv-btn" aria-haspopup="listbox" aria-expanded="false" onclick="cqEsterVincPop()">
+      <span class="cq-esv-btn-ico">${novo ? CQ_ICO.plus : CQ_ICO.clock}</span>
+      <span class="cq-esv-btn-txt">${novo
+        ? `<b>Novo ciclo</b><small>Ficha abaixo · registrado ao publicar a corrida</small>`
+        : o ? `<b>${_cqEsc(o.ciclo.loteCarga)} ${_cqEsterStBadge(o.ciclo)}</b><small>${_cqFmtDH(_cqEsterDHC(o))} · corrida ${_cqEsc(o.numero)}</small>`
+        : `<b>Selecione o ciclo</b><small>${pend.length} em análise · ${outros.length} recente(s)</small>`}</span>
       <svg class="cq-esv-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
     </button>`;
+  return `<div class="cq-esv-linha"><div class="cq-esv-wrap" id="cq-esv-wrap">${botao}${pop}</div>
+    ${novo ? '' : `<button type="button" class="btn btn-outline cq-esv-novo" onclick="cqEsterNovoCiclo()" title="Registrar um ciclo novo">${CQ_ICO.plus} Novo ciclo</button>`}</div>`;
+}
+// Ciclo escolhido: resumo ao lado do seletor
+function _cqEsterVincResumoHTML(s) {
+  const o = _cqEsterCicloSel(s);
+  if (!o) return `<div class="cq-esv-resumo vazio">${CQ_ICO.info}<span>Escolha o ciclo: os testes desta corrida entram nele e definem se fica conforme.</span></div>`;
   const fato = (rot, val) => `<div class="cq-esv-fato"><span>${rot}</span><b>${val}</b></div>`;
-  const resumo = o
-    ? `<div class="cq-esv-resumo">
-        ${fato('Programa', _cqEsc(o.ciclo.programa?.nome || '—'))}
-        ${fato('Operador', _cqEsc(o.operadorNome || '—'))}
-        ${fato('Parâmetros', `${_cqEsterN(o.ciclo.temperatura)} °C · ${_cqEsterN(o.ciclo.tempo)} min · ${_cqEsterN(o.ciclo.pressao)} ${_cqEsc(o.ciclo.programa?.unPressao || '')}`)}
-        ${fato('Pacotes', String(_cqArr(o.ciclo.pacotes).length))}
-        <div class="cq-esv-fato"><span>Situação</span>${conforme(o) ? '<span class="cq-badge cq-st-aceito">conforme</span>' : '<span class="cq-badge cq-st-rejeitado">fora da especificação</span>'}</div>
-      </div>`
-    : `<div class="cq-esv-resumo vazio">${CQ_ICO.info}<span>Escolha o ciclo: lote, programa, parâmetros e pacotes vêm da corrida em que ele foi registrado.</span></div>`;
-  return `<div class="cq-esv-topo">
-      <div class="form-field cq-esv-campo"><label class="field-label">Ciclo <span class="required">*</span></label>
-        <div class="cq-esv-wrap" id="cq-esv-wrap">${botao}${pop}</div></div>
-      ${resumo}
-    </div>
-    ${o ? `<div class="cq-ester-grid">
-        <div class="form-field"><label class="field-label">Início da incubação</label>
-          <input type="datetime-local" class="field-input" value="${_cqEsc(s.incubIni)}" min="${_cqEsc(o.dataHora)}" max="${_cqEsc(dh)}" onchange="cqEsterCampo('incubIni',this.value,true)">
-          <span class="cq-ester-esp ${atraso !== null && atraso > CQ_ESTER_INCUB_HORAS ? 'cq-txt-vermelho' : ''}">${atraso !== null ? `${_cqEsterN(Math.round(atraso * 10) / 10)} h após o ciclo${atraso > CQ_ESTER_INCUB_HORAS ? ` — a bula pede até ${CQ_ESTER_INCUB_HORAS} h` : ''}` : `Bula: até ${CQ_ESTER_INCUB_HORAS} h após o ciclo`}</span></div>
-        <div class="form-field"><label class="field-label">Temperatura da incubadora (°C)</label>
-          <input type="text" inputmode="decimal" class="field-input" value="${_cqEsc(s.incubTemp)}" oninput="cqEsterCampo('incubTemp',this.value)" placeholder="Ex.: 57" autocomplete="off">
-          <span class="cq-ester-esp">Faixa da bula do indicador (ex.: 55 a 60 °C)</span></div>
-      </div>` : ''}`;
+  const faltam = o.ciclo.status === 'em_analise' ? _cqEsterFaltam({ ...o, testes: o.testes }) : [];
+  return `<div class="cq-esv-resumo">
+      ${fato('Programa', _cqEsc(o.ciclo.programa?.nome || '—'))}
+      ${fato('Operador', _cqEsc(o.operadorNome || '—'))}
+      ${fato('Parâmetros', `${_cqEsterN(o.ciclo.temperatura)} °C · ${_cqEsterN(o.ciclo.tempo)} min · ${_cqEsterN(o.ciclo.pressao)} ${_cqEsc(o.ciclo.programa?.unPressao || '')}`)}
+      ${fato('Pacotes', String(_cqArr(o.ciclo.pacotes).length))}
+      ${faltam.length ? fato('Aguardando', _cqEsc(faltam.join(', '))) : ''}
+      <div class="cq-esv-fato"><span>Situação</span>${_cqEsterStBadge(o.ciclo)}</div>
+    </div>`;
+}
+// Incubação do indicador biológico: fica na linha do próprio teste biológico da grade (o primeiro
+// realizado), no ciclo novo (preenchido de uma vez) e na leitura de um ciclo já registrado.
+// Os dados ficam no ciclo da corrida (ciclo.incubacao).
+// Data/hora do ciclo a que a incubação se refere ('' = sem ciclo definido)
+function _cqEsterIncubRef(s) {
+  if (s?.modo === 'novo') return _cqEsterDHCicloLanc();
+  const o = s ? _cqEsterCicloSel(s) : null;
+  return o ? _cqEsterDHC(o) : '';
+}
+function _cqEsterIncubAlvo() {
+  const s = _cqLanc?.ciclo;
+  if (!s || !_cqEsterIncubRef(s) || typeof _cqLancTestes !== 'function') return null;
+  return _cqLancTestes().find(t => !_cqLanc.linhas[t.id]?.nr && _cqEsterEhBiologico(t))?.id || null;
+}
+// Chave do conteúdo: muda com o ciclo escolhido ou a data/hora do ciclo (redesenha a incubação)
+function _cqEsterIncubChave(s) { return `${s.modo}|${s.vinc || ''}|${_cqEsterIncubRef(s)}`; }
+// Espaço na célula do teste (cq-lancamento.js); preenchido só no teste alvo
+function _cqEsterIncubSlotHTML(t) {
+  if (!_cqLanc?.ciclo || !_cqEsterEhBiologico(t)) return '';
+  const k = _cqEsterIncubAlvo() === t.id ? _cqEsterIncubChave(_cqLanc.ciclo) : '';
+  return `<div class="cq-g-incub" data-t="${t.id}" data-k="${_cqEsc(k)}">${k ? _cqEsterIncubHTML(_cqLanc.ciclo) : ''}</div>`;
+}
+function _cqEsterIncubHTML(s) {
+  const ref = _cqEsterIncubRef(s);
+  if (!ref) return '';
+  const ib = _cqEsterIncubCfg(_cqEsterIncubAn());
+  const dh = _cqLanc.dataHora || _cqNowLocal();
+  const atraso = s.incubIni ? _cqEsterHoras(ref, s.incubIni) : null;
+  const tarde = atraso !== null && atraso > ib.horas;
+  return `<div class="cq-g-incub-tit">${CQ_ICO.beaker} Incubação</div>
+    <div class="cq-g-incub-campos">
+      <label class="cq-g-incub-f"><span>Início</span>
+        <input type="datetime-local" class="field-input${tarde ? ' cq-es-fora' : ''}" value="${_cqEsc(s.incubIni)}" min="${_cqEsc(ref)}" max="${_cqEsc(dh)}" onchange="cqEsterIncubIni(this.value)">
+        <small class="${tarde ? 'cq-txt-vermelho' : ''}">${atraso !== null ? `${_cqEsterN(Math.round(atraso * 10) / 10)} h após o ciclo${tarde ? ` — bula: até ${_cqEsterN(ib.horas)} h` : ''}` : `Até ${_cqEsterN(ib.horas)} h após o ciclo (bula)`}</small></label>
+      <label class="cq-g-incub-f cq-g-incub-t"><span>Incubadora</span>
+        <span class="cq-g-incub-un"><input type="text" inputmode="decimal" class="field-input" id="cq-es-incubtemp" value="${_cqEsc(s.incubTemp)}" oninput="cqEsterIncubTemp(this.value)" placeholder="57" autocomplete="off"><i>°C</i></span>
+        <small id="cq-es-incubtemp-esp">${_cqEsterIncubTempTxt(s, ib)}</small></label>
+    </div>`;
+}
+function _cqEsterIncubTempTxt(s, ib) {
+  const v = String(s.incubTemp || '').trim() ? _cqEsterNum(s.incubTemp) : null;
+  const faixa = ib.tmin != null ? `${_cqEsterN(ib.tmin)} a ${_cqEsterN(ib.tmax)} °C` : '';
+  if (String(s.incubTemp || '').trim() && v === null) return '<span class="cq-txt-vermelho">Valor inválido</span>';
+  if (_cqEsterTempForaFaixa(ib, v)) return `<span class="cq-txt-vermelho">Fora da bula (${faixa})</span>`;
+  return faixa ? `Bula: ${faixa}` : 'Faixa não configurada';
+}
+function cqEsterIncubTemp(v) {
+  const s = _cqEsterEstado();
+  s.incubTemp = v;
+  _cqRascunhoSalvar();
+  const ib = _cqEsterIncubCfg(_cqEsterIncubAn());
+  const n = String(v || '').trim() ? _cqEsterNum(v) : null;
+  document.getElementById('cq-es-incubtemp')?.classList.toggle('cq-es-fora', (String(v || '').trim() && n === null) || _cqEsterTempForaFaixa(ib, n));
+  const esp = document.getElementById('cq-es-incubtemp-esp');
+  if (esp) esp.innerHTML = _cqEsterIncubTempTxt(s, ib);
+}
+function cqEsterIncubIni(v) {
+  if (!_cqLanc?.ciclo) return;
+  _cqLanc.ciclo.incubIni = v;
+  _cqRascunhoSalvar();
+  _cqEsterIncubSync(true);
+}
+// Testes ou ciclo escolhido mudaram: leva a incubação para o teste biológico certo
+function _cqEsterIncubSync(forcar) {
+  if (!_cqLanc?.ciclo) return;
+  const alvo = _cqEsterIncubAlvo(), k = alvo ? _cqEsterIncubChave(_cqLanc.ciclo) : '';
+  document.querySelectorAll('.cq-g-incub').forEach(el => {
+    const kk = el.dataset.t === alvo ? k : '';
+    if (!forcar && el.dataset.k === kk) return;   // não redesenha a cada tecla
+    el.dataset.k = kk;
+    el.innerHTML = kk ? _cqEsterIncubHTML(_cqLanc.ciclo) : '';
+  });
 }
 
 // Popover dos ciclos registrados
@@ -443,7 +675,8 @@ function cqEsterVincPop() {
 function cqEsterVincBuscar(q) {
   const t = String(q || '').trim().toLowerCase();
   let n = 0;
-  document.querySelectorAll('#cq-esv-pop .cq-esv-item').forEach(b => { const ok = !t || b.dataset.busca.includes(t); b.hidden = !ok; if (ok) n++; });
+  document.querySelectorAll('#cq-esv-pop .cq-esv-item[data-busca]').forEach(b => { const ok = !t || b.dataset.busca.includes(t); b.hidden = !ok; if (ok) n++; });
+  document.querySelectorAll('#cq-esv-pop .cq-esv-grupo').forEach(g => { g.hidden = !!t; });
   const sem = document.getElementById('cq-esv-semres');
   if (sem) sem.hidden = n > 0;
 }
@@ -456,17 +689,24 @@ async function _cqEsterCarregarRecentes() {
   try {
     const meses = CQEngine.mesesAnteriores(CQEngine.mesDe(_cqNowLocal()), 2);
     const corridas = (await Promise.all(meses.map(m => cqCarregarCorridasMes(lanc.u, m)))).flatMap(o => Object.values(o));
+    // Ciclos em análise mais antigos que a janela carregada (índice dos pendentes)
+    const faltam = Object.entries((cqState.indices[lanc.u] || {}).ciclosPendentes || {})
+      .filter(([k, p]) => p?.grupo === lanc.grupo && !corridas.some(c => c.key === k));
+    corridas.push(...(await Promise.all(faltam.map(([k, p]) => cqCarregarCorrida(lanc.u, p.mes || CQEngine.mesDe(k), k)))).filter(Boolean));
     s.recentes = corridas.filter(c => c.ciclo?.loteCarga && !c.ciclo.vinculo && _cqEsterGrupoDaCorrida(c) === lanc.grupo)
       .sort((a, b) => (b.dataHora || '').localeCompare(a.dataHora || '')).slice(0, 80)
-      .map(c => ({ key: c.key, mes: c.mes, numero: c.numero, dataHora: c.dataHora, operadorNome: c.operadorNome || '', ciclo: c.ciclo }));
+      .map(c => ({ key: c.key, mes: c.mes, numero: c.numero, dataHora: c.dataHora, operadorNome: c.operadorNome || '', ciclo: c.ciclo, testes: c.testes || {} }));
   } catch (e) {
     console.error('[cq] ciclos de esterilização', e);
     s.recentes = [];
   }
   s.carregando = false;
   if (_cqLanc !== lanc) return;
-  if (s.modo === 'vinculado') _cqEsterRedesenhar();
-  else if (document.getElementById('cq-es-pac-pop')?.classList.contains('open')) cqEsterPacSug();
+  if (!s.modo || s.modo === 'vinculado') { _cqEsterRedesenhar(); return; }
+  // Novo ciclo: atualiza só o seletor (não tira o foco da ficha)
+  const sel = document.querySelector('#cq-l-ester .cq-esv-linha');
+  if (sel) sel.outerHTML = _cqEsterSeletorHTML(s);
+  if (document.getElementById('cq-es-pac-pop')?.classList.contains('open')) cqEsterPacSug();
 }
 
 // Dica quando o equipamento tem indicadores mas a ficha não foi ativada
@@ -515,9 +755,11 @@ function _cqEsterAtualizar() {
   if (typeof _cqGradeAtualizarTudo === 'function' && document.getElementById('cq-grade')) _cqGradeAtualizarTudo();
 }
 
-function cqEsterModo(m) {
-  if (!_cqLanc || !['novo', 'vinculado'].includes(m)) return;
-  _cqEsterEstado().modo = m;
+function cqEsterNovoCiclo() {
+  if (!_cqLanc) return;
+  const s = _cqEsterEstado();
+  s.modo = 'novo';
+  s.vinc = '';
   _cqRascunhoSalvar();
   _cqEsterRedesenhar();
 }
@@ -539,8 +781,7 @@ function _cqEsterValEstado(s, p) {
 function _cqEsterValDataTxt(s, p) {
   const v = _cqEsterValEstado(s, p);
   if (!v.ativa) return 'Sem validade na etiqueta';
-  const dh = (typeof _cqVal === 'function' && _cqVal('cq-l-dh')) || _cqLanc?.dataHora || _cqNowLocal();
-  const d = v.dias ? _cqEsterValData(dh, v.dias) : '';
+  const d = v.dias ? _cqEsterValData(_cqEsterDHCicloLanc(), v.dias) : '';
   return d ? `Válido até ${_cqFmtData(d)}` : 'Informe os dias (1 a 3650)';
 }
 function _cqEsterValCampoHTML(s, p) {
@@ -576,7 +817,7 @@ function cqEsterValDias(v) {
   if (box) box.classList.toggle('erro', !_cqEsterValEstado(s, p).dias);
   _cqEsterEtqBtnAtualizar();
 }
-function cqEsterVinc(v) { _cqEsterEstado().vinc = v; _cqRascunhoSalvar(); _cqEsterRedesenhar(); }
+function cqEsterVinc(v) { const s = _cqEsterEstado(); s.modo = 'vinculado'; s.vinc = v; _cqRascunhoSalvar(); _cqEsterRedesenhar(); }
 function cqEsterCampo(c, v, redesenhar) {
   if (!_cqLanc) return;
   _cqEsterEstado()[c] = v;
@@ -674,7 +915,7 @@ function _cqEsterPacMarca(nome, qn) {
 // Sugestões: materiais dos ciclos já publicados neste equipamento (últimos 2 meses), do mais usado ao menos usado
 function _cqEsterPacHistorico() {
   const mapa = new Map();
-  _cqArr(_cqLanc?.ciclo?.recentes).forEach(r => {
+  _cqArr((_cqEsPacAlvo || _cqLanc?.ciclo)?.recentes).forEach(r => {
     _cqEsterPacItens(_cqArr(r.ciclo?.pacotes).join('\n')).forEach(({ nome }) => {
       const k = nome.toLowerCase();
       const x = mapa.get(k) || { nome, n: 0, ultimo: '' };
@@ -687,10 +928,13 @@ function _cqEsterPacHistorico() {
 }
 let _cqEsPacIdx = -1;
 let _cqEsPacBound = false;
+// Lista de pacotes fora do lançamento (correção da ficha): { pacotes, recentes, alvo: true }
+let _cqEsPacAlvo = null;
+function _cqEsPacEst() { return _cqEsPacAlvo || _cqEsterEstado(); }
 function cqEsterPacSug() {
   const pop = document.getElementById('cq-es-pac-pop'), inp = document.getElementById('cq-es-pac-nome');
-  if (!pop || !inp || !_cqLanc?.ciclo) return;
-  const s = _cqLanc.ciclo;
+  const s = _cqEsPacAlvo || _cqLanc?.ciclo;
+  if (!pop || !inp || !s) return;
   const q = _cqEsterPacNorm(inp.value);
   const ja = new Set(_cqEsterPacItens(s.pacotes).map(x => _cqEsterPacNorm(x.nome)));
   const hist = _cqEsterPacHistorico();
@@ -745,6 +989,7 @@ function cqEsterPacTecla(e) {
   if (e.key === 'Escape' && ops.length) { e.preventDefault(); e.stopPropagation(); _cqEsterPacSugFechar(); }
 }
 function _cqEsterPacHTML(s) {
+  _cqEsPacAlvo = s?.alvo ? s : null;
   return `<div class="cq-es-pac">
       <div class="cq-es-pac-add">
         <span class="cq-es-pac-ico">${CQ_ICO.beaker}</span>
@@ -772,21 +1017,22 @@ function _cqEsterPacListaHTML(s) {
     </div>`).join('');
 }
 function _cqEsterPacGravar(itens) {
-  const s = _cqEsterEstado();
+  const s = _cqEsPacEst();
   s.pacotes = _cqEsterPacSerial(itens);
-  _cqRascunhoSalvar();
   const lista = document.getElementById('cq-es-pac-lista');
   if (lista) lista.innerHTML = _cqEsterPacListaHTML(s);
+  if (s.alvo) { const np = document.getElementById('cq-es-npac'); if (np) np.textContent = _cqEsterPacResumo(s.pacotes); return; }
+  _cqRascunhoSalvar();
   _cqEsterAtualizar();
 }
 // qtdLista: item escolhido na lista de sugestões entra com quantidade 0 (a digitar)
 function cqEsterPacAdd(qtdLista) {
-  if (!_cqLanc) return;
+  if (!_cqEsPacAlvo && !_cqLanc) return;
   const inp = document.getElementById('cq-es-pac-nome'), q = document.getElementById('cq-es-pac-qtd');
   const nome = String(inp?.value || '').trim().replace(/\s+/g, ' ').slice(0, 110);
   const qtd = qtdLista === 0 ? 0 : Math.min(999, Math.max(1, Math.round(Number(q?.value) || 1)));
   if (!nome) { inp?.focus(); return; }
-  const itens = _cqEsterPacItens(_cqEsterEstado().pacotes);
+  const itens = _cqEsterPacItens(_cqEsPacEst().pacotes);
   const n = _cqEsterPacNorm(nome);
   let idx = itens.findIndex(x => _cqEsterPacNorm(x.nome) === n);
   if (idx >= 0) itens[idx].qtd = Math.min(999, itens[idx].qtd + qtd);
@@ -810,22 +1056,37 @@ function cqEsterPacAdd(qtdLista) {
   if (document.activeElement === inp) cqEsterPacSug(); else _cqEsterPacSugFechar();
 }
 function cqEsterPacQtd(i, d) {
-  const itens = _cqEsterPacItens(_cqEsterEstado().pacotes);
+  const itens = _cqEsterPacItens(_cqEsPacEst().pacotes);
   if (!itens[i]) return;
   itens[i].qtd = Math.min(999, Math.max(itens[i].qtd ? 1 : 0, itens[i].qtd + d));
   _cqEsterPacGravar(itens);
 }
 function cqEsterPacQtdSet(i, v) {
-  const itens = _cqEsterPacItens(_cqEsterEstado().pacotes);
+  const itens = _cqEsterPacItens(_cqEsPacEst().pacotes);
   if (!itens[i]) return;
   const n = Math.round(Number(String(v).replace(',', '.')));
   itens[i].qtd = Number.isFinite(n) ? Math.min(999, Math.max(0, n)) : 0;
   _cqEsterPacGravar(itens);
 }
 function cqEsterPacRemover(i) {
-  const itens = _cqEsterPacItens(_cqEsterEstado().pacotes);
+  const itens = _cqEsterPacItens(_cqEsPacEst().pacotes);
   itens.splice(i, 1);
   _cqEsterPacGravar(itens);
+}
+
+// Incubação: só com indicador biológico na corrida; guarda o prazo e a faixa usados na conferência
+function _cqEsterIncubValidar(s, ref, dh) {
+  if (!_cqEsterLancTemBI()) return { incubacao: null };
+  if (s.incubIni && s.incubIni < ref) return { erro: 'O início da incubação não pode ser anterior ao ciclo.' };
+  if (s.incubIni && s.incubIni > dh) return { erro: 'O início da incubação não pode ser posterior à corrida.' };
+  const it = String(s.incubTemp || '').trim() ? _cqEsterNum(s.incubTemp) : null;
+  if (String(s.incubTemp || '').trim() && it === null) return { erro: 'Temperatura da incubadora inválida.' };
+  if (!s.incubIni && it === null) return { incubacao: null };
+  const ib = _cqEsterIncubCfg(_cqEsterIncubAn());
+  const atraso = s.incubIni ? Math.round(_cqEsterHoras(ref, s.incubIni) * 10) / 10 : null;
+  return { incubacao: { inicio: s.incubIni || null, temperatura: it, horasAposCiclo: atraso,
+    prazoHoras: ib.horas, faixa: ib.tmin != null ? { min: ib.tmin, max: ib.tmax } : null,
+    foraPrazo: atraso !== null && atraso > ib.horas, foraFaixa: _cqEsterTempForaFaixa(ib, it) } };
 }
 
 // Valida a ficha ao salvar. Retorna { erro } ou { ciclo } (ciclo null quando o equipamento não usa a ficha)
@@ -833,18 +1094,17 @@ function _cqEsterValidar(dh) {
   const cfg = _cqEsterLancCfg();
   if (!cfg) return { ciclo: null };
   const s = _cqEsterEstado();
+  if (!s.modo) return { erro: 'Aguarde carregar os ciclos deste equipamento.' };
   if (s.modo === 'vinculado') {
     const o = _cqArr(s.recentes).find(r => `${r.mes}|${r.key}` === s.vinc);
     if (!o) return { erro: 'Escolha o ciclo já registrado a que esta leitura pertence.' };
     if (o.dataHora > dh) return { erro: 'A data/hora da leitura não pode ser anterior à do ciclo.' };
-    if (s.incubIni && s.incubIni < o.dataHora) return { erro: 'O início da incubação não pode ser anterior ao ciclo.' };
-    if (s.incubIni && s.incubIni > dh) return { erro: 'O início da incubação não pode ser posterior à leitura.' };
-    const it = String(s.incubTemp || '').trim() ? _cqEsterNum(s.incubTemp) : null;
-    if (String(s.incubTemp || '').trim() && it === null) return { erro: 'Temperatura da incubadora inválida.' };
-    const atraso = s.incubIni ? _cqEsterHoras(o.dataHora, s.incubIni) : null;
-    const { vinculo, leituras, correcoes, ...base } = o.ciclo;
-    return { ciclo: { ...base, vinculo: { mes: o.mes, key: o.key, numero: o.numero, dataHora: o.dataHora, operadorNome: o.operadorNome || '' },
-      incubacao: s.incubIni || it !== null ? { inicio: s.incubIni || null, temperatura: it, horasAposCiclo: atraso === null ? null : Math.round(atraso * 10) / 10 } : null } };
+    const { vinculo, leituras, correcoes, status, statusAss, ...base } = o.ciclo;
+    const ciclo = { ...base, vinculo: { mes: o.mes, key: o.key, numero: o.numero, dataHora: o.dataHora, operadorNome: o.operadorNome || '' }, incubacao: null };
+    const inc = _cqEsterIncubValidar(s, _cqEsterDHC(o), dh);
+    if (inc.erro) return inc;
+    ciclo.incubacao = inc.incubacao;
+    return { ciclo };
   }
   const progs = _cqEsterProgramas(cfg);
   if (!progs.length) return { erro: 'Cadastre os programas da autoclave (Configurações › Área › Ciclos de esterilização).' };
@@ -863,11 +1123,19 @@ function _cqEsterValidar(dh) {
   const falhas = _cqEsterFalhas(p, unPressao, { temp, tempo, pressao });
   const val = _cqEsterValEstado(s, p);
   if (val.ativa && !val.dias) return { erro: 'Informe a validade da esterilização em dias (1 a 3650) ou desligue a validade.' };
+  const dhc = String(s.dhCiclo || '');
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dhc)) return { erro: 'Informe a data/hora do ciclo de esterilização.' };
+  if (dhc > dh) return { erro: 'A data/hora do ciclo não pode ser posterior à da corrida.' };
+  const inc = _cqEsterIncubValidar(s, dhc, dh);
+  if (inc.erro) return inc;
   return { ciclo: {
-    loteCarga: lote, numeroCicloEquip: cfg.cicloModo === 'auto' ? null : (String(s.numEquip || '').trim() || null), dataHoraCiclo: dh,
+    incubacao: inc.incubacao,
+    loteCarga: lote, numeroCicloEquip: cfg.cicloModo === 'auto' ? null : (String(s.numEquip || '').trim() || null), dataHoraCiclo: dhc,
     programa: { id: p.id, nome: p.nome, tempMin: p.tempMin, tempMax: p.tempMax ?? null, tempoMin: p.tempoMin, pressaoMin: p.pressaoMin, pressaoMax: p.pressaoMax ?? null, unPressao },
     temperatura: temp, tempo, pressao, pacotes, conforme: !falhas.length, falhas,
-    validade: val.ativa ? { dias: val.dias, data: _cqEsterValData(dh, val.dias) } : null,
+    validade: val.ativa ? { dias: val.dias, data: _cqEsterValData(dhc, val.dias) } : null,
+    // Testes exigidos para o ciclo ficar conforme: analitos que liberam o ciclo (cópia: mudar o cadastro não afeta este ciclo)
+    testesExigidos: _cqEsterExigidosEquip(_cqGruposLanc(_cqLanc.u).find(x => x.key === _cqLanc.grupo)?.testes),
   } };
 }
 
@@ -906,16 +1174,24 @@ function _cqEsterDetalheHTML(c) {
   const pac = _cqArr(ci.pacotes);
   return `<div class="cq-ester cq-ester-det">
     <div class="cq-ester-head"><span class="cq-ester-tit">${CQ_ICO.clock} Ciclo de esterilização · lote ${_cqEsc(ci.loteCarga)}</span>
+      ${!vinc && ci.status ? `<span class="cq-ester-sit">${_cqEsterStBadge(ci)}</span>` : ''}
       ${ci.conforme === false ? '<span class="cq-badge cq-st-rejeitado">parâmetros fora da especificação</span>' : '<span class="cq-badge cq-st-aceito">parâmetros conformes</span>'}
       <span class="cq-ester-acoes">
         ${ci.conforme !== false ? `<button class="btn btn-outline btn-sm" onclick="cqEsterEtqCorrida()" title="Etiqueta dos pacotes desta carga">${CQ_ICO.print} Etiqueta do ciclo</button>` : ''}
         ${_cqEsterPodeCorrigir(c) ? `<button class="btn btn-outline btn-sm" onclick="cqEsterCorrigir()">${CQ_ICO.edit} Corrigir ficha</button>` : ''}</span></div>
-    ${vinc ? `<div class="cq-alerta-box cq-info-box">${CQ_ICO.info} Leitura de indicador do ciclo de ${_cqFmtDH(vinc.dataHora)} — registrado na corrida
-      <a href="#" class="cq-link" onclick="cqAbrirCorrida('${_cqEsc(vinc.mes)}','${_cqEsc(vinc.key)}');return false;">${_cqEsc(vinc.numero || vinc.key)}</a>.
+    ${vinc || ci.incubacao ? `<div class="cq-alerta-box cq-info-box">${CQ_ICO.info} ${vinc ? `Leitura de indicador do ciclo de ${_cqFmtDH(ci.dataHoraCiclo || vinc.dataHora)} — registrado na corrida
+      <a href="#" class="cq-link" onclick="cqAbrirCorrida('${_cqEsc(vinc.mes)}','${_cqEsc(vinc.key)}');return false;">${_cqEsc(vinc.numero || vinc.key)}</a>.` : 'Indicador biológico lido nesta corrida.'}
       ${ci.incubacao ? `Incubação: ${ci.incubacao.inicio ? `início ${_cqFmtDH(ci.incubacao.inicio)}${ci.incubacao.horasAposCiclo != null ? ` (${_cqEsterN(ci.incubacao.horasAposCiclo)} h após o ciclo)` : ''}` : 'início não informado'}${ci.incubacao.temperatura != null ? ` · ${_cqEsterN(ci.incubacao.temperatura)} °C` : ''}.` : ''}
-      ${ci.incubacao?.horasAposCiclo > CQ_ESTER_INCUB_HORAS ? `<b class="cq-txt-vermelho">Incubação iniciada além de ${CQ_ESTER_INCUB_HORAS} h do ciclo.</b>` : ''}</div>` : ''}
+      ${(() => {
+        const inc = ci.incubacao;
+        if (!inc) return '';
+        const prazo = inc.prazoHoras ?? CQ_ESTER_INCUB_HORAS;
+        const foraPrazo = inc.foraPrazo ?? (inc.horasAposCiclo > prazo);
+        const faixa = inc.faixa ? `${_cqEsterN(inc.faixa.min)} a ${_cqEsterN(inc.faixa.max)} °C` : '';
+        return `${foraPrazo ? `<b class="cq-txt-vermelho">Incubação iniciada além de ${_cqEsterN(prazo)} h do ciclo.</b> ` : ''}${inc.foraFaixa ? `<b class="cq-txt-vermelho">Temperatura da incubadora fora da faixa da bula (${faixa}).</b>` : ''}`;
+      })()}</div>` : ''}
     <div class="cq-ester-resumo">
-      <div><span class="cq-muted">Data do ciclo</span><b>${_cqFmtDH(vinc ? vinc.dataHora : (ci.dataHoraCiclo || c.dataHora))}</b></div>
+      <div><span class="cq-muted">Data do ciclo</span><b>${_cqFmtDH(ci.dataHoraCiclo || (vinc ? vinc.dataHora : c.dataHora))}</b></div>
       <div><span class="cq-muted">Lote da carga</span><b>${_cqEsc(ci.loteCarga)}</b></div>
       <div><span class="cq-muted">Programa</span><b>${_cqEsc(p.nome || '—')}</b></div>
       <div><span class="cq-muted">Nº do ciclo no equipamento</span><b>${_cqEsc(ci.numeroCicloEquip || '—')}</b></div>
@@ -926,7 +1202,13 @@ function _cqEsterDetalheHTML(c) {
       ${lin('Temperatura', 'temp', ci.temperatura, '°C')}${lin('Tempo de esterilização', 'tempo', ci.tempo, 'min')}${lin('Pressão', 'pressao', ci.pressao, _cqEsc(un))}</tbody></table>
     <div class="cq-muted" style="font-size:12px;margin-top:6px;">Pacotes esterilizados (${pac.length})</div>
     <ul class="cq-ester-pac">${pac.map(x => `<li>${_cqEsc(x)}</li>`).join('')}</ul>
-    ${leituras.length ? `<div class="cq-nota">Indicador biológico lido na(s) corrida(s): ${leituras.map(([k, l]) => `<a href="#" class="cq-link" onclick="cqAbrirCorrida('${_cqEsc(l.mes)}','${_cqEsc(k)}');return false;">${_cqEsc(l.numero || k)}</a> (${_cqFmtDH(l.dataHora)})`).join(', ')}</div>` : ''}
+    ${!vinc && _cqArr(ci.testesExigidos).length ? (() => {
+      const est = _cqEsterEstadosCiclo(c);
+      const chip = x => { const e = est[x.id] || []; const k = e.includes('R') ? 'R' : e.includes('A') ? 'A' : e.includes('P') ? 'P' : '';
+        return `<span class="cq-ester-exig ${{ A: 'ok', R: 'fora', P: 'pend' }[k] || ''}">${k === 'A' ? CQ_ICO.check : k === 'R' ? CQ_ICO.close : CQ_ICO.clock}${_cqEsc(x.nome)}<small>${{ A: 'aprovado', R: 'reprovado', P: 'aguardando decisão' }[k] || 'não lançado'}</small></span>`; };
+      return `<div class="cq-ester-exigs"><span class="cq-muted">Testes exigidos para o ciclo ficar conforme:</span>${_cqArr(ci.testesExigidos).map(chip).join('')}</div>`;
+    })() : ''}
+    ${leituras.length ? `<div class="cq-nota">Testes lançados em corrida(s) vinculada(s): ${leituras.map(([k, l]) => `<a href="#" class="cq-link" onclick="cqAbrirCorrida('${_cqEsc(l.mes)}','${_cqEsc(k)}');return false;">${_cqEsc(l.numero || k)}</a> (${_cqFmtDH(l.dataHora)})`).join(', ')}</div>` : ''}
     ${correcoes.length ? `<div class="cq-nota">${correcoes.map(([, x]) => `Corrigido por ${_cqEsc(x.porNome)} em ${_cqFmtDH(x.em)} — ${_cqEsc(x.motivo)}: ${_cqArr(x.diffs).map(d => `${_cqEsc(d.campo)} <s>${_cqEsc(d.antes)}</s> → ${_cqEsc(d.depois)}`).join('; ')}`).join('<br>')}</div>` : ''}
   </div>`;
 }
@@ -940,11 +1222,11 @@ function _cqEsterImpressaoHTML(c) {
   const lin = (rot, campo, v, unid) => `<tr><td>${rot}</td><td>${_cqEsterN(v)} ${unid}</td><td>${_cqEsc(_cqEsterEspTxt(p, campo, un))}</td><td>${_cqEsterForaCampo(p, campo, Number(v), un) ? 'FORA' : 'Conforme'}</td></tr>`;
   return `<h2 style="font-size:13px;margin:14px 0 4px;">Ciclo de esterilização (RDC 1002/2025, art. 91)</h2>
     <div class="meta">
-      <div><b>Data do ciclo:</b> ${_cqFmtDH(vinc ? vinc.dataHora : (ci.dataHoraCiclo || c.dataHora))}</div><div><b>Lote da carga:</b> ${_cqEsc(ci.loteCarga)}</div>
+      <div><b>Data do ciclo:</b> ${_cqFmtDH(ci.dataHoraCiclo || (vinc ? vinc.dataHora : c.dataHora))}</div><div><b>Lote da carga:</b> ${_cqEsc(ci.loteCarga)}</div>
       <div><b>Programa:</b> ${_cqEsc(p.nome || '—')}</div><div><b>Nº do ciclo no equipamento:</b> ${_cqEsc(ci.numeroCicloEquip || '—')}</div>
       <div><b>Validade da esterilização:</b> ${ci.validade?.data ? `${_cqFmtData(ci.validade.data)} (${_cqEsc(ci.validade.dias)} dia(s))` : 'sem validade'}</div>
       <div><b>Operador do equipamento:</b> ${_cqEsc(vinc ? vinc.operadorNome || '—' : c.operadorNome || '—')}</div><div><b>Parâmetros físicos:</b> ${ci.conforme === false ? 'FORA DA ESPECIFICAÇÃO' : 'conformes'}</div>
-      ${vinc ? `<div style="grid-column:1/-1;"><b>Leitura de indicador do ciclo registrado na corrida</b> ${_cqEsc(vinc.numero || vinc.key)}${ci.incubacao ? ` · incubação ${ci.incubacao.inicio ? 'iniciada ' + _cqFmtDH(ci.incubacao.inicio) : ''}${ci.incubacao.horasAposCiclo != null ? ` (${_cqEsterN(ci.incubacao.horasAposCiclo)} h após o ciclo)` : ''}${ci.incubacao.temperatura != null ? ` a ${_cqEsterN(ci.incubacao.temperatura)} °C` : ''}` : ''}</div>` : ''}
+      ${vinc || ci.incubacao ? `<div style="grid-column:1/-1;"><b>${vinc ? 'Leitura de indicador do ciclo registrado na corrida' : 'Indicador biológico lido nesta corrida'}</b> ${vinc ? _cqEsc(vinc.numero || vinc.key) : ''}${ci.incubacao ? ` · incubação ${ci.incubacao.inicio ? 'iniciada ' + _cqFmtDH(ci.incubacao.inicio) : ''}${ci.incubacao.horasAposCiclo != null ? ` (${_cqEsterN(ci.incubacao.horasAposCiclo)} h após o ciclo)` : ''}${ci.incubacao.temperatura != null ? ` a ${_cqEsterN(ci.incubacao.temperatura)} °C` : ''}${ci.incubacao.foraPrazo ? ' — FORA DO PRAZO DA BULA' : ''}${ci.incubacao.foraFaixa ? ' — TEMPERATURA FORA DA FAIXA DA BULA' : ''}` : ''}</div>` : ''}
     </div>
     <table><thead><tr><th>Parâmetro físico</th><th>Registrado</th><th>Especificação</th><th>Situação</th></tr></thead><tbody>
       ${lin('Temperatura', 'temp', ci.temperatura, '°C')}${lin('Tempo de esterilização', 'tempo', ci.tempo, 'min')}${lin('Pressão', 'pressao', ci.pressao, _cqEsc(un))}</tbody></table>
@@ -987,8 +1269,8 @@ function _cqEsterEtqLanc() {
   if (!_cqEsterPacotes(s.pacotes).length) return { erro: 'informe a relação de pacotes.' };
   if (_cqEsterPacSemQtd(s.pacotes).length) return { erro: 'informe a quantidade de todos os pacotes.' };
   if (_cqEsterFalhas(p, cfg.unPressao, { temp, tempo, pressao }).length) return { erro: 'parâmetros fora da especificação — carga não liberada.' };
-  const dh = (typeof _cqVal === 'function' && _cqVal('cq-l-dh')) || _cqLanc.dataHora;
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dh || '')) return { erro: 'informe a data/hora da corrida.' };
+  const dh = _cqEsterDHCicloLanc();
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(dh || '')) return { erro: 'informe a data/hora do ciclo.' };
   const op = _cqUsuarios().find(x => x.id === _cqLanc.operadorId);
   if (!op) return { erro: 'informe quem executou a corrida.' };
   const val = _cqEsterValEstado(s, p);
@@ -1028,15 +1310,16 @@ async function cqEsterEtqCorrida() {
   const c = await cqCarregarCorrida(ctx.u, ctx.mes, ctx.key);
   const ci = c?.ciclo;
   if (!ci) return;
-  if (ci.conforme === false) { showToast('Parâmetros fora da especificação: carga não liberada, sem etiqueta.', 'error'); return; }
+  if (ci.conforme === false || ci.status === 'reprovado') { showToast('Ciclo reprovado: carga não liberada, sem etiqueta.', 'error'); return; }
   const vinc = ci.vinculo, p = ci.programa || {};
-  const d = _cqEsterEtqDados({ lote: ci.loteCarga, dataHora: vinc ? vinc.dataHora : (ci.dataHoraCiclo || c.dataHora), numEquip: ci.numeroCicloEquip,
+  const d = _cqEsterEtqDados({ lote: ci.loteCarga, dataHora: ci.dataHoraCiclo || (vinc ? vinc.dataHora : c.dataHora), numEquip: ci.numeroCicloEquip,
     programa: p.nome, temp: ci.temperatura, tempo: ci.tempo, pressao: ci.pressao, unPressao: p.unPressao,
     operador: vinc ? vinc.operadorNome : c.operadorNome, equip: c.ativoSnap?.nome || c.sistemaAnalitico || '', validade: ci.validade?.data || '', validadeDias: ci.validade?.dias || null });
   // Indicador rejeitado (sem decisão que libere): avisa antes de etiquetar os pacotes
   const rej = Object.values(c.testes || {}).some(ct => !ct.naoRealizado && (ct.decisao ? ct.decisao.acao !== 'liberado' : ct.avaliacao?.status === 'rejeitado'));
   _cqEtqDialogo(d, 'Etiqueta do ciclo', `Lote da carga ${ci.loteCarga} · corrida ${c.numero}`,
-    rej ? `<div class="cq-etq-aviso alerta">Indicador desta corrida rejeitado ou não liberado: confirme a liberação da carga antes de etiquetar os pacotes.</div>` : '');
+    rej ? `<div class="cq-etq-aviso alerta">Indicador desta corrida rejeitado ou não liberado: confirme a liberação da carga antes de etiquetar os pacotes.</div>`
+      : ci.status === 'em_analise' ? `<div class="cq-etq-aviso">Ciclo em análise: só libere os pacotes depois que os indicadores forem aprovados.</div>` : '');
 }
 
 // Correção da ficha (o valor original fica registrado); reavalia os testes da corrida
@@ -1047,6 +1330,7 @@ async function cqEsterCorrigir() {
   if (!c || !_cqEsterPodeCorrigir(c)) { showToast('Sem permissão para corrigir a ficha.', 'error'); return; }
   const ci = c.ciclo, un = ci.programa?.unPressao || 'kgf/cm²';
   const n = v => (v === null || v === undefined ? '' : String(v).replace('.', ','));
+  const pac = { alvo: true, pacotes: _cqArr(ci.pacotes).join('\n'), recentes: [] };
   _cqPrompt({
     largo: true, titulo: 'Corrigir ficha do ciclo', subtitulo: `Lote ${ci.loteCarga} · corrida ${c.numero}`,
     corpo: `<div class="cq-nota">Os valores originais permanecem registrados (RDC 978, art. 116). Lote da carga e programa não mudam: se estiverem errados, invalide os resultados e lance a corrida de novo.</div>
@@ -1056,15 +1340,17 @@ async function cqEsterCorrigir() {
         <div class="form-field"><label class="field-label">Pressão (${_cqEsc(un)})</label><input type="text" inputmode="decimal" id="cq-esc-pressao" class="field-input" value="${_cqEsc(n(ci.pressao))}"></div>
         <div class="form-field"><label class="field-label">Nº do ciclo no equipamento</label><input type="text" id="cq-esc-num" class="field-input" maxlength="20" value="${_cqEsc(ci.numeroCicloEquip || '')}"></div>
       </div>
-      <div class="form-field"><label class="field-label">Relação de pacotes</label><textarea id="cq-esc-pac" class="field-textarea" style="min-height:70px;">${_cqEsc(_cqArr(ci.pacotes).join('\n'))}</textarea></div>
+      <div class="form-field"><label class="field-label">Pacotes esterilizados <span class="required">*</span> <span class="cq-es-npac" id="cq-es-npac">${_cqEsc(_cqEsterPacResumo(pac.pacotes))}</span></label>
+        ${_cqEsterPacHTML(pac)}</div>
       <div class="form-field"><label class="field-label">Motivo <span class="required">*</span></label><textarea id="cq-esc-mot" class="field-textarea" style="min-height:56px;" placeholder="Ex.: temperatura transcrita errada — impressão da autoclave mostra 134,2 °C"></textarea></div>`,
     confirmar: 'Corrigir',
     onConfirm: async () => {
       const temp = _cqEsterNum(_cqVal('cq-esc-temp')), tempo = _cqEsterNum(_cqVal('cq-esc-tempo')), pressao = _cqEsterNum(_cqVal('cq-esc-pressao'));
-      const pacotes = _cqEsterPacotes(document.getElementById('cq-esc-pac')?.value);
+      const pacotes = _cqEsterPacotes(pac.pacotes);
       const num = _cqVal('cq-esc-num') || null, mot = _cqVal('cq-esc-mot');
       if (temp === null || tempo === null || pressao === null) { showToast('Informe tempo, temperatura e pressão válidos.', 'error'); return false; }
       if (!pacotes.length) { showToast('Informe ao menos um pacote.', 'error'); return false; }
+      if (_cqEsterPacSemQtd(pac.pacotes).length) { showToast('Informe a quantidade de todos os pacotes.', 'error'); return false; }
       if (!mot) { showToast('Informe o motivo.', 'error'); return false; }
       const diffs = [];
       const cmp = (campo, a, b, fmt) => { if (String(a ?? '') !== String(b ?? '')) diffs.push({ campo, antes: fmt(a), depois: fmt(b) }); };
@@ -1109,6 +1395,9 @@ async function _cqEsterAplicarCorrecao(ctx, c, novos, diffs, motivo) {
     }
   });
   updates[`${CQ_KEYS.indices}/${ctx.u}/pendentes/${ctx.key}`] = _cqResumoPendencia(c2) || null;
+  // Situação do ciclo com a nova conformidade dos parâmetros
+  c2.ciclo = { ...c2.ciclo, conforme: !falhas.length };
+  Object.assign(updates, _cqEsterStatusUpdates(ctx.u, { ...c2, key: ctx.key, mes: ctx.mes }, 'correção da ficha').up);
   updates[`${base}/trilha/${tk}`] = _cqTrilhaEntry('correcao', `Ficha do ciclo corrigida — ${motivo}${mudancas.length ? ` · avaliação: ${mudancas.join('; ')}` : ''}`, diffs);
   if (!(await window.dbUpdate(updates))) { showToast('Falha ao gravar.', 'error'); return false; }
   _cqCorrCache = null;

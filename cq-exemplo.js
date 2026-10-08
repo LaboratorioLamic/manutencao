@@ -144,12 +144,12 @@ function _cqExemploMontar() {
     'ex-an-est':  { codigo: 'EX-EST', nome: 'Esterilidade de meio de cultura (exemplo)', tipo: 'qualitativo', esp: 'Microbiologia', sis: sisMic, escala: [...CQ_MODELOS_MICRO[0].escala] },
     'ex-an-des':  { codigo: 'EX-DES', nome: 'Desempenho de meio de cultura (exemplo)', tipo: 'qualitativo', esp: 'Microbiologia', sis: sisMic, escala: [...CQ_MODELOS_MICRO[1].escala] },
     'ex-an-prot': { codigo: 'EX-PROT', nome: 'Proteína na urina — tira (exemplo)', tipo: 'semiquantitativo', esp: 'Urinálise', sis: sisUri, escala: ['Negativo', 'Traços', '1+', '2+', '3+'], tol: 1 },
-    'ex-an-iq5':  { codigo: 'EX-IQ5', nome: 'Integrador químico tipo 5 — vapor (exemplo)', tipo: 'qualitativo', esp: 'Outros', sis: sisAut, escala: [...CQ_MODELOS_ESTER[0].escala] },
-    'ex-an-ib':   { codigo: 'EX-IB', nome: 'Indicador biológico — G. stearothermophilus (exemplo)', tipo: 'qualitativo', esp: 'Outros', sis: sisAut, escala: [...CQ_MODELOS_ESTER[1].escala] },
+    'ex-an-iq5':  { codigo: 'EX-IQ5', nome: 'Integrador químico tipo 5 — vapor (exemplo)', tipo: 'qualitativo', esp: 'Outros', sis: sisAut, escala: [...CQ_MODELOS_ESTER[0].escala], ind: 'quimico' },
+    'ex-an-ib':   { codigo: 'EX-IB', nome: 'Indicador biológico — G. stearothermophilus (exemplo)', tipo: 'qualitativo', esp: 'Outros', sis: sisAut, escala: [...CQ_MODELOS_ESTER[1].escala], ind: 'biologico' },
   };
   Object.entries(QL).forEach(([id, a]) => cfg('analitos', novo({
     id, codigo: a.codigo, nome: a.nome, unidadeMedida: '', decimais: 0, tipo: a.tipo, especialidade: a.esp, limitesDecisao: [], eta: null, cvMeta: null,
-    escala: a.escala, toleranciaPassos: a.tol ?? null, ativo: true, ativoIds: [], sistemas: [a.sis],
+    escala: a.escala, toleranciaPassos: a.tol ?? null, ativo: true, ativoIds: [], sistemas: [a.sis], indicadorEster: a.ind || null, liberaCiclo: a.ind ? true : null, incubacao: a.ind === 'biologico' ? { horas: 2, tmin: 55, tmax: 60 } : null,
   }, 'Analito cadastrado')));
   const escalaGram = QL['ex-an-gram'].escala, escalaEst = QL['ex-an-est'].escala, escalaDes = QL['ex-an-des'].escala, escalaProt = QL['ex-an-prot'].escala;
   const escalaIQ = QL['ex-an-iq5'].escala, escalaIB = QL['ex-an-ib'].escala;

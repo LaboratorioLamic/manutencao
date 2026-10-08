@@ -38,12 +38,56 @@ const CQ_MODELOS_MICRO = [
 ];
 // Monitoramento da esterilização a vapor (RDC 1002/2025, arts. 88-90; bulas dos indicadores).
 // Integrador tipo 5/6 em todo ciclo; indicador biológico semanal (ampola teste = negativo, ampola controle = positivo).
+// Tipo de indicador de esterilização do analito: define o tratamento na ficha do ciclo
+// (ex.: o indicador biológico pede a incubação na corrida de leitura)
+const CQ_INDICADOR_ESTER = {
+  quimico:   'Indicador químico / integrador',
+  biologico: 'Indicador biológico',
+  bowie:     'Teste de Bowie & Dick',
+};
+const CQ_INDICADOR_CURTO = { quimico: 'Químico / integrador', biologico: 'Biológico', bowie: 'Bowie & Dick' };
+const CQ_INDICADOR_DESC = {
+  quimico: 'Viragem de cor no pacote teste (classe 5 ou 6)',
+  biologico: 'Ampola com esporos — a leitura pede início e temperatura da incubação',
+  bowie: 'Remoção de ar e penetração de vapor (autoclave pré-vácuo)',
+};
+const CQ_ICO_AUTOCLAVE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>';
+// Liga/desliga a marca de analito de autoclave no formulário (grava ao salvar)
+function cqAnAutoclaveSw(btn) {
+  const on = btn.getAttribute('aria-checked') !== 'true';
+  btn.setAttribute('aria-checked', on);
+  document.getElementById('cq-an-autoclave-chk').checked = on;
+  document.getElementById('cq-an-autoclave').classList.toggle('on', on);
+}
+const CQ_AN_LIB_SUB = {
+  true: 'O ciclo fica em análise até este indicador ser aprovado.',
+  false: 'Não segura o ciclo; se reprovado, reprova o ciclo.',
+};
+function cqAnLiberaSw(btn) {
+  const on = btn.getAttribute('aria-checked') !== 'true';
+  btn.setAttribute('aria-checked', on);
+  document.getElementById('cq-an-libera').checked = on;
+  const sub = document.getElementById('cq-an-lib-sub');
+  if (sub) sub.textContent = CQ_AN_LIB_SUB[on];
+}
+function cqAnAutoclaveTipo(k) {
+  document.getElementById('cq-an-indic').value = k;
+  document.getElementById('cq-an-autoclave').dataset.tipo = k;
+}
+// Sugestão para analitos antigos ainda não marcados (pelo código ou nome); não muda o comportamento
+function _cqIndicadorSugerido(a) {
+  const cod = a?.codigo || '', nome = a?.nome || '';
+  if (/(^|[-_ ])IB$/i.test(cod) || /indicador biol|biol[oó]gico|stearothermophilus|atrophaeus/i.test(nome)) return 'biologico';
+  if (/(^|[-_ ])BD$/i.test(cod) || /bowie/i.test(nome)) return 'bowie';
+  if (/^EST-|(^|[-_ ])IQ\d*$/i.test(cod) || /integrador|indicador qu[ií]mico/i.test(nome)) return 'quimico';
+  return '';
+}
 const CQ_MODELOS_ESTER = [
-  { nome: 'Integrador químico tipo 5 (vapor)', codigo: 'EST-IQ5',
+  { nome: 'Integrador químico tipo 5 (vapor)', codigo: 'EST-IQ5', indicador: 'quimico',
     escala: ['Viragem completa (aprovado)', 'Viragem incompleta ou ausente (reprovado)'] },
-  { nome: 'Indicador biológico (G. stearothermophilus)', codigo: 'EST-IB',
+  { nome: 'Indicador biológico (G. stearothermophilus)', codigo: 'EST-IB', indicador: 'biologico',
     escala: ['Negativo (sem crescimento, meio púrpura)', 'Positivo (crescimento, meio amarelo)'] },
-  { nome: 'Teste de Bowie & Dick', codigo: 'EST-BD',
+  { nome: 'Teste de Bowie & Dick', codigo: 'EST-BD', indicador: 'bowie',
     escala: ['Mudança de cor uniforme (aprovado)', 'Mudança de cor não uniforme (reprovado)'] },
 ];
 const CQ_MODELOS = {
@@ -277,7 +321,7 @@ function _cqTesteLinhaHTML(t) {
         return a ? `<span class="cq-badge ${CQ_ORIGEM_ALVO[a.origem]?.cls || ''}" title="${_cqEsc(CQ_ORIGEM_ALVO[a.origem]?.label || '')}">N${n}</span>` : `<span class="cq-badge cq-st-rejeitado">N${n} sem alvo</span>`; }).join(' ');
   const regras = qual ? (an?.tipo === 'semiquantitativo' ? 'Concordância (±1 categoria = alerta)' : 'Concordância com o esperado')
     : `${_cqEsc(CQEngine.PRESETS[t.regrasPreset]?.label || 'Personalizado')}<div class="cq-muted">${_cqResumoRegras(t.regras)}</div>`;
-  return `<tr class="ot-list-row${t.ativo === false ? ' oc-row-final' : ''}" onclick="cqTesteForm('${t.id}')">
+  return `<tr class="ot-list-row${t.ativo === false ? ' oc-row-final' : ''}" onclick="cqTesteVer('${t.id}')">
     <td><b>${_cqEsc(_cqEquipTeste(t))}</b>${t.ativo === false ? ' <span class="cq-badge cq-st-semalvo">inativo</span>' : ''}${_cqSetoresDaUnidade(t.unidadeId).length ? `<div class="cq-muted">${_cqEsc(_cqRotuloSetor(_cqSetorDoTeste(t)))}</div>` : ''}</td>
     <td>${_cqEsc(t.metodo || '—')}</td><td style="font-size:12px;">${lotes || '—'}</td>
     <td style="font-size:12px;">${regras}</td><td style="font-size:12px;">${_cqEsc(CQ_FREQ[t.frequencia?.tipo] || '—')}</td><td>${criterio}</td></tr>`;
@@ -306,7 +350,7 @@ function _cqTestesCompactoHTML(a, ts) {
     const st = t.ativo === false ? '<span class="cq-badge cq-st-semalvo">inativo</span>'
       : pend.length ? `<span class="cq-badge cq-st-alerta" title="${_cqEsc(pend.join('; '))}">${pend.length} pendência(s)</span>`
       : '<span class="cq-badge cq-st-aceito">ok</span>';
-    return `<div class="cq-te-item${t.ativo === false ? ' inativo' : ''}" onclick="cqTesteForm('${t.id}')" title="Abrir teste">
+    return `<div class="cq-te-item${t.ativo === false ? ' inativo' : ''}" onclick="cqTesteVer('${t.id}')" title="Abrir teste">
       <div class="cq-te-item-txt"><b>${_cqEsc(t.metodo || _cqEquipTeste(t))}</b><small>${_cqEsc(sub)}</small></div>${st}
       <svg class="cq-te-item-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 6 15 12 9 18"/></svg></div>`;
   }).join('');
@@ -361,7 +405,7 @@ function _cqCadRenderLista() {
       <tbody>${linhas.length ? linhas.map(({ a, ts, nTotal, nPend, semTeste }) => {
         const aberto = _cqCadAberto(a.id);
         const qual = a.tipo && a.tipo !== 'quantitativo';
-        return `<tr class="ot-list-row${a.ativo === false ? ' oc-row-final' : ''}${aberto ? ' cq-an-aberto' : ''}" onclick="cqAnalitoForm('${a.id}')">
+        return `<tr class="ot-list-row${a.ativo === false ? ' oc-row-final' : ''}${aberto ? ' cq-an-aberto' : ''}" onclick="cqAnalitoVer('${a.id}')">
           <td><button type="button" class="cq-icobtn cq-an-exp${aberto ? ' aberto' : ''}" title="${aberto ? 'Ocultar' : 'Mostrar'} testes" onclick="event.stopPropagation();cqCadExpandir('${a.id}',${aberto})">${chev}</button></td>
           <td class="oc-num">${_cqEsc(a.codigo || '—')}</td><td><b>${_cqEsc(a.nome)}</b>${_cqUnidadesTag(a)}</td><td>${_cqEsc(a.unidadeMedida || '—')}</td>
           <td>${_cqEsc(CQ_TIPOS_ANALITO[a.tipo] || a.tipo || CQ_TIPOS_ANALITO.quantitativo)}</td><td>${_cqEsc(a.especialidade || '—')}</td>
@@ -705,6 +749,7 @@ const CQ_LBL_ANALITO = {
   codigo: 'Código', nome: 'Nome', unidadeMedida: 'Unidade', decimais: 'Casas decimais', tipo: 'Tipo', especialidade: 'Especialidade',
   limitesDecisao: 'Limites de decisão', eta: 'Erro total permitido', cvMeta: 'CV meta', escala: 'Resultados possíveis',
   toleranciaPassos: 'Tolerância (categorias)', ativoIds: 'Equipamentos', sistemas: 'Sistemas sem equipamento', unidadeIds: 'Áreas', ativo: 'Ativo',
+  indicadorEster: 'Indicador de esterilização', incubacao: 'Incubação do indicador biológico', liberaCiclo: 'Libera o ciclo da autoclave',
 };
 const _cqFmtSistemas = v => _cqArr(v).join(', ') || '—';
 // Sugestões dos campos de lista do analito: o que já está cadastrado na unidade
@@ -790,7 +835,7 @@ function cqAnalitoForm(id, aba) {
           <div class="form-field"><label class="field-label">Sistemas analíticos sem equipamento (bancada / manual)</label>
             ${_cqItensHTML('cq-an-sistemas', a?.sistemas, { placeholder: 'Ex.: Bancada de microbiologia', disabled: !pode, max: 60,
               vazio: 'Nenhum sistema sem equipamento.', travados: sisEmUso, travadoMotivo: 'Usado por teste deste analito',
-              sugestoes: _cqSistemasDaUnidade(u), sugestoesRotulo: 'Já cadastrados na área — clique para adicionar' })}</div>
+              sugestoes: _cqSistemasDaUnidade(u), sugestoesRotulo: 'Já cadastrados na área' })}</div>
           <div class="cq-nota">Os testes deste analito escolhem o equipamento ou sistema nesta lista, e os reagentes e insumos são filtrados pelo equipamento.${emUso ? ' Equipamentos e sistemas com testes cadastrados não podem ser removidos.' : ''}</div>
         </div>
         <div id="cq-an-quant" style="${quant ? '' : 'display:none;'}">
@@ -807,12 +852,48 @@ function cqAnalitoForm(id, aba) {
         <div class="form-field"><label class="field-label">Resultados <span class="required">*</span> <span class="cq-muted">(mínimo 2)</span></label>
           ${_cqItensHTML('cq-an-escala', a?.escala, { placeholder: 'Ex.: Sem crescimento', disabled: !pode, ordenavel: true, max: 80,
             vazio: 'Nenhum resultado. Adicione ao menos dois.', travados: escEmUso, travadoMotivo: 'Resultado esperado em teste deste analito',
-            sugestoes: _cqResultadosDaUnidade(u, a?.id), sugestoesRotulo: 'Usados em outros analitos da área — clique para adicionar' })}
+            sugestoes: _cqResultadosDaUnidade(u, a?.id), sugestoesRotulo: 'Usados em outros analitos da área' })}
           <div class="cq-nota">O operador escolhe o resultado nesta lista; o sistema compara com o resultado esperado de cada controle (RDC 978, art. 180, II e V).
             Semiquantitativo: use as setas para deixar em ordem crescente, começando pelo negativo (ex.: Negativo, Traços, 1+, 2+, 3+).</div></div>
         <div class="form-field" id="cq-an-tol-wrap" style="max-width:260px;${tipo === 'semiquantitativo' ? '' : 'display:none;'}"><label class="field-label">Tolerância (categorias)</label>
           <input type="number" min="0" max="2" id="cq-an-tol" class="field-input" value="${a?.toleranciaPassos ?? 1}" ${_cqRo(pode)}>
           <div class="cq-nota">Diferença aceita como alerta. Passar de negativo para positivo (ou o contrário) sempre rejeita.</div></div>
+        ${(() => {
+          // Analito de autoclave: só o que está marcado aqui é tratado como indicador de esterilização
+          const on = !!a?.indicadorEster, sug = !on && a ? _cqIndicadorSugerido(a) : '', tipo = a?.indicadorEster || sug;
+          return `<div class="cq-an-ac${on ? ' on' : ''}" id="cq-an-autoclave" data-tipo="${tipo}">
+            <div class="cq-an-ac-cab">
+              <span class="cq-an-ac-ico">${CQ_ICO_AUTOCLAVE}</span>
+              <div class="cq-an-ac-txt"><b>Analito de autoclave</b><small>Indicador de esterilização</small></div>
+              <button type="button" class="cq-es-sw" role="switch" aria-checked="${on}" title="Ligar/desligar analito de autoclave" onclick="cqAnAutoclaveSw(this)" ${_cqRo(pode)}><span></span></button>
+            </div>
+            <input type="checkbox" id="cq-an-autoclave-chk" hidden ${on ? 'checked' : ''}>
+            <input type="hidden" id="cq-an-indic" value="${tipo}">
+            <div class="cq-an-ac-tipo">${_cqSelHTML('cq-an-indic-sel', Object.entries(CQ_INDICADOR_ESTER).map(([k, l]) => ({ value: k, label: l, sub: CQ_INDICADOR_DESC[k] })), tipo,
+              { placeholder: 'Escolha o tipo de indicador…', disabled: !pode, onchange: cqAnAutoclaveTipo, busca: 'Buscar tipo…' })}</div>
+            ${(() => {
+              const ib = typeof _cqEsterIncubCfg === 'function' ? _cqEsterIncubCfg(a) : { horas: 2, tmin: 55, tmax: 60 };
+              const num = v => v == null ? '' : _cqEsc(String(v).replace('.', ','));
+              return `<div class="cq-an-ac-ib">
+                <span class="cq-an-ac-ib-tit">Bula</span>
+                <label>Incubar até <input type="text" inputmode="decimal" id="cq-an-ib-h" class="field-input" value="${num(ib.horas)}" ${_cqRo(pode)}> h</label>
+                <span class="cq-an-ac-ib-sep"></span>
+                <label>Incubadora <input type="text" inputmode="decimal" id="cq-an-ib-tmin" class="field-input" value="${num(ib.tmin)}" ${_cqRo(pode)}> a
+                  <input type="text" inputmode="decimal" id="cq-an-ib-tmax" class="field-input" value="${num(ib.tmax)}" ${_cqRo(pode)}> °C</label>
+                <span class="cq-an-ac-ib-info" title="Prazo contado a partir do ciclo. Fora do prazo ou da faixa: alerta em vermelho na corrida de leitura. Faixa vazia: sem conferência.">${CQ_ICO.info}</span>
+              </div>`;
+            })()}
+            ${(() => {
+              const lib = on ? !!a.liberaCiclo : true;   // ao marcar como analito de autoclave, libera por padrão
+              return `<div class="cq-an-ac-lib">
+                <button type="button" class="cq-es-sw" role="switch" aria-checked="${lib}" title="Ligar/desligar" onclick="cqAnLiberaSw(this)" ${_cqRo(pode)}><span></span></button>
+                <span class="cq-an-ac-lib-txt"><b>Libera o ciclo da autoclave</b><small id="cq-an-lib-sub">${CQ_AN_LIB_SUB[lib]}</small></span>
+                <input type="checkbox" id="cq-an-libera" hidden ${lib ? 'checked' : ''}>
+              </div>`;
+            })()}
+            ${sug ? `<div class="cq-an-ac-sug">Parece ${_cqEsc(CQ_INDICADOR_CURTO[sug].toLowerCase())} pelo nome/código. Ligue para confirmar.</div>` : ''}
+          </div>`;
+        })()}
         <input type="checkbox" id="cq-an-ativo-q" hidden ${a?.ativo === false ? '' : 'checked'}>
       </div>
       <div class="form-section" id="cq-an-espec" style="${quant ? '' : 'display:none;'}"><div class="form-section-title">${CQ_ICO.shield}Especificação da qualidade</div>
@@ -832,6 +913,143 @@ function cqAnalitoForm(id, aba) {
       ${a ? `<div id="cq-an-pane-trilha" style="padding-top:14px;display:none;">${_cqTrilhaHTML(a)}</div>` : ''}`,
     rodape: _cqRodapeForm('cqAnalitoSalvar()', pode, a ? `cqExcluirCadastro('analitos','${a.id}')` : '',
       a && { ids: 'cq-an-ativo,cq-an-ativo-q', fn: 'cqAnalitoSalvar', colecao: 'analitos', id: a.id, ativo: a.ativo !== false }),
+  });
+  if (a && aba === 'trilha') cqAnalitoAba('trilha');
+  delete document.getElementById('cq-drawer-title')?.dataset.teste;
+}
+// Visualização do analito (clique na linha): resumo, testes da área e trilha. "Editar" abre o formulário na mesma aba.
+function cqAnalitoVer(id, aba) {
+  const a = cqState.config.analitos[id];
+  if (!a) return;
+  const u = _cqUnidadeAtivaId();
+  const testesA = _cqTestesDaUnidade(u, { incluirInativos: true }).filter(t => t.analitoId === a.id)
+    .sort((x, y) => _cqEquipTeste(x).localeCompare(_cqEquipTeste(y)) || (x.metodo || '').localeCompare(y.metodo || ''));
+  const ativosT = testesA.filter(t => t.ativo !== false);
+  const nPend = ativosT.reduce((n, t) => n + _cqPendenciasTeste(t).length, 0);
+  const equips = _cqEquipsDoAnalito(a);
+  const tipo = a.tipo || 'quantitativo';
+  const quant = tipo === 'quantitativo';
+  const hero = `<div class="cq-pv-hero">
+    <div class="cq-pv-hero-ico">${a.indicadorEster ? CQ_ICO_AUTOCLAVE : CQ_ICO.beaker}</div>
+    <div class="cq-pv-hero-txt"><small>${_cqEsc(CQ_TIPOS_ANALITO[tipo] || tipo)}${a.especialidade ? ` · ${_cqEsc(a.especialidade)}` : ''}</small><h3>${_cqEsc(a.nome)}</h3>
+      <div class="cq-pv-chips">${_cqPvPill(_cqEsc(_cqSiglasUnidades(_cqUnidadesRec(a)) || 'Todas as áreas'), '', CQ_ICO.unidade)}
+        ${a.codigo ? _cqPvPill(_cqEsc(a.codigo), 'ciano', CQ_ICO.cadastro) : ''}
+        ${quant && a.unidadeMedida ? _cqPvPill(_cqEsc(a.unidadeMedida), 'contorno') : ''}
+        ${a.indicadorEster ? _cqPvPill(_cqEsc(CQ_INDICADOR_ESTER[a.indicadorEster] || 'Indicador de esterilização'), 'ciano', CQ_ICO_AUTOCLAVE) : ''}</div></div>
+    ${_cqPvPill(a.ativo === false ? 'Inativo' : 'Ativo', a.ativo === false ? 'cinza grande' : 'verde grande')}
+  </div>`;
+  const stats = `<div class="cq-pv-stats">
+    ${_cqPvStat(CQ_ICO.lista, 'Testes ativos', String(ativosT.length), `de ${testesA.length} nesta área`, ativosT.length ? '' : 'alerta')}
+    ${_cqPvStat(CQ_ICO.alerta, 'Pendências', String(nPend), nPend ? 'níveis sem lote, alvo ou esperado' : 'nenhuma', nPend ? 'alerta' : 'ok')}
+    ${_cqPvStat(CQ_ICO.beaker, 'Equipamentos / sistemas', String(equips.length), equips.length ? 'vinculados' : 'vincule para criar testes', equips.length ? '' : 'alerta')}
+  </div>`;
+  const secId = _cqPvSecao(CQ_ICO.cadastro, 'Identificação', _cqPvCampos([
+    { l: 'Código', v: _cqEsc(a.codigo || '') },
+    { l: 'Tipo', v: _cqEsc(CQ_TIPOS_ANALITO[tipo] || tipo) },
+    { l: 'Especialidade', v: _cqEsc(a.especialidade || '') },
+    quant && { l: 'Unidade de medida', v: _cqEsc(a.unidadeMedida || '') },
+    quant && { l: 'Casas decimais', v: a.decimais != null ? String(a.decimais) : '' },
+    quant && { l: 'Limites de decisão clínica', v: _cqEsc(_cqArr(a.limitesDecisao).join('; ')) },
+    { l: 'Equipamentos / sistemas', v: _cqEsc(equips.map(o => o.label).join(', ')), largo: true },
+  ]));
+  const secEspec = quant ? _cqPvSecao(CQ_ICO.shield, 'Especificação da qualidade', _cqPvCampos([
+    { l: 'Erro total permitido (ETa)', v: a.eta?.valor ? `${_cqEsc(String(a.eta.valor))}${a.eta.tipo === 'abs' ? ' ' + _cqEsc(a.unidadeMedida || '') : '%'}` : '' },
+    { l: 'Fonte do ETa', v: _cqEsc(a.eta?.fonte || '') },
+    { l: 'Referência', v: _cqEsc(a.eta?.referencia || ''), largo: true },
+    { l: 'CV meta', v: a.cvMeta?.valor ? `${_cqEsc(String(a.cvMeta.valor))}%` : '' },
+    { l: 'Fonte do CV meta', v: _cqEsc(a.cvMeta?.fonte || '') },
+  ])) : '';
+  const esc = _cqArr(a.escala);
+  const secRes = !quant ? _cqPvSecao(CQ_ICO.lista, 'Resultados possíveis', `${esc.length
+    ? `<div class="cq-pv-chips">${esc.map(r => _cqPvPill(_cqEsc(r), 'contorno')).join(' ')}</div>` : '<div class="cq-pv-nota">Nenhum resultado definido.</div>'}
+    ${tipo === 'semiquantitativo' ? `<div class="cq-pv-nota">Tolerância: ${_cqEsc(String(a.toleranciaPassos ?? 1))} categoria(s).</div>` : ''}`) : '';
+  const ib = a.incubacao;
+  const secAc = a.indicadorEster ? _cqPvSecao(CQ_ICO_AUTOCLAVE, 'Analito de autoclave', _cqPvCampos([
+    { l: 'Indicador', v: _cqEsc(CQ_INDICADOR_ESTER[a.indicadorEster] || a.indicadorEster) },
+    { l: 'Libera o ciclo da autoclave', v: a.liberaCiclo ? 'Sim — o ciclo fica em análise até ser aprovado' : 'Não — se reprovado, reprova o ciclo' },
+    a.indicadorEster === 'biologico' && { l: 'Incubação (bula)', v: ib ? `até ${_cqEsc(String(ib.horas))} h após o ciclo${ib.tmin != null ? ` · ${_cqEsc(String(ib.tmin))} a ${_cqEsc(String(ib.tmax))} °C` : ''}` : '' },
+  ])) : '';
+  const geral = `<div class="cq-vw">${hero}${stats}${secId}${secEspec}${secRes}${secAc}</div>`;
+  cqDrawerOpen({
+    titulo: a.nome, subtitulo: [CQ_TIPOS_ANALITO[tipo], a.especialidade, a.ativo === false ? 'inativo' : ''].filter(Boolean).join(' · ') || 'Analito', icone: 'beaker',
+    corpo: `${_cqInativoNota(a, 'ativo', 'não aparece nos cadastros de testes nem nos lançamentos')}${_cqAbasHTML('anver', [
+      { k: 'geral', rotulo: 'Geral', html: geral },
+      { k: 'testes', rotulo: `Testes${testesA.length ? ` <span class="cq-step-qtd">${testesA.length}</span>` : ''}`, html: _cqTestesCompactoHTML(a, testesA) },
+      _cqAbaTrilha(a)], aba)}`,
+    rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
+      ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqAnalitoForm('${a.id}',document.querySelector('#cq-abas-anver .ot-modal-tab-btn.active')?.dataset.aba)">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
+  });
+  delete document.getElementById('cq-drawer-title')?.dataset.teste;
+}
+
+// Botão "voltar ao analito" (teste): abre a visualização do analito na aba Testes
+function _cqVoltarAnalitoHTML(an) { return _cqVoltarHTML(an.nome, `cqAnalitoVer('${an.id}','testes')`, 'Voltar para o analito'); }
+// Botão "voltar" compacto no topo da janela lateral (teste → analito, lote → material/produto)
+function _cqVoltarHTML(nome, acao, titulo) {
+  return `<button type="button" class="cq-voltar-btn" onclick="${acao}" title="${_cqEsc(titulo)}">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 6 9 12 15 18"/></svg>
+    <span>${_cqEsc(nome)}</span></button>`;
+}
+// Visualização do teste: configuração, níveis (lote e alvo ou esperado) e trilha. "Editar" abre o formulário.
+function cqTesteVer(id, aba) {
+  const t = cqState.config.testes[id];
+  if (!t) return;
+  const an = _cqAnalito(t.analitoId);
+  const qual = _cqTesteQual(t);
+  const niveis = _cqNiveisTeste(t);
+  const pend = _cqPendenciasTeste(t);
+  const nomeT = _cqNomeTeste(t);
+  const setor = _cqSetoresDaUnidade(t.unidadeId).length ? _cqRotuloSetor(_cqSetorDoTeste(t)) : '';
+  const hero = `<div class="cq-pv-hero">
+    <div class="cq-pv-hero-ico">${an?.indicadorEster ? CQ_ICO_AUTOCLAVE : CQ_ICO.beaker}</div>
+    <div class="cq-pv-hero-txt"><small>Teste · ${_cqEsc(CQ_TIPOS_ANALITO[an?.tipo || 'quantitativo'] || '')}</small><h3>${_cqEsc(nomeT)}</h3>
+      <div class="cq-pv-chips">${_cqPvPill(_cqEsc(_cqEquipTeste(t)), '', CQ_ICO.beaker)}
+        ${_cqPvPill(_cqEsc(_cqSiglasUnidades([t.unidadeId]) || ''), '', CQ_ICO.unidade)}
+        ${setor ? _cqPvPill(_cqEsc(setor), 'contorno') : ''}
+        ${an ? `<button type="button" class="cq-pv-pill link" onclick="cqAnalitoVer('${an.id}')" title="Ver o analito">${_cqEsc(an.nome)}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="9 6 15 12 9 18"/></svg></button>` : ''}</div></div>
+    ${_cqPvPill(t.ativo === false ? 'Inativo' : 'Ativo', t.ativo === false ? 'cinza grande' : 'verde grande')}
+  </div>`;
+  const stats = `<div class="cq-pv-stats">
+    ${_cqPvStat(CQ_ICO.lista, 'Níveis', String(niveis.length), qual ? 'controles' : niveis.map(n => 'N' + n).join(', '))}
+    ${_cqPvStat(CQ_ICO.calendario, 'Frequência', _cqEsc(CQ_FREQ[t.frequencia?.tipo] || '—'), t.frequencia?.tipo === 'vezes_dia' ? `${_cqEsc(String(t.frequencia.vezesDia || 1))}× ao dia` : '')}
+    ${_cqPvStat(CQ_ICO.alerta, 'Pendências', String(pend.length), pend.length ? _cqEsc(pend.join('; ')) : 'nenhuma', pend.length ? 'alerta' : 'ok')}
+  </div>`;
+  const mat = cqState.config.materiais[t.materialId];
+  const secCfg = _cqPvSecao(CQ_ICO.cadastro, 'Configuração', _cqPvCampos([
+    { l: 'Analito', v: _cqEsc(an?.nome || '') },
+    { l: 'Equipamento / sistema', v: _cqEsc(_cqEquipTeste(t)) },
+    { l: qual ? 'Meio / insumo' : 'Método', v: _cqEsc(t.metodo || '') },
+    !qual && { l: 'Material de controle', v: _cqEsc(mat?.nome || '') },
+    { l: 'Critério', v: qual ? (an?.tipo === 'semiquantitativo' ? 'Concordância (±1 categoria = alerta)' : 'Concordância com o esperado')
+      : `${_cqEsc(CQEngine.PRESETS[t.regrasPreset]?.label || 'Personalizado')} <small>${_cqResumoRegras(t.regras)}</small>`, largo: true },
+    t.insumoTipo && { l: 'Insumo controlado', v: _cqEsc([CQ_TIPOS_INSUMO[t.insumoTipo] || t.insumoTipo, t.insumoProduto].filter(Boolean).join(' · ')) },
+    t.insumoTipo && { l: 'Exigir lote do insumo', v: t.exigirInsumo ? 'Sim' : 'Não' },
+    { l: 'Início de uso', v: t.inicioUso ? _cqFmtData(t.inicioUso) : '' },
+  ]));
+  const linhas = niveis.map(n => {
+    const rot = qual ? _cqRotuloNivel(t, n) : `Nível ${n}`;
+    if (qual) {
+      const c = _cqControleQual(t, n);
+      const m = cqState.config.materiais[c?.materialId];
+      const l = _cqLoteDoNivel(t, n);
+      return { l: _cqEsc(rot), v: `${c?.esperado ? `Esperado: <b>${_cqEsc(c.esperado)}</b>` : '<span class="cq-txt-vermelho">sem esperado</span>'}
+        <small>${_cqEsc([m?.nome, l ? `lote ${l.lote}` : (_cqNivelSemMaterial(t, n) ? '' : 'sem lote')].filter(Boolean).join(' · '))}</small>`, largo: true };
+    }
+    const l = _cqLoteDoNivel(t, n);
+    const al = l ? _cqAlvoVigente(t.id, l.id, n) : null;
+    const dec = an?.decimais ?? 1;
+    return { l: _cqEsc(rot), v: `${l ? `Lote ${_cqEsc(l.lote)}` : '<span class="cq-txt-vermelho">sem lote</span>'}
+      <small>${al ? `média ${_cqNum(Number(al.media), dec)} · DP ${_cqNum(Number(al.dp), dec)}${CQ_ORIGEM_ALVO[al.origem] ? ` · ${_cqEsc(CQ_ORIGEM_ALVO[al.origem].label)}` : ''}` : l ? 'sem alvo' : ''}</small>`, largo: true };
+  });
+  const secNiv = _cqPvSecao(CQ_ICO.lista, qual ? 'Controles' : 'Níveis, lotes e alvos', linhas.length ? _cqPvCampos(linhas) : '<div class="cq-pv-nota">Nenhum nível definido.</div>');
+  const geral = `<div class="cq-vw">${hero}${stats}${secCfg}${secNiv}</div>`;
+  cqDrawerOpen({
+    titulo: `${nomeT} · ${_cqEquipTeste(t)}`, subtitulo: 'Estratégia de controle do teste (RDC 978, arts. 176 e 180)', icone: 'beaker',
+    corpo: `${an ? _cqVoltarAnalitoHTML(an) : ''}${_cqAbasHTML('tever', [
+      { k: 'config', rotulo: 'Geral', html: geral },
+      _cqAbaTrilha(t)], aba)}`,
+    rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
+      ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqTesteForm('${t.id}',document.querySelector('#cq-abas-tever .ot-modal-tab-btn.active')?.dataset.aba)">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
   });
   delete document.getElementById('cq-drawer-title')?.dataset.teste;
 }
@@ -908,6 +1126,17 @@ async function cqAnalitoSalvar() {
 async function _cqAnalitoQualSalvar(tipo) {
   const nome = _cqVal('cq-an-nome');
   if (!nome) { showToast('Informe o nome do analito.', 'error'); return; }
+  if (_cqChk('cq-an-autoclave-chk') && !CQ_INDICADOR_ESTER[_cqVal('cq-an-indic')]) { showToast('Analito de autoclave: escolha o tipo de indicador.', 'error'); return; }
+  // Indicador biológico: incubação da bula (prazo obrigatório; faixa opcional, as duas pontas)
+  let incubacao = null;
+  if (_cqChk('cq-an-autoclave-chk') && _cqVal('cq-an-indic') === 'biologico') {
+    const num = id => { const t = _cqVal(id); return t ? CQEngine.parseNumero(t) : null; };
+    const h = num('cq-an-ib-h'), tmin = num('cq-an-ib-tmin'), tmax = num('cq-an-ib-tmax');
+    if (h === null || h <= 0 || h > 72) { showToast('Incubação: prazo entre 0 e 72 h após o ciclo.', 'error'); return; }
+    if (!!_cqVal('cq-an-ib-tmin') !== !!_cqVal('cq-an-ib-tmax') || (_cqVal('cq-an-ib-tmin') && (tmin === null || tmax === null))) { showToast('Incubação: informe as duas temperaturas da faixa (ou deixe as duas vazias).', 'error'); return; }
+    if (tmin !== null && tmax < tmin) { showToast('Incubação: temperatura máxima menor que a mínima.', 'error'); return; }
+    incubacao = { horas: h, tmin, tmax };
+  }
   const escala = CQEngine.parseEscala(_cqItensVal('cq-an-escala').join('\n'));
   if (escala.length < 2) { showToast('Adicione ao menos dois resultados possíveis.', 'error'); return; }
   const antes = _cqAnalitoFormId ? cqState.config.analitos[_cqAnalitoFormId] : null;
@@ -927,10 +1156,14 @@ async function _cqAnalitoQualSalvar(tipo) {
     ...(antes || {}), id: _cqAnalitoFormId || _cqUid(), codigo: _cqVal('cq-an-codigo'), nome, unidadeMedida: '', decimais: 0, tipo,
     especialidade: _cqVal('cq-an-esp'), limitesDecisao: [], eta: null, cvMeta: null, escala,
     toleranciaPassos: tipo === 'semiquantitativo' ? Math.min(2, Math.max(0, Number(_cqVal('cq-an-tol')) || 0)) : null,
+    indicadorEster: _cqChk('cq-an-autoclave-chk') ? _cqVal('cq-an-indic') : null, incubacao,
+    liberaCiclo: _cqChk('cq-an-autoclave-chk') ? _cqChk('cq-an-libera') : null,
     ...eq, unidadeIds, ativo: _cqChk('cq-an-ativo-q'),
   };
   if (!antes) { rec.criadoEm = _cqAgora(); rec.criadoPor = _cqAssinatura(); }
-  const fmt = { escala: v => _cqArr(v).join(' | '), tipo: v => CQ_TIPOS_ANALITO[v] || v, ativoIds: _cqFmtAtivos, sistemas: _cqFmtSistemas, unidadeIds: _cqSiglasUnidades, ativo: v => v ? 'Sim' : 'Não' };
+  const fmt = { escala: v => _cqArr(v).join(' | '), tipo: v => CQ_TIPOS_ANALITO[v] || v, indicadorEster: v => CQ_INDICADOR_ESTER[v] || 'Não',
+    liberaCiclo: v => v ? 'Sim' : 'Não',
+    incubacao: v => v ? `até ${String(v.horas).replace('.', ',')} h após o ciclo${v.tmin != null ? `, ${String(v.tmin).replace('.', ',')} a ${String(v.tmax).replace('.', ',')} °C` : ''}` : '—', ativoIds: _cqFmtAtivos, sistemas: _cqFmtSistemas, unidadeIds: _cqSiglasUnidades, ativo: v => v ? 'Sim' : 'Não' };
   const diffs = antes ? _cqDiff(antes, rec, CQ_LBL_ANALITO, fmt) : [];
   if (antes && !diffs.length) { cqDrawerClose(); return; }
   _cqTrilhaAdd(rec, antes ? 'edicao' : 'criacao', antes ? 'Analito alterado' : 'Analito cadastrado', diffs);
@@ -1028,6 +1261,7 @@ function cqModelosMicro(tipo) {
       const criados = [];
       novos.forEach(m => {
         const rec = { id: _cqUid() + m.codigo.slice(-2).toLowerCase(), codigo: m.codigo, nome: m.nome, unidadeMedida: '', decimais: 0, tipo: 'qualitativo',
+                      ...(m.indicador ? { indicadorEster: m.indicador, liberaCiclo: true } : {}),
                       especialidade: mod.esp, limitesDecisao: [], escala: [...m.escala], ativo: true, unidadeIds: [u],
                       criadoEm: _cqAgora(), criadoPor: _cqAssinatura(), atualizadoEm: _cqAgora() };
         _cqTrilhaAdd(rec, 'criacao', `Analito cadastrado a partir do modelo de ${mod.nomeCurto}`);
@@ -1057,7 +1291,7 @@ const CQ_LBL_MATERIAL = {
   estabilidadeAbertoDias: 'Estabilidade após abertura (dias)', equips: 'Equipamentos / sistemas', analitoIds: 'Analitos', unidadeIds: 'Áreas', ativo: 'Ativo',
 };
 
-function cqMaterialForm(id) {
+function cqMaterialForm(id, opts = {}) {
   const m = id ? cqState.config.materiais[id] : null;
   const pode = _cqPodeEditarCad(!!m);
   _cqMaterialFormId = id || null;
@@ -1100,7 +1334,7 @@ function cqMaterialForm(id) {
       const ls = Object.values(cqState.config.lotesControle).filter(l => l.materialId === m.id).sort((a, b) => (b.validade || '').localeCompare(a.validade || ''));
       return { k: 'lotes', rotulo: `Lotes${ls.length ? ` <span class="cq-step-qtd">${ls.length}</span>` : ''}`,
         html: _cqLotesCompactoHTML(ls, 'cqLoteVer', _cqCan('configurar') ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="cqLoteForm(null,{materialId:'${m.id}'})">${CQ_ICO.plus} Novo lote</button>` : '') };
-    })(), _cqAbaTrilha(m)]),
+    })(), _cqAbaTrilha(m)], opts.aba),
     rodape: _cqRodapeForm('cqMaterialSalvar()', pode, m ? `cqExcluirCadastro('materiais','${m.id}')` : '',
       m && { ids: 'cq-mat-ativo', fn: 'cqMaterialSalvar', colecao: 'materiais', id: m.id, ativo: m.ativo !== false }),
   });
@@ -1187,30 +1421,104 @@ function _cqLoteUsoHTML(l, pode) {
   const multiUn = _cqUnidadesRec(l).length !== 1;
   const total = cands.reduce((s, x) => s + x.niveis.length, 0);
   const comEste = cands.reduce((s, x) => s + x.niveis.filter(n => x.t.lotesAtivos?.[n] === l.id).length, 0);
-  // Um cartão por teste; cada nível é uma pílula marcável com o lote em uso hoje
-  const cartoes = cands.map(({ t, niveis }) => {
+  setTimeout(_cqLoteUsoAtualizar, 0);   // chips do botão: lidos das caixas depois de o HTML entrar na página
+  // Popover: um grupo por teste, cada nível é uma opção marcável com o lote em uso hoje.
+  // As caixas (.cq-lote-uso) ficam no popover mesmo fechado; _cqLoteUsoCapturar lê direto delas.
+  const grupos = cands.map(({ t, niveis }) => {
     const qual = _cqTesteQual(t);
-    const pilulas = niveis.map(n => {
+    const nomeT = _cqNomeTeste(t);
+    const sub = [_cqEquipTeste(t), multiUn ? _cqSiglasUnidades([t.unidadeId]) : '', t.ativo === false ? 'inativo' : ''].filter(Boolean).join(' · ');
+    const ops = niveis.map(n => {
       const atual = _cqLoteDoNivel(t, n);
       const usa = atual?.id === l.id;
       // Alvo só é conhecido para a unidade ativa (os alvos são carregados por unidade)
       const semAlvo = usa && !qual && _cqAlvosReady && t.unidadeId === _cqUnidadeAtivaId() && !_cqAlvoVigente(t.id, l.id, n);
       const hoje = usa ? 'este lote' : atual ? `${atual.lote}${_cqLoteVencido(atual) ? ' (vencido)' : atual.status === 'encerrado' ? ' (encerrado)' : ''}` : 'sem lote';
       const off = !pode || (bloq && !usa);
-      return `<label class="cq-uso-nivel${usa ? ' on' : ''}${off ? ' off' : ''}" title="${usa ? 'Desmarque para retirar este lote do nível' : `Hoje: ${_cqEsc(hoje)} — marque para usar este lote`}">
-        <input type="checkbox" class="cq-lote-uso" data-t="${t.id}" data-n="${n}" ${usa ? 'checked' : ''} ${off ? 'disabled' : ''} onchange="this.closest('.cq-uso-nivel').classList.toggle('on',this.checked)">
-        <b>${_cqEsc(qual ? _cqRotuloNivel(t, n) : `N${n}`)}</b><small class="${!usa && !atual ? 'cq-txt-amarelo' : ''}">${_cqEsc(hoje)}</small>${semAlvo ? '<span class="cq-uso-alerta" title="Cadastre o alvo deste lote na aba Alvos do teste">sem alvo</span>' : ''}</label>`;
+      const rot = qual ? _cqRotuloNivel(t, n) : `N${n}`;
+      return `<label class="cq-ms-op cq-uso-op${usa ? ' on' : ''}${off ? ' off' : ''}" data-q="${_cqEsc(_cqNormBusca(`${nomeT} ${sub} ${rot} ${hoje}`))}">
+        <input type="checkbox" class="cq-lote-uso" data-t="${t.id}" data-n="${n}" data-rot="${_cqEsc(`${nomeT} · ${rot}`)}" ${usa ? 'checked' : ''} ${off ? 'disabled' : ''} onchange="cqLoteUsoMarcar(this)">
+        <span class="cq-ms-op-txt">${_cqEsc(rot)}<small class="${!usa && !atual ? 'cq-txt-amarelo' : ''}">Hoje: <span class="cq-uso-hoje" data-orig="${_cqEsc(hoje)}">${_cqEsc(hoje)}</span></small></span>
+        ${semAlvo ? '<span class="cq-uso-alerta" title="Cadastre o alvo deste lote na aba Alvos do teste">sem alvo</span>' : ''}</label>`;
     }).join('');
-    return `<div class="cq-uso-teste${t.ativo === false ? ' inativo' : ''}">
-      <div class="cq-uso-cab"><b>${_cqEsc(_cqNomeTeste(t))}</b><small>${_cqEsc([_cqEquipTeste(t), multiUn ? _cqSiglasUnidades([t.unidadeId]) : '', t.ativo === false ? 'inativo' : ''].filter(Boolean).join(' · '))}</small></div>
-      <div class="cq-uso-niveis">${pilulas}</div></div>`;
+    return `<div class="cq-uso-grp${t.ativo === false ? ' inativo' : ''}"><div class="cq-ms-grupo cq-uso-grp-cab">${_cqEsc(nomeT)}${sub ? `<small>${_cqEsc(sub)}</small>` : ''}</div>${ops}</div>`;
   }).join('');
   return `${bloq ? `<div class="cq-alerta-box">${CQ_ICO.alerta} Lote ${l.status === 'quarentena' ? 'em quarentena' : _cqLoteVencido(l) ? 'vencido' : 'encerrado'}: não pode passar a ser o lote em uso de um teste.</div>` : ''}
-    <div class="cq-uso-resumo">Em uso em <b>${comEste}</b> de ${total} nível(is) de ${cands.length} teste(s)</div>
-    <div class="cq-uso-lista">${cartoes}</div>
-    <div class="cq-nota" style="margin-top:8px;">Marque o nível para usar este lote (substitui o lote em uso; a troca fica registrada no teste e no lote, com justificativa). Testes quantitativos precisam do alvo do novo lote (aba “Alvos” do teste).
+    <div class="cq-uso-resumo">Em uso em <b id="cq-uso-n">${comEste}</b> de ${total} nível(is) de ${cands.length} teste(s)</div>
+    <div class="cq-ms cq-uso-ms" id="cq-uso-ms" data-ro="${pode ? '' : '1'}">
+      <div class="cq-ms-btn" id="cq-uso-ms-btn" tabindex="0" role="button" aria-haspopup="listbox"
+        onclick="cqLoteUsoAbrir()" onkeydown="if(event.key==='Enter'||event.key===' '||event.key==='ArrowDown'){event.preventDefault();cqLoteUsoAbrir()}"></div>
+      <div class="cq-ms-pop" id="cq-uso-ms-pop" style="display:none;" onkeydown="if(event.key==='Escape'){event.stopPropagation();cqLoteUsoFechar(true)}">
+        <div class="cq-ms-busca">${CQ_ICO.busca}<input type="text" id="cq-uso-ms-busca" placeholder="Buscar teste ou nível…" autocomplete="off" oninput="cqLoteUsoBuscar(this.value)"></div>
+        <div class="cq-ms-lista cq-uso-ms-lista" role="listbox" aria-multiselectable="true">${grupos}<div class="cq-ms-vazio" id="cq-uso-ms-vazio" style="display:none;">Nada encontrado.</div></div>
+        <div class="cq-ms-pe"><span id="cq-uso-ms-n"></span><button type="button" onclick="cqLoteUsoFechar(true)">Concluir</button></div>
+      </div>
+    </div>
+    <div class="cq-nota" style="margin-top:8px;">${pode ? '' : '<b>Só visualização:</b> clique em <b>Editar</b> (rodapé) para mudar o uso. '}Marque o nível para usar este lote (substitui o lote em uso; a troca fica registrada no teste e no lote, com justificativa). Testes quantitativos precisam do alvo do novo lote (aba “Alvos” do teste).
       Aparecem os testes cujo nível usa o material ${_cqEsc(mat?.nome || '')}.</div>`;
 }
+// Popover de uso nos testes: botão com um chip por nível marcado
+function _cqLoteUsoCaixas() { return [...document.querySelectorAll('#cq-uso-ms .cq-lote-uso')]; }
+function _cqLoteUsoAtualizar() {
+  const btn = document.getElementById('cq-uso-ms-btn');
+  if (!btn) return;
+  const cx = _cqLoteUsoCaixas(), sel = cx.filter(c => c.checked);
+  const chips = sel.map(c => `<span class="cq-ms-chip" title="${_cqEsc(c.dataset.rot)}"><span class="cq-ms-chip-txt">${_cqEsc(c.dataset.rot.slice(0, c.dataset.rot.lastIndexOf(' · ')))}</span><span class="cq-uso-chip-nv">${_cqEsc(c.dataset.rot.slice(c.dataset.rot.lastIndexOf(' · ') + 3))}</span>${c.disabled ? '' : `<button type="button" title="Retirar este lote do nível" onclick="event.stopPropagation();cqLoteUsoTirar(${cx.indexOf(c)})">×</button>`}</span>`).join('');
+  btn.innerHTML = `<div class="cq-ms-chips">${chips || `<span class="cq-ms-ph">Nenhum nível usa este lote${document.getElementById('cq-uso-ms')?.dataset.ro ? '' : ' — clique para escolher'}</span>`}</div>
+    <svg class="cq-ms-caret" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>`;
+  const n = document.getElementById('cq-uso-n');
+  if (n) n.textContent = sel.length;
+  const pe = document.getElementById('cq-uso-ms-n');
+  const ro = !!document.getElementById('cq-uso-ms')?.dataset.ro;
+  if (pe) pe.textContent = `${sel.length} de ${cx.length} nível(is) com este lote${ro ? ' · só visualização: use Editar para mudar' : ''}`;
+}
+function cqLoteUsoMarcar(c) {
+  const op = c.closest('.cq-uso-op');
+  op?.classList.toggle('on', c.checked);
+  const h = op?.querySelector('.cq-uso-hoje');
+  if (h) h.textContent = c.checked ? (h.dataset.orig === 'este lote' ? 'este lote' : `${h.dataset.orig} → este lote`) : (h.dataset.orig === 'este lote' ? 'este lote → sem lote' : h.dataset.orig);
+  _cqLoteUsoAtualizar();
+}
+function cqLoteUsoTirar(i) {
+  const c = _cqLoteUsoCaixas()[i];
+  if (!c || c.disabled) return;
+  c.checked = false;
+  cqLoteUsoMarcar(c);
+}
+function cqLoteUsoAbrir() {
+  const pop = document.getElementById('cq-uso-ms-pop');
+  if (!pop) return;
+  if (pop.style.display !== 'none') { cqLoteUsoFechar(); return; }
+  const b = document.getElementById('cq-uso-ms-busca');
+  if (b) b.value = '';
+  cqLoteUsoBuscar('');
+  pop.style.display = '';
+  document.getElementById('cq-uso-ms')?.classList.add('aberto');
+  setTimeout(() => b?.focus(), 30);
+}
+function cqLoteUsoFechar(foco) {
+  const pop = document.getElementById('cq-uso-ms-pop');
+  if (!pop || pop.style.display === 'none') return;
+  pop.style.display = 'none';
+  document.getElementById('cq-uso-ms')?.classList.remove('aberto');
+  if (foco) document.getElementById('cq-uso-ms-btn')?.focus();
+}
+function cqLoteUsoBuscar(q) {
+  const k = _cqNormBusca(q || '').trim();
+  let algum = false;
+  document.querySelectorAll('#cq-uso-ms .cq-uso-grp').forEach(g => {
+    let vis = 0;
+    g.querySelectorAll('.cq-uso-op').forEach(o => { const ok = !k || o.dataset.q.includes(k); o.style.display = ok ? '' : 'none'; if (ok) vis++; });
+    g.style.display = vis ? '' : 'none';
+    if (vis) algum = true;
+  });
+  const v = document.getElementById('cq-uso-ms-vazio');
+  if (v) v.style.display = algum ? 'none' : '';
+}
+document.addEventListener('mousedown', e => {
+  const el = document.getElementById('cq-uso-ms');
+  if (el && !el.contains(e.target)) cqLoteUsoFechar();
+});
 // Mudanças de lote em uso marcadas na aba "Uso nos testes": [{ t, la (novo lotesAtivos), mud: [texto] }]
 function _cqLoteUsoCapturar(l) {
   const porTeste = new Map();
@@ -1240,7 +1548,7 @@ function cqLoteForm(id, opts = {}) {
   const usoN = l ? Object.values(cqState.config.testes).reduce((s, t) => s + Object.values(t.lotesAtivos || {}).filter(x => x === l.id).length, 0) : 0;
   cqDrawerOpen({
     titulo: l ? `Lote ${l.lote}` : 'Novo lote de controle', subtitulo: mat0 ? mat0.nome : '', icone: 'beaker',
-    corpo: _cqAbasHTML('lote', [{ k: 'dados', rotulo: 'Lote', html: `
+    corpo: (mat0 && (l || opts.materialId) ? _cqVoltarHTML(mat0.nome, `cqMaterialVer('${mat0.id}','lotes')`, 'Voltar para o material') : '') + _cqAbasHTML('lote', [{ k: 'dados', rotulo: 'Lote', html: `
       ${_cqEncerradoAutoNota(l)}
       <div class="form-section"><div class="form-section-title">${CQ_ICO.beaker}Lote</div>
         <div class="form-field"><label class="field-label">Material <span class="required">*</span></label>
@@ -1270,7 +1578,7 @@ function _cqTestesDoLoteControle(lid) {
 
 // Visualização do material de controle (clique na linha): dados, níveis, lotes (Ativos / Inativos) e trilha.
 // Editar abre o formulário (cqMaterialForm), no mesmo modelo dos produtos de reagentes.
-function cqMaterialVer(id) {
+function cqMaterialVer(id, aba) {
   const m = cqState.config.materiais[id];
   if (!m) return;
   const hoje = _cqHoje();
@@ -1318,9 +1626,9 @@ function cqMaterialVer(id) {
     corpo: `${_cqInativoNota(m, 'ativo', 'não é oferecido em testes novos')}${_cqAbasHTML('matver', [
       { k: 'geral', rotulo: 'Geral', html: geral },
       { k: 'lotes', rotulo: `Lotes${lotes.length ? ` <span class="cq-step-qtd">${lotes.length}</span>` : ''}`, html: lotesHTML },
-      _cqAbaTrilha(m)])}`,
+      _cqAbaTrilha(m)], aba)}`,
     rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
-      ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqMaterialForm('${m.id}')">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
+      ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqMaterialForm('${m.id}',{aba:document.querySelector('#cq-abas-matver .ot-modal-tab-btn.active')?.dataset.aba})">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
   });
 }
 
@@ -1364,12 +1672,12 @@ function cqLoteVer(id, aba) {
   const geral = `<div class="cq-vw">${hero}${_cqEncerradoAutoNota(l)}${stats}${secLote}${secObs}</div>`;
   cqDrawerOpen({
     titulo: `${mat?.nome || 'Lote'} · lote ${l.lote}`, subtitulo: [CQ_TIPOS_MATERIAL[mat?.tipo], `val. ${_cqFmtData(l.validade)}`].filter(Boolean).join(' · '), icone: 'beaker',
-    corpo: _cqAbasHTML('lotever', [
+    corpo: (mat ? _cqVoltarHTML(mat.nome, `cqMaterialVer('${mat.id}','lotes')`, 'Voltar para o material') : '') + _cqAbasHTML('lotever', [
       { k: 'geral', rotulo: 'Geral', html: geral },
       { k: 'uso', rotulo: `Uso nos testes${testes.length ? ` <span class="cq-step-qtd">${testes.length}</span>` : ''}`, html: _cqLoteUsoHTML(l, false) },
       _cqAbaTrilha(l)], aba),
     rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
-      ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqLoteForm('${l.id}')">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
+      ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqLoteForm('${l.id}',{aba:document.querySelector('#cq-abas-lotever .ot-modal-tab-btn.active')?.dataset.aba})">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
   });
 }
 
@@ -1461,7 +1769,7 @@ const CQ_LBL_INS_PRODUTO = { tipo: 'Tipo', nome: 'Produto', fabricante: 'Fabrica
 const _cqFmtPreparo = v => v ? [v.especificacao, v.armazenamento, v.riscos ? 'riscos: ' + v.riscos : '', v.validadeDias ? `validade ${v.validadeDias} dia(s) após preparo` : '',
   v.liberaSemCIQ ? 'liberado no registro (sem CIQ)' : '', v.avisoDias != null ? `avisa a troca ${v.avisoDias} dia(s) antes` : ''].filter(Boolean).join(' · ') : '—';
 
-function cqInsumoProdutoForm(id) {
+function cqInsumoProdutoForm(id, opts = {}) {
   const p = id ? cqState.config.insumoProdutos[id] : null;
   const pode = _cqPodeEditarCad(!!p);
   _cqInsProdFormId = id || null;
@@ -1513,7 +1821,7 @@ function cqInsumoProdutoForm(id) {
       </div>
 ` }, p && { k: 'lotes', rotulo: `Lotes${lotes.length ? ` <span class="cq-step-qtd">${lotes.length}</span>` : ''}`,
         html: _cqLotesCompactoHTML(lotes, 'cqInsumoForm', pode ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="cqInsumoForm(null,{produtoId:'${p.id}'})">${CQ_ICO.plus} Novo lote</button>` : '') },
-      _cqAbaTrilha(p)]),
+      _cqAbaTrilha(p)], opts.aba),
     rodape: _cqRodapeForm('cqInsumoProdutoSalvar()', pode, p ? `cqExcluirCadastro('insumoProdutos','${p.id}')` : '',
       p && { ids: 'cq-ins-ativo', fn: 'cqInsumoProdutoSalvar', colecao: 'insumoProdutos', id: p.id, ativo: p.ativo !== false }),
   });
@@ -1573,7 +1881,7 @@ function _cqPvUltimoPrep(ult) {
     ult ? `<em title="${_cqEsc([ult.codigo, ult.responsavel].filter(Boolean).join(' · '))}">${_cqEsc(ult.codigo || '')}</em>${ult.responsavel ? ` · ${_cqEsc(_cqPvNome(ult.responsavel))}` : ''}` : 'nenhum registrado');
 }
 
-function cqInsumoProdutoVer(id) {
+function cqInsumoProdutoVer(id, aba) {
   const p = cqState.config.insumoProdutos[id];
   if (!p) return;
   const pode = _cqCan('configurar');
@@ -1635,9 +1943,9 @@ function cqInsumoProdutoVer(id) {
       { k: 'geral', rotulo: 'Geral', html: geral },
       { k: 'lotes', rotulo: `Lotes${lotes.length ? ` <span class="cq-step-qtd">${lotes.length}</span>` : ''}`, html: lotesHTML },
       preps.length && { k: 'preparos', rotulo: `Preparos <span class="cq-step-qtd">${preps.length}</span>`, html: prepsHTML },
-      _cqAbaTrilha(p)])}`,
+      _cqAbaTrilha(p)], aba)}`,
     rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
-      ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqInsumoProdutoForm('${p.id}')">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
+      ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqInsumoProdutoForm('${p.id}',{aba:document.querySelector('#cq-abas-prodver .ot-modal-tab-btn.active')?.dataset.aba})">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
   });
 }
 
@@ -1697,12 +2005,12 @@ function cqInsumoVer(id) {
   const geral = `<div class="cq-vw">${hero}${_cqEncerradoAutoNota(i)}${stats}${secLote}${secObs}</div>`;
   cqDrawerOpen({
     titulo: `${prod.nome} · lote ${i.lote}`, subtitulo: [CQ_TIPOS_INSUMO[prod.tipo], `val. ${_cqFmtData(i.validade)}`].filter(Boolean).join(' · '), icone: 'beaker',
-    corpo: _cqAbasHTML('insver', [
+    corpo: _cqVoltarHTML(prod.nome, `cqInsumoProdutoVer('${prod.id}','lotes')`, 'Voltar para o produto') + _cqAbasHTML('insver', [
       { k: 'geral', rotulo: 'Geral', html: geral },
       preps.length && { k: 'preparos', rotulo: `Preparos <span class="cq-step-qtd">${preps.length}</span>`, html: _cqPrepsAtivosInativosHTML(preps, false) },
       _cqAbaTrilha(i)]),
     rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
-      ${pode ? `<button class="btn btn-primary" onclick="cqInsumoForm('${i.id}')">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
+      ${pode ? `<button class="btn btn-primary" onclick="cqInsumoForm('${i.id}',{aba:document.querySelector('#cq-abas-insver .ot-modal-tab-btn.active')?.dataset.aba})">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
   });
 }
 
@@ -1800,7 +2108,7 @@ function cqInsumoForm(id, opts = {}) {
   const opsProd = Object.entries(porTipo).map(([t, ps]) => `<optgroup label="${_cqEsc(CQ_TIPOS_INSUMO[t] || t)}">${ps.map(p => `<option value="${p.id}" ${p.id === pid ? 'selected' : ''}>${_cqEsc(p.nome)}${p.fabricante ? ' — ' + _cqEsc(p.fabricante) : ''}</option>`).join('')}</optgroup>`).join('');
   cqDrawerOpen({
     titulo: i ? `${i.nome} · lote ${i.lote}` : 'Novo lote', subtitulo: p0 ? `${CQ_TIPOS_INSUMO[p0.tipo] || ''} · ${p0.nome}` : 'Reagentes, calibradores, meios de cultura e corantes usados nas corridas', icone: 'beaker',
-    corpo: _cqAbasHTML('ins', [{ k: 'dados', rotulo: 'Lote', html: `
+    corpo: (() => { const pv = prodAtual || cqState.config.insumoProdutos[opts.produtoId]; return pv ? _cqVoltarHTML(pv.nome, `cqInsumoProdutoVer('${pv.id}','lotes')`, 'Voltar para o produto') : ''; })() + _cqAbasHTML('ins', [{ k: 'dados', rotulo: 'Lote', html: `
       ${_cqEncerradoAutoNota(i)}
       ${legado ? `<div class="cq-alerta-box">${CQ_ICO.alerta} Lote cadastrado antes da separação entre produto e lote: ${_cqEsc(CQ_TIPOS_INSUMO[i.tipo] || i.tipo)} “${_cqEsc(i.nome)}”${i.fabricante ? `, ${_cqEsc(i.fabricante)}` : ''}${_cqEquipsInsumo(i).length ? `, ${_cqEsc(_cqEquipsInsumo(i).map(_cqRotuloEquip).join(', '))}` : ''}${_cqArr(i.analitoIds).length ? `, analitos ${_cqEsc(_cqArr(i.analitoIds).map(a => _cqAnalito(a)?.nome || '?').join(', '))}` : ''}.
         Escolha o produto correspondente: o lote passa a seguir o cadastro dele (equipamentos, analitos e preparo).</div>` : ''}
@@ -3529,7 +3837,7 @@ function _cqTesteRender() {
   if (!tabs[_cqTesteFormTab]) _cqTesteFormTab = 'config';
   const titulo = t ? `${_cqNomeTeste(t)} · ${_cqEquipTeste(t)}` : 'Novo teste';
   const anVolta = _cqAnalito(t?.analitoId || _cqTesteAnalitoFixo);
-  let corpo = `${anVolta ? `<a href="#" class="cq-link cq-voltar" onclick="cqAnalitoForm('${anVolta.id}','testes');return false;">← ${_cqEsc(anVolta.nome)}</a>` : ''}<div class="ot-modal-tabs cq-drawer-tabs">${Object.entries(tabs).map(([k, l]) => `<button class="ot-modal-tab-btn${k === _cqTesteFormTab ? ' active' : ''}" onclick="cqTesteAba('${k}')">${l}</button>`).join('')}</div>`;
+  let corpo = `${anVolta ? _cqVoltarAnalitoHTML(anVolta) : ''}<div class="ot-modal-tabs cq-drawer-tabs">${Object.entries(tabs).map(([k, l]) => `<button class="ot-modal-tab-btn${k === _cqTesteFormTab ? ' active' : ''}" onclick="cqTesteAba('${k}')">${l}</button>`).join('')}</div>`;
   let rodape = `${t && _cqPodeEditarCad() ? `<div class="cq-rodape-esq">${_cqCan('configurar') ? `<button class="btn btn-outline cq-btn-perigo" onclick="cqExcluirCadastro('testes','${t.id}')">Excluir</button>` : ''}${_cqTesteFormTab === 'config' ? _cqBtnAtivoHTML({ ids: 'cq-te-habilitado', fn: 'cqTesteSalvar', colecao: 'testes', id: t.id, ativo: t.ativo !== false }) : ''}</div>` : ''}
     <button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>`;
   if (_cqTesteFormTab === 'config') {
