@@ -100,7 +100,6 @@ const CQ_ORIGEM_ALVO = {
   estabelecido: { label: 'Estabelecido (laboratório)', cls: 'cq-st-aceito' },
   cumulativo: { label: 'Cumulativo', cls: 'cq-st-aceito' },
 };
-const CQ_ESPECIALIDADES = ['Bioquímica', 'Hematologia', 'Coagulação', 'Imunologia', 'Hormônios', 'Urinálise', 'Gasometria', 'Microbiologia', 'Parasitologia', 'Biologia molecular', 'Toxicologia', 'Outros'];
 
 let _cqCadEquips = [];            // filtro de equipamentos/sistemas da aba Analitos e testes ('a:…' | 'm:…')
 let _cqCadAnalitos = [];          // filtro de analitos (ids), com busca por código ou nome
@@ -214,8 +213,8 @@ function _cqCadOpsAnalitos(u, equipsSel) {
   const chaves = new Set(_cqArr(equipsSel).map(_cqEquipChave));
   const testesU = chaves.size ? _cqTestesDaUnidade(u, { incluirInativos: true }) : [];
   return _cqDaUnidade('analitos', u).filter(a => !chaves.size || _cqCadAnalitoNoEquip(a, chaves, testesU))
-    .sort((a, b) => (a.especialidade || '').localeCompare(b.especialidade || '') || (a.nome || '').localeCompare(b.nome || ''))
-    .map(a => ({ value: a.id, label: a.codigo ? `${a.codigo} — ${a.nome}` : a.nome, sub: a.tipo && a.tipo !== 'quantitativo' ? CQ_TIPOS_ANALITO[a.tipo] : (a.unidadeMedida || ''), grupo: a.especialidade || 'Sem especialidade' }));
+    .sort((a, b) => (a.nome || '').localeCompare(b.nome || ''))
+    .map(a => ({ value: a.id, label: a.codigo ? `${a.codigo} — ${a.nome}` : a.nome, sub: a.tipo && a.tipo !== 'quantitativo' ? CQ_TIPOS_ANALITO[a.tipo] : (a.unidadeMedida || '') }));
 }
 // Opções do filtro de equipamentos/sistemas: todos ou só os dos analitos marcados
 function _cqCadOpsEquips(u, anSel) {
@@ -392,7 +391,7 @@ function _cqCadRenderLista() {
         ts = ts.filter(t => _cqTestePassaSetor(t, fSetor));
         if (!ts.length && !_cqEquipsDoAnalito(a).some(o => o.ativo && _orgSetorIdsDoAtivo(o.ativo).some(id => _cqSetorPassa(id, fSetor)))) return;
       }
-      if (q && !bate(`${a.codigo || ''} ${a.nome} ${a.especialidade || ''}`)) { ts = ts.filter(t => bate(txtTeste(t))); if (!ts.length) return; }
+      if (q && !bate(`${a.codigo || ''} ${a.nome} `)) { ts = ts.filter(t => bate(txtTeste(t))); if (!ts.length) return; }
       const semTeste = !todos.length && a.ativo !== false;
       const comPend = ts.map(t => ({ t, p: _cqPendenciasTeste(t) }));
       const nPend = comPend.reduce((n, x) => n + x.p.length, 0);
@@ -401,20 +400,20 @@ function _cqCadRenderLista() {
     });
     const chev = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 6 15 12 9 18"/></svg>`;
     el.innerHTML = `<div class="oc-table-scroll"><table class="ot-list-table cq-table cq-an-tbl">
-      <thead><tr>${_cqCadThExpandir(linhas.map(x => x.a.id))}<th class="ot-list-th">Código</th><th class="ot-list-th">Analito</th><th class="ot-list-th">Unidade</th><th class="ot-list-th">Tipo</th><th class="ot-list-th">Especialidade</th><th class="ot-list-th">Equipamentos / sistemas</th><th class="ot-list-th">ETa / resultados</th><th class="ot-list-th">Testes</th></tr></thead>
+      <thead><tr>${_cqCadThExpandir(linhas.map(x => x.a.id))}<th class="ot-list-th">Código</th><th class="ot-list-th">Analito</th><th class="ot-list-th">Unidade</th><th class="ot-list-th">Tipo</th><th class="ot-list-th">Equipamentos / sistemas</th><th class="ot-list-th">ETa / resultados</th><th class="ot-list-th">Testes</th></tr></thead>
       <tbody>${linhas.length ? linhas.map(({ a, ts, nTotal, nPend, semTeste }) => {
         const aberto = _cqCadAberto(a.id);
         const qual = a.tipo && a.tipo !== 'quantitativo';
         return `<tr class="ot-list-row${a.ativo === false ? ' oc-row-final' : ''}${aberto ? ' cq-an-aberto' : ''}" onclick="cqAnalitoVer('${a.id}')">
           <td><button type="button" class="cq-icobtn cq-an-exp${aberto ? ' aberto' : ''}" title="${aberto ? 'Ocultar' : 'Mostrar'} testes" onclick="event.stopPropagation();cqCadExpandir('${a.id}',${aberto})">${chev}</button></td>
           <td class="oc-num">${_cqEsc(a.codigo || '—')}</td><td><b>${_cqEsc(a.nome)}</b>${_cqUnidadesTag(a)}</td><td>${_cqEsc(a.unidadeMedida || '—')}</td>
-          <td>${_cqEsc(CQ_TIPOS_ANALITO[a.tipo] || a.tipo || CQ_TIPOS_ANALITO.quantitativo)}</td><td>${_cqEsc(a.especialidade || '—')}</td>
+          <td>${_cqEsc(CQ_TIPOS_ANALITO[a.tipo] || a.tipo || CQ_TIPOS_ANALITO.quantitativo)}</td>
           <td style="font-size:12px;max-width:240px;">${_cqEquipsDoAnalito(a).length ? _cqEsc(_cqEquipsDoAnalito(a).map(o => o.label).join(', ')) : '<span class="cq-txt-amarelo">nenhum — vincule para criar testes</span>'}</td>
           <td style="font-size:12px;">${qual ? `${_cqArr(a.escala).length} resultados possíveis`
             : a.eta?.valor ? `<span title="${_cqEsc(a.eta.fonte || '')}">${_cqNum(Number(a.eta.valor), 1)}${a.eta.tipo === 'abs' ? ' ' + _cqEsc(a.unidadeMedida) : '%'}</span>` : '<span class="cq-txt-amarelo">ETa não definido</span>'}</td>
           <td style="white-space:nowrap;">${nTotal ? `<span class="cq-an-nteste">${nTotal}</span>` : ''}${nPend ? ` <span class="cq-badge cq-st-alerta" title="Níveis sem lote, sem alvo ou sem esperado">${nPend} pendência(s)</span>` : ''}${semTeste ? '<span class="cq-badge cq-st-semalvo">sem teste</span>' : ''}</td></tr>
-        ${aberto ? `<tr class="cq-an-testes"><td></td><td colspan="8">${_cqTestesTabelaHTML(a, ts)}</td></tr>` : ''}`;
-      }).join('') : `<tr><td colspan="9" class="cq-td-vazio">${filtrando ? 'Nenhum analito ou teste corresponde aos filtros.' : 'Nenhum analito nesta área.'}</td></tr>`}</tbody>
+        ${aberto ? `<tr class="cq-an-testes"><td></td><td colspan="7">${_cqTestesTabelaHTML(a, ts)}</td></tr>` : ''}`;
+      }).join('') : `<tr><td colspan="8" class="cq-td-vazio">${filtrando ? 'Nenhum analito ou teste corresponde aos filtros.' : 'Nenhum analito nesta área.'}</td></tr>`}</tbody>
     </table></div>`;
     return;
   }
@@ -746,7 +745,7 @@ function _cqRo(pode) { return pode ? '' : 'disabled'; }
 // ── ANALITOS ─────────────────────────────────────────────────
 let _cqAnalitoFormId = null;
 const CQ_LBL_ANALITO = {
-  codigo: 'Código', nome: 'Nome', unidadeMedida: 'Unidade', decimais: 'Casas decimais', tipo: 'Tipo', especialidade: 'Especialidade',
+  codigo: 'Código', nome: 'Nome', unidadeMedida: 'Unidade', decimais: 'Casas decimais', tipo: 'Tipo',
   limitesDecisao: 'Limites de decisão', eta: 'Erro total permitido', cvMeta: 'CV meta', escala: 'Resultados possíveis',
   toleranciaPassos: 'Tolerância (categorias)', ativoIds: 'Equipamentos', sistemas: 'Sistemas sem equipamento', unidadeIds: 'Áreas', ativo: 'Ativo',
   indicadorEster: 'Indicador de esterilização', incubacao: 'Incubação do indicador biológico', liberaCiclo: 'Libera o ciclo da autoclave',
@@ -826,9 +825,8 @@ function cqAnalitoForm(id, aba) {
           <div class="form-field"><label class="field-label">Tipo</label><select id="cq-an-tipo" class="field-select" onchange="cqAnalitoTipoChange()" ${pode && !emUso ? '' : 'disabled'}>
             ${Object.entries(CQ_TIPOS_ANALITO).map(([k, l]) => `<option value="${k}" ${k === tipo ? 'selected' : ''}>${l}</option>`).join('')}</select>
             ${emUso ? '<div class="cq-nota">O tipo não pode ser alterado: há testes cadastrados com este analito.</div>' : ''}</div>
-          <div class="form-field"><label class="field-label">Especialidade</label><select id="cq-an-esp" class="field-select" ${_cqRo(pode)}>${_cqOptions(CQ_ESPECIALIDADES, a?.especialidade || '')}</select></div>
+          ${_cqUnidadesCampoHTML('cq-an-un', a, pode, 'O analito só aparece nas listas e no cadastro de testes das áreas selecionadas.', 'analitos')}
         </div>
-        ${_cqUnidadesCampoHTML('cq-an-un', a, pode, 'O analito só aparece nas listas e no cadastro de testes das áreas selecionadas.', 'analitos')}
         <div class="cq-an-equip">
           <div class="form-field"><label class="field-label">Equipamentos que dosam este analito</label>
             ${_cqMultiHTML('cq-an-ativos', _cqOpcoesAtivos(a?.ativoIds), a?.ativoIds, { placeholder: 'Nenhum equipamento vinculado', disabled: !pode, vazio: 'Nenhum equipamento ativo nesta área (Ativos › Unidades e setores).' })}</div>
@@ -931,7 +929,7 @@ function cqAnalitoVer(id, aba) {
   const quant = tipo === 'quantitativo';
   const hero = `<div class="cq-pv-hero">
     <div class="cq-pv-hero-ico">${a.indicadorEster ? CQ_ICO_AUTOCLAVE : CQ_ICO.beaker}</div>
-    <div class="cq-pv-hero-txt"><small>${_cqEsc(CQ_TIPOS_ANALITO[tipo] || tipo)}${a.especialidade ? ` · ${_cqEsc(a.especialidade)}` : ''}</small><h3>${_cqEsc(a.nome)}</h3>
+    <div class="cq-pv-hero-txt"><small>${_cqEsc(CQ_TIPOS_ANALITO[tipo] || tipo)}</small><h3>${_cqEsc(a.nome)}</h3>
       <div class="cq-pv-chips">${_cqPvPill(_cqEsc(_cqSiglasUnidades(_cqUnidadesRec(a)) || 'Todas as áreas'), '', CQ_ICO.unidade)}
         ${a.codigo ? _cqPvPill(_cqEsc(a.codigo), 'ciano', CQ_ICO.cadastro) : ''}
         ${quant && a.unidadeMedida ? _cqPvPill(_cqEsc(a.unidadeMedida), 'contorno') : ''}
@@ -946,7 +944,6 @@ function cqAnalitoVer(id, aba) {
   const secId = _cqPvSecao(CQ_ICO.cadastro, 'Identificação', _cqPvCampos([
     { l: 'Código', v: _cqEsc(a.codigo || '') },
     { l: 'Tipo', v: _cqEsc(CQ_TIPOS_ANALITO[tipo] || tipo) },
-    { l: 'Especialidade', v: _cqEsc(a.especialidade || '') },
     quant && { l: 'Unidade de medida', v: _cqEsc(a.unidadeMedida || '') },
     quant && { l: 'Casas decimais', v: a.decimais != null ? String(a.decimais) : '' },
     quant && { l: 'Limites de decisão clínica', v: _cqEsc(_cqArr(a.limitesDecisao).join('; ')) },
@@ -971,7 +968,7 @@ function cqAnalitoVer(id, aba) {
   ])) : '';
   const geral = `<div class="cq-vw">${hero}${stats}${secId}${secEspec}${secRes}${secAc}</div>`;
   cqDrawerOpen({
-    titulo: a.nome, subtitulo: [CQ_TIPOS_ANALITO[tipo], a.especialidade, a.ativo === false ? 'inativo' : ''].filter(Boolean).join(' · ') || 'Analito', icone: 'beaker',
+    titulo: a.nome, subtitulo: [CQ_TIPOS_ANALITO[tipo], a.ativo === false ? 'inativo' : ''].filter(Boolean).join(' · ') || 'Analito', icone: 'beaker',
     corpo: `${_cqInativoNota(a, 'ativo', 'não aparece nos cadastros de testes nem nos lançamentos')}${_cqAbasHTML('anver', [
       { k: 'geral', rotulo: 'Geral', html: geral },
       { k: 'testes', rotulo: `Testes${testesA.length ? ` <span class="cq-step-qtd">${testesA.length}</span>` : ''}`, html: _cqTestesCompactoHTML(a, testesA) },
@@ -1106,7 +1103,7 @@ async function cqAnalitoSalvar() {
   const rec = {
     ...(antes || {}), id: _cqAnalitoFormId || _cqUid(), codigo: _cqVal('cq-an-codigo'), nome, unidadeMedida: um,
     decimais: Math.min(4, Math.max(0, Number(_cqVal('cq-an-dec')) || 0)), tipo: 'quantitativo',
-    especialidade: _cqVal('cq-an-esp'), limitesDecisao: limites, escala: null, toleranciaPassos: null,
+    limitesDecisao: limites, escala: null, toleranciaPassos: null,
     eta: eta !== null ? { valor: eta, tipo: _cqVal('cq-an-eta-tipo') || '%', fonte: _cqVal('cq-an-eta-fonte'), referencia: _cqVal('cq-an-eta-ref') } : null,
     cvMeta: cv !== null ? { valor: cv, fonte: _cqVal('cq-an-cvmeta-fonte') } : null,
     ...eq, unidadeIds, ativo: _cqChk('cq-an-ativo'),
@@ -1154,7 +1151,7 @@ async function _cqAnalitoQualSalvar(tipo) {
   if (!unidadeIds) return;
   const rec = {
     ...(antes || {}), id: _cqAnalitoFormId || _cqUid(), codigo: _cqVal('cq-an-codigo'), nome, unidadeMedida: '', decimais: 0, tipo,
-    especialidade: _cqVal('cq-an-esp'), limitesDecisao: [], eta: null, cvMeta: null, escala,
+    limitesDecisao: [], eta: null, cvMeta: null, escala,
     toleranciaPassos: tipo === 'semiquantitativo' ? Math.min(2, Math.max(0, Number(_cqVal('cq-an-tol')) || 0)) : null,
     indicadorEster: _cqChk('cq-an-autoclave-chk') ? _cqVal('cq-an-indic') : null, incubacao,
     liberaCiclo: _cqChk('cq-an-autoclave-chk') ? _cqChk('cq-an-libera') : null,
@@ -1262,7 +1259,7 @@ function cqModelosMicro(tipo) {
       novos.forEach(m => {
         const rec = { id: _cqUid() + m.codigo.slice(-2).toLowerCase(), codigo: m.codigo, nome: m.nome, unidadeMedida: '', decimais: 0, tipo: 'qualitativo',
                       ...(m.indicador ? { indicadorEster: m.indicador, liberaCiclo: true } : {}),
-                      especialidade: mod.esp, limitesDecisao: [], escala: [...m.escala], ativo: true, unidadeIds: [u],
+                      limitesDecisao: [], escala: [...m.escala], ativo: true, unidadeIds: [u],
                       criadoEm: _cqAgora(), criadoPor: _cqAssinatura(), atualizadoEm: _cqAgora() };
         _cqTrilhaAdd(rec, 'criacao', `Analito cadastrado a partir do modelo de ${mod.nomeCurto}`);
         updates[`${CQ_KEYS.config}/analitos/${rec.id}`] = rec;
@@ -2020,8 +2017,8 @@ function _cqOpcoesAnalitosEquip(equips, manter) {
   const chaves = new Set(_cqArr(equips).map(_cqEquipChave));
   return Object.values(cqState.config.analitos)
     .filter(a => fica.has(a.id) || (a.ativo !== false && _cqNaUnidade(a) && (!chaves.size || _cqEquipsDoAnalito(a).some(o => chaves.has(_cqEquipChave(o.value))))))
-    .sort((a, b) => (a.especialidade || '').localeCompare(b.especialidade || '') || a.nome.localeCompare(b.nome))
-    .map(a => ({ value: a.id, label: a.nome, sub: [a.codigo, a.unidadeMedida || CQ_TIPOS_ANALITO[a.tipo] || ''].filter(Boolean).join(' · '), grupo: a.especialidade || '' }));
+    .sort((a, b) => a.nome.localeCompare(b.nome))
+    .map(a => ({ value: a.id, label: a.nome, sub: [a.codigo, a.unidadeMedida || CQ_TIPOS_ANALITO[a.tipo] || ''].filter(Boolean).join(' · ') }));
 }
 function cqInsumoEquipChange(equips) {
   _cqMultiOpcoes('cq-ins-an', _cqOpcoesAnalitosEquip(equips, []));

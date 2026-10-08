@@ -16,7 +16,7 @@ const CQ_PL_HORA_PADRAO = '08:00';
 const CQ_PL_COLS = {
   'Áreas': ['Sigla', 'Nome', 'CNES', 'Fuso horário', 'Ativa'],
   'Setores': ['Área', 'Setor', 'Ativo'],
-  'Analitos': ['Código', 'Nome', 'Tipo', 'Unidade de medida', 'Casas decimais', 'Especialidade', 'ETa', 'Tipo do ETa', 'Fonte do ETa', 'Referência do ETa',
+  'Analitos': ['Código', 'Nome', 'Tipo', 'Unidade de medida', 'Casas decimais', 'ETa', 'Tipo do ETa', 'Fonte do ETa', 'Referência do ETa',
     'Resultados possíveis', 'Tolerância (categorias)', 'Equipamentos', 'Sistemas sem equipamento', 'Ativo', 'Áreas'],
   'Materiais': ['Nome', 'Fabricante', 'Tipo', 'Fornecedor', 'Registro ANVISA', 'Código de referência', 'Matriz', 'Estabilidade após abertura (dias)', 'Armazenamento', 'Níveis',
     'Equipamentos / sistemas', 'Analitos', 'Ativo', 'Áreas'],
@@ -286,7 +286,7 @@ async function _cqPlExportarDados({ unidades, de, ate }) {
   const siglas = r => _cqUnidadesRec(r).map(un).join('; ');
   d['Analitos'] = ordenar(Object.values(cfg.analitos).filter(noEscopo), a => a.nome || '').map(a => ({
     'Código': a.codigo || '', 'Nome': a.nome, 'Tipo': CQ_TIPOS_ANALITO[a.tipo || 'quantitativo'], 'Unidade de medida': a.unidadeMedida || '',
-    'Casas decimais': a.tipo && a.tipo !== 'quantitativo' ? '' : (a.decimais ?? 0), 'Especialidade': a.especialidade || '',
+    'Casas decimais': a.tipo && a.tipo !== 'quantitativo' ? '' : (a.decimais ?? 0),
     'ETa': a.eta?.valor ?? '', 'Tipo do ETa': a.eta ? (a.eta.tipo === 'abs' ? 'absoluto' : '%') : '', 'Fonte do ETa': a.eta?.fonte || '', 'Referência do ETa': a.eta?.referencia || '',
     'Resultados possíveis': _cqArr(a.escala).join('; '), 'Tolerância (categorias)': a.toleranciaPassos ?? '',
     'Equipamentos': _cqArr(a.ativoIds).map(_cqPlRefAtivo).filter(Boolean).join('; '), 'Sistemas sem equipamento': _cqArr(a.sistemas).join('; '), 'Ativo': _cqPlSN(a.ativo), 'Áreas': siglas(a),
@@ -566,7 +566,7 @@ async function _cqPlPlanejar(abas, { arquivo }) {
     const sistemas = [...new Map(_cqPlLista(l.g('Sistemas sem equipamento')).map(x => [_cqPlNorm(x), x])).values()];
     const unidadeIds = lerUnidades(l, A);
     if (!unidadeIds) return;
-    const base = { id: _cqUid(), codigo: _cqPlTxt(l.g('Código')), nome, tipo, especialidade: _cqPlTxt(l.g('Especialidade')), limitesDecisao: [], ativoIds, sistemas, ativo, unidadeIds };
+    const base = { id: _cqUid(), codigo: _cqPlTxt(l.g('Código')), nome, tipo, limitesDecisao: [], ativoIds, sistemas, ativo, unidadeIds };
     if (tipo === 'quantitativo') {
       const um = _cqPlTxt(l.g('Unidade de medida'));
       if (!um) return erro(A, l.n, 'Informe a unidade de medida.');

@@ -486,7 +486,7 @@ function _cqEsterLancHTML() {
     </div>
     <div class="cq-ester-grid">
       <div class="form-field"><label class="field-label">Data/hora do ciclo <span class="required">*</span></label>
-        <input type="datetime-local" class="field-input" id="cq-es-dhciclo" value="${_cqEsc(s.dhCiclo)}" onchange="cqEsterCampo('dhCiclo',this.value,true)">
+        <input type="datetime-local" class="field-input" id="cq-es-dhciclo" value="${_cqEsc(s.dhCiclo)}" onblur="if(this.value!==this.defaultValue){this.defaultValue=this.value;cqEsterCampo('dhCiclo',this.value,true)}" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
         <span class="cq-ester-esp">Início do ciclo na autoclave</span></div>
       ${campoNum('temp', 'Temperatura de esterilização (°C)', _cqEsterEspTxt(p, 'temp', cfg.unPressao))}
       ${campoNum('tempo', 'Tempo de esterilização (min)', _cqEsterEspTxt(p, 'tempo', cfg.unPressao))}
@@ -610,7 +610,7 @@ function _cqEsterIncubHTML(s) {
   return `<div class="cq-g-incub-tit">${CQ_ICO.beaker} Incubação</div>
     <div class="cq-g-incub-campos">
       <label class="cq-g-incub-f"><span>Início</span>
-        <input type="datetime-local" class="field-input${tarde ? ' cq-es-fora' : ''}" value="${_cqEsc(s.incubIni)}" min="${_cqEsc(ref)}" max="${_cqEsc(dh)}" onchange="cqEsterIncubIni(this.value)">
+        <input type="datetime-local" class="field-input${tarde ? ' cq-es-fora' : ''}" value="${_cqEsc(s.incubIni)}" min="${_cqEsc(ref)}" max="${_cqEsc(dh)}" onblur="if(this.value!==this.defaultValue){this.defaultValue=this.value;cqEsterIncubIni(this.value)}" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}">
         <small class="${tarde ? 'cq-txt-vermelho' : ''}">${atraso !== null ? `${_cqEsterN(Math.round(atraso * 10) / 10)} h após o ciclo${tarde ? ` — bula: até ${_cqEsterN(ib.horas)} h` : ''}` : `Até ${_cqEsterN(ib.horas)} h após o ciclo (bula)`}</small></label>
       <label class="cq-g-incub-f cq-g-incub-t"><span>Incubadora</span>
         <span class="cq-g-incub-un"><input type="text" inputmode="decimal" class="field-input" id="cq-es-incubtemp" value="${_cqEsc(s.incubTemp)}" oninput="cqEsterIncubTemp(this.value)" placeholder="57" autocomplete="off"><i>°C</i></span>
@@ -772,24 +772,25 @@ function cqEsterProg(v) {
 }
 
 // ── VALIDADE DA ESTERILIZAÇÃO ──
-// Padrão do programa (ligada/desligada e dias), editável no lançamento: s.valAtiva / s.valDias
+// Validade: ligada ou não pelo programa; os dias vêm do programa e podem ser ajustados no lançamento (s.valDias)
 function _cqEsterValEstado(s, p) {
-  const ativa = s.valAtiva ?? (p ? p.validadeAtiva !== false : true);
+  // Ligada ou não: definido pelo programa (Configurar programas)
+  const ativa = p ? p.validadeAtiva !== false : true;
   const diasTxt = s.valDias ?? (p?.validadeDias != null ? String(p.validadeDias) : '');
   return { ativa, diasTxt, dias: _cqEsterDiasOk(diasTxt) };
 }
 function _cqEsterValDataTxt(s, p) {
   const v = _cqEsterValEstado(s, p);
-  if (!v.ativa) return 'Sem validade na etiqueta';
+  if (!p) return '';
+  if (!v.ativa) return 'Programa sem validade';
   const d = v.dias ? _cqEsterValData(_cqEsterDHCicloLanc(), v.dias) : '';
   return d ? `Válido até ${_cqFmtData(d)}` : 'Informe os dias (1 a 3650)';
 }
 function _cqEsterValCampoHTML(s, p) {
   const v = _cqEsterValEstado(s, p);
   const padrao = p ? (p.validadeAtiva === false ? 'desligada' : `${p.validadeDias ?? '—'} dia(s)`) : '';
-  return `<div class="form-field"><label class="field-label">Validade da esterilização ${v.ativa ? '<span class="required">*</span>' : ''}</label>
-      <div class="cq-es-val${v.ativa ? '' : ' off'}${v.ativa && !v.dias ? ' erro' : ''}" id="cq-es-val">
-        <button type="button" class="cq-es-sw" role="switch" aria-checked="${v.ativa}" title="${v.ativa ? 'Desligar a validade' : 'Ligar a validade'}" onclick="cqEsterValToggle()" ${p ? '' : 'disabled'}><span></span></button>
+  return `<div class="form-field"><label class="field-label">Validade da esterilização ${v.ativa && p ? '<span class="required">*</span>' : ''}</label>
+      <div class="cq-es-val${v.ativa && p ? '' : ' off'}${v.ativa && p && !v.dias ? ' erro' : ''}" id="cq-es-val">
         <input type="number" class="cq-es-val-dias" id="cq-es-valdias" min="1" max="3650" step="1" value="${_cqEsc(v.diasTxt)}" ${v.ativa && p ? '' : 'disabled'} oninput="cqEsterValDias(this.value)" aria-label="Validade em dias">
         <span class="cq-es-val-un">dias</span>
         <span class="cq-es-val-data" id="cq-es-valdata">${_cqEsc(_cqEsterValDataTxt(s, p))}</span>
@@ -799,14 +800,6 @@ function _cqEsterValCampoHTML(s, p) {
 function _cqEsterLancProg() {
   const cfg = _cqEsterLancCfg(), s = _cqLanc?.ciclo;
   return cfg && s ? _cqEsterProgramas(cfg).find(x => x.id === s.programaId) : null;
-}
-function cqEsterValToggle() {
-  const s = _cqEsterEstado(), p = _cqEsterLancProg();
-  if (!p) return;
-  s.valAtiva = !_cqEsterValEstado(s, p).ativa;
-  _cqRascunhoSalvar();
-  _cqEsterRedesenhar();
-  if (s.valAtiva) document.getElementById('cq-es-valdias')?.focus();
 }
 function cqEsterValDias(v) {
   const s = _cqEsterEstado(), p = _cqEsterLancProg();

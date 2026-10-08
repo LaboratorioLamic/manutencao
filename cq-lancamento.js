@@ -88,7 +88,7 @@ function cqRenderLancar(body) {
       <div class="form-field cq-lanc-equip"><label class="field-label">Equipamento / sistema <span class="required">*</span></label>
         ${_cqLancEquipComboHTML(grupos)}</div>
       <div class="form-field" style="max-width:200px;"><label class="field-label">Data/hora da corrida <span class="required">*</span></label>
-        <input type="datetime-local" class="field-input" id="cq-l-dh" max="${agora}" value="${_cqEsc(_cqLanc.dataHora)}" onchange="cqLancDataHora(this.value)"></div>
+        <input type="datetime-local" class="field-input" id="cq-l-dh" max="${agora}" value="${_cqEsc(_cqLanc.dataHora)}" onblur="if(this.value!==this.defaultValue){this.defaultValue=this.value;cqLancDataHora(this.value)}" onkeydown="if(event.key==='Enter'){event.preventDefault();this.blur();}"></div>
       <div class="form-field" style="max-width:280px;min-width:240px;"><label class="field-label">${ester ? 'Operador do equipamento' : 'Executado por'} <span class="required">*</span></label>
         ${_cqUsuarioPopHTML('cq-l-oper', u, users, _cqLanc.operadorId, v => { _cqLanc.operadorId = v; })}</div>
       ${g ? _cqLancModoHTML() : ''}
