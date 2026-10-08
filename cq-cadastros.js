@@ -2564,7 +2564,8 @@ function _cqEtqConteudoHTML(d, W, H, giro) {
   const { pad, esc, nv } = _cqEtqLayout(d, W, H);
   const mm = v => `${(v * esc).toFixed(2)}mm`;
   const e = _cqEsc;
-  const lin = html => `<div style="font-size:${mm(2.7)};line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${html}</div>`;
+  // Todo o texto em negrito: traço mais grosso, sem falhas na impressão térmica
+  const lin = html => `<div style="font-size:${mm(2.7)};font-weight:700;line-height:1.18;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${html}</div>`;
   const segs = _cqEtqSegs(d);
   const L = k => (segs[k] ? lin(segs[k].map(([t, b]) => (b ? `<b>${e(t)}</b>` : e(t))).join('')) : '');
   return `<div style="box-sizing:border-box;width:${W}mm;height:${H}mm;padding:${pad.toFixed(2)}mm;overflow:hidden;display:flex;flex-direction:column;justify-content:center;gap:${mm(0.35)};font-family:Arial,Helvetica,sans-serif;color:#000;text-align:left;${giro}">
@@ -2722,10 +2723,11 @@ function _cqEtqDesenho(d, cfg, dpi = 300) {
     ...tit.map(t => ({ h: 3.4 * 1.15, fn: y => { const px = tam(3.4); ctx.font = fonte(700, px); texto(caber(t, iw), P, y, 700, px); } })),
     ...(d.codigo ? [{ h: 4.2 * 1.15, fn: y => { const px = tam(4.2); ctx.font = fonte(800, px); texto(caber(d.codigo, iw), P, y, 800, px); } }] : []),
     ...nv.linhas.map(k => segs[k]).filter(Boolean).map(sg => ({ h: 2.7 * 1.18, fn: y => {
-      const larg = () => sg.reduce((n, [t, b]) => { ctx.font = fonte(b ? 700 : 400, tam(2.7)); return n + ctx.measureText(t).width; }, 0);
+      // Todo o texto em negrito (impressão térmica sem falhas); o destaque [texto, 1] fica igual ao resto
+      const larg = () => sg.reduce((n, [t]) => { ctx.font = fonte(700, tam(2.7)); return n + ctx.measureText(t).width; }, 0);
       const px = tam(2.7) * Math.min(1, iw / (larg() || 1));   // linha longa: encolhe para caber
       let x = P;
-      sg.forEach(([t, b]) => { ctx.font = fonte(b ? 700 : 400, px); texto(t, x, y, b ? 700 : 400, px); x += ctx.measureText(t).width; });
+      sg.forEach(([t]) => { ctx.font = fonte(700, px); texto(t, x, y, 700, px); x += ctx.measureText(t).width; });
     } })),
   ];
   const gap = 0.35 * esc * pxmm;
