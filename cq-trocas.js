@@ -224,7 +224,8 @@ function _cqTrocaFracItem(pid, u) {
     if (it) return it;
   }
   const m = _cqTrMat(pid);
-  return m ? { materialId: m.id, quantidade: m.preparo?.volume ?? '', unidadeQtd: m.preparo?.unidadeQtd || 'mL' } : { produtoId: pid, quantidade: '', unidadeQtd: 'mL' };
+  const pf = m ? m.preparo : cqState.config.insumoProdutos[pid]?.preparo;
+  return m ? { materialId: m.id, quantidade: pf?.volume ?? '', unidadeQtd: pf?.unidadeQtd || 'mL' } : { produtoId: pid, quantidade: pf?.volume ?? '', unidadeQtd: pf?.unidadeQtd || 'mL' };
 }
 
 // Seletor da troca fracionada: popover com busca e multisseleção, produtos agrupados por conjunto
@@ -383,7 +384,9 @@ function _cqTrocaListaHTML() {
   const dia = dh.slice(0, 10);
   const item = it => {
     const key = _cqTrKey(it);
-    const x = t.itens[key] = t.itens[key] || { incluir: true, lote: '', qtd: it.quantidade ?? '', un: it.unidadeQtd || 'mL', valEdit: false, val: '', valMot: '' };
+    // Quantidade: a do conjunto; sem ela, o volume padrão do produto
+    const pfp = !it.materialId ? cqState.config.insumoProdutos[it.produtoId]?.preparo : null;
+    const x = t.itens[key] = t.itens[key] || { incluir: true, lote: '', qtd: it.quantidade ?? pfp?.volume ?? '', un: it.quantidade ? (it.unidadeQtd || 'mL') : (pfp?.unidadeQtd || it.unidadeQtd || 'mL'), valEdit: false, val: '', valMot: '' };
     if (it.materialId) return _cqCtlTrocaItemHTML(key, x, t, frac, dia, dh);
     const p = cqState.config.insumoProdutos[it.produtoId];
     if (!p) { x.incluir = false; return '<div class="cq-tr-item off"><b class="cq-muted">Produto removido do cadastro</b></div>'; }

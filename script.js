@@ -6266,3 +6266,21 @@
     };
     reader.readAsText(_backupFile);
   }
+// Impressão sem abrir aba: o HTML vai para um iframe oculto e só aparece o diálogo de impressão.
+// O HTML traz o próprio window.print() no onload (roda no iframe). O iframe sai depois de imprimir
+// ou na próxima impressão.
+function imprimirEmSegundoPlano(html) {
+  document.getElementById('print-frame')?.remove();
+  const f = document.createElement('iframe');
+  f.id = 'print-frame';
+  f.setAttribute('aria-hidden', 'true');
+  f.tabIndex = -1;
+  f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+  document.body.appendChild(f);
+  const doc = f.contentWindow.document;
+  doc.open();
+  doc.write(html);
+  doc.close();
+  f.contentWindow.addEventListener('afterprint', () => setTimeout(() => f.remove(), 500));
+  return true;
+}

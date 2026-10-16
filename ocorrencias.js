@@ -2447,8 +2447,6 @@ function _ocTimelineAtivo(ativo, idx) {
 function ocImprimir(id) {
   const oc = ocState.ocorrencias[id];
   if (!oc) return;
-  const w = window.open('', '_blank');
-  if (!w) { showToast('Permita pop-ups para gerar a ficha.', 'error'); return; }
   const e = _ocEsc;
   const i = oc.impacto, c = oc.analiseCausa, ef = oc.eficacia, n = oc.notificacao;
   const parados = oc.ativos.filter(a => a.parado);
@@ -2536,9 +2534,7 @@ ${oc.trilha.map(t => `<tr><td>${_ocFmtDH(t.ts)}</td><td>${e(t.userName)}</td><td
 <footer>Emitido em ${_ocFmtDH(_ocAgora())} por ${e(_ocSess().nome)} · Documento gerado pelo sistema de gestão de manutenção LAMIC.</footer>
 <script>window.onload = () => setTimeout(() => window.print(), 300);<\/script>
 </body></html>`;
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  imprimirEmSegundoPlano(html);
 }
 
 // ── CARD DO INÍCIO (KPIs) ────────────────────────────────────

@@ -1791,7 +1791,7 @@ let _cqInsProdFormId = null;
 const CQ_LBL_INS_PRODUTO = { setorIds: 'Setores', tipo: 'Tipo', nome: 'Produto', fabricante: 'Fabricante', regAnvisa: 'Registro ANVISA', equips: 'Equipamentos / sistemas', analitoIds: 'Analitos',
                              preparoInterno: 'Preparado no laboratório', preparo: 'Dados do preparo', unidadeIds: 'Áreas', ativo: 'Ativo' };
 const _cqFmtPreparo = v => v ? [v.especificacao, v.armazenamento, v.riscos ? 'riscos: ' + v.riscos : '', v.validadeDias ? `validade ${v.validadeDias} dia(s) após preparo` : '',
-  v.liberaSemCIQ ? 'liberado no registro (sem CIQ)' : '', v.avisoDias != null ? `avisa a troca ${v.avisoDias} dia(s) antes` : ''].filter(Boolean).join(' · ') : '—';
+  v.volume ? `volume padrão ${String(v.volume).replace('.', ',')} ${v.unidadeQtd || ''}`.trim() : '', v.liberaSemCIQ ? 'liberado no registro (sem CIQ)' : '', v.avisoDias != null ? `avisa a troca ${v.avisoDias} dia(s) antes` : ''].filter(Boolean).join(' · ') : '—';
 
 function cqInsumoProdutoForm(id, opts = {}) {
   const p = id ? cqState.config.insumoProdutos[id] : null;
@@ -1840,6 +1840,9 @@ function cqInsumoProdutoForm(id, opts = {}) {
           <div class="form-row">
             <div class="form-field"><label class="field-label">Concentração / especificação</label><input type="text" id="cq-ins-prep-esp" class="field-input" value="${_cqEsc(prep.especificacao)}" placeholder="Ex.: 36 g/L; pH 7,2 ± 0,2" ${_cqRo(pode)}></div>
             <div class="form-field" style="max-width:200px;"><label class="field-label">Validade após preparo (dias)</label><input type="number" min="1" max="3650" id="cq-ins-prep-dias" class="field-input" value="${_cqEsc(prep.validadeDias ?? '')}" placeholder="Ex.: 30" ${_cqRo(pode)}></div>
+            <div class="form-field" style="max-width:220px;"><label class="field-label">Volume padrão do preparo</label>
+              <div class="cq-pf-qtd"><input type="number" min="0" step="any" inputmode="decimal" id="cq-ins-prep-vol" class="field-input" value="${_cqEsc(prep.volume ?? '')}" placeholder="Ex.: 500" ${_cqRo(pode)}>
+                <select id="cq-ins-prep-un" class="field-select" ${_cqRo(pode)}>${CQ_UNID_PREPARO.map(x => `<option ${x === (prep.unidadeQtd || 'mL') ? 'selected' : ''}>${x}</option>`).join('')}</select></div></div>
           </div>
           <div class="form-row">
             <div class="form-field"><label class="field-label">Armazenamento <span class="required">*</span></label><input type="text" id="cq-ins-prep-arm" class="field-input" value="${_cqEsc(prep.armazenamento)}" placeholder="Ex.: 2 a 8 °C, protegido da luz" ${_cqRo(pode)}></div>
@@ -1957,6 +1960,7 @@ function cqInsumoProdutoVer(id, aba) {
   const secPrep = _cqPvSecao(CQ_ICO.beaker, 'Preparo no laboratório', p.preparoInterno ? `
     <div class="cq-pv-chips">
       ${prep.validadeDias ? _cqPvPill(`Validade de uso: ${prep.validadeDias} dia(s)`, 'ciano', CQ_ICO.clock) : _cqPvPill('Validade de uso não definida', 'cinza', CQ_ICO.clock)}
+      ${prep.volume ? _cqPvPill(`Volume padrão: ${String(prep.volume).replace('.', ',')} ${prep.unidadeQtd || ''}`, '', CQ_ICO.beaker) : ''}
       ${prep.liberaSemCIQ ? _cqPvPill('Liberado no registro, sem CIQ', 'verde', CQ_ICO.check) : _cqPvPill('Liberado pela corrida de CIQ', '', CQ_ICO.lista)}
       ${prep.avisoDias != null ? _cqPvPill(`Avisa a troca ${prep.avisoDias} dia(s) antes`, 'ambar', CQ_ICO.alerta) : _cqPvPill('Sem aviso de troca', 'cinza', CQ_ICO.alerta)}
     </div>
@@ -2084,6 +2088,8 @@ async function cqInsumoProdutoSalvar() {
   const preparo = preparoInterno ? {
     especificacao: _cqVal('cq-ins-prep-esp'), armazenamento: _cqVal('cq-ins-prep-arm'), riscos: _cqVal('cq-ins-prep-risco'),
     validadeDias: diasTxt === '' ? null : Math.max(1, Math.round(Number(diasTxt)) || 0) || null,
+    // Volume padrão: vem preenchido no registro do preparo e na troca (pode ser ajustado lá)
+    ...(Number(_cqVal('cq-ins-prep-vol').replace(',', '.')) > 0 ? { volume: Number(_cqVal('cq-ins-prep-vol').replace(',', '.')), unidadeQtd: _cqVal('cq-ins-prep-un') || 'mL' } : {}),
     // Só gravados quando ligados: produto antigo salvo sem mudança não acusa diferença
     ...(_cqChk('cq-ins-prep-livre') ? { liberaSemCIQ: true } : {}),
     ...(_cqChk('cq-ins-prep-aviso') ? { avisoDias: Math.max(0, Math.round(Number(_cqVal('cq-ins-prep-aviso-dias'))) || 0) } : {}),
@@ -3039,11 +3045,7 @@ function _cqEtqImprimir(d, cfg, copias) {
       });
       window.onload = () => window.print();
     <\/script></body></html>`;
-  const w = window.open('', '_blank');
-  if (!w) { showToast('Permita pop-ups para imprimir.', 'error'); return false; }
-  w.document.write(html);
-  w.document.close();
-  return true;
+  return imprimirEmSegundoPlano(html);
 }
 
 // ── Desenho da etiqueta: linhas de texto já posicionadas (px no dpi pedido, eixo y para baixo, sem giro) ──
@@ -3306,14 +3308,17 @@ function _cqPrepNovoEstado(u) {
   if (!prods.some(p => p.id === n.prod)) { n.prod = prods.length === 1 ? prods[0].id : ''; n.lote = ''; n.un = ''; }
   const lotes = n.prod ? _cqPrepLotesValidos(n.prod, u, (n.dh || _cqNowLocal()).slice(0, 10)) : [];
   if (!lotes.some(l => l.id === n.lote)) n.lote = lotes[0]?.id || '';
-  if (n.prod && !n.un) n.un = _cqPrepUltimaUnidade(n.prod) || 'mL';
+  // Volume padrão do produto: preenche quantidade e unidade ao escolher o produto (uma vez por escolha)
+  const pf = n.prod ? cqState.config.insumoProdutos[n.prod]?.preparo : null;
+  if (n.prod && n.qtdProd !== n.prod) { n.qtdProd = n.prod; if (pf?.volume) { if (n.qtd === '') n.qtd = String(pf.volume); n.un = pf.unidadeQtd || n.un; } }
+  if (n.prod && !n.un) n.un = pf?.unidadeQtd || _cqPrepUltimaUnidade(n.prod) || 'mL';
   return n;
 }
 function cqPrepNovoCampo(k, v, redesenhar) {
   const n = _cqPrepNovo;
   if (!n) return;
   n[k] = v;
-  if (k === 'prod') { n.lote = ''; n.un = ''; }
+  if (k === 'prod') { n.lote = ''; n.un = ''; n.qtd = ''; n.qtdProd = ''; }
   // Validade alterada vale para o produto, o lote e a data escolhidos: muda junto com eles
   if (['prod', 'lote', 'dh'].includes(k) || (k === 'valEdit' && !v)) { n.val = ''; if (k === 'valEdit') n.valMot = ''; }
   if (redesenhar) _cqPrepFormRedesenhar();
@@ -3544,7 +3549,7 @@ async function cqPrepRegistrar() {
   const cru = _cqLoteCru(ins);
   (cru.preparos = cru.preparos || {})[obj.id] = obj;
   if (ins !== cru) ins.preparos = cru.preparos;
-  Object.assign(n, { qtd: '', dh: '', obs: '', valEdit: false, val: '', valMot: '' });
+  Object.assign(n, { qtd: '', qtdProd: '', dh: '', obs: '', valEdit: false, val: '', valMot: '' });
   _cqPrepDestaque = obj.id;
   if (_cqPrepFiltro === 'finalizados') _cqPrepFiltro = 'em_uso';
   showToast(`Preparo ${obj.codigo} registrado.`, 'success');

@@ -362,11 +362,8 @@ function cqImprimirGrafico() {
   const cssQ = `.cq-q-resumos{display:flex;gap:8px;flex-wrap:wrap}.cq-q-resumo{border:1px solid #ccc;border-radius:6px;padding:6px;min-width:160px}.cq-q-pct{font-size:18px;font-weight:700}
     .cq-q-faixa i{display:inline-block;width:8px;height:12px;margin-right:2px;background:#ddd}.cq-q-ok{background:#2a9d8f!important}.cq-q-alerta{background:#e9a23b!important}.cq-q-rej{background:#e63946!important}
     .cq-q-res{padding:0 4px;border-radius:3px;color:#fff}.cq-q-faixa-lbl{display:inline-block;width:120px}`;
-  const w = window.open('', '_blank');
-  if (!w) { showToast('Permita pop-ups para imprimir.', 'error'); return; }
-  w.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${titulo} — ${_cqEsc(_cqNomeTeste(t))}</title><style>${css}${cssQ}</style></head><body>
+  imprimirEmSegundoPlano(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${titulo} — ${_cqEsc(_cqNomeTeste(t))}</title><style>${css}${cssQ}</style></head><body>
     <h1>${titulo} — ${_cqEsc(_cqNomeTeste(t))} · ${_cqEsc(_cqEquipTeste(t))}</h1>
     <div>Área ${_cqEsc(un?.sigla)}${_cqSetorDoTeste(t) ? ' · setor ' + _cqEsc(_cqRotuloSetor(_cqSetorDoTeste(t))) : ''} · período ${_cqFmtMes(_cqGraf.dados?.de)} a ${_cqFmtMes(_cqGraf.dados?.ate)} · emitido em ${_cqFmtDH(_cqAgora())} por ${_cqEsc(_cqSess().nome)}</div>
     ${area.innerHTML}<script>window.onload=()=>window.print()<\/script></body></html>`);
-  w.document.close();
 }

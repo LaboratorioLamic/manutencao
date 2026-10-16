@@ -1881,10 +1881,7 @@ async function cqImprimirCorrida() {
   <table><thead><tr><th>Teste</th><th>Nível</th><th>Resultado</th><th>Alvo (média ± DP) / esperado</th><th>z</th><th>Avaliação / decisão</th></tr></thead><tbody>${linhas.join('')}</tbody></table>
   <p><small>Emitido em ${_cqFmtDH(_cqAgora())} por ${_cqEsc(_cqSess().nome)} · Sistema LAMIC — Controle de Qualidade v${CQ_VERSAO}</small></p>
   <script>window.onload=()=>window.print()<\/script></body></html>`;
-  const w = window.open('', '_blank');
-  if (!w) { showToast('Permita pop-ups para imprimir.', 'error'); return; }
-  w.document.write(html);
-  w.document.close();
+  imprimirEmSegundoPlano(html);
 }
 
 // ── EXCLUSÃO DE CORRIDA (ATÉ 24 H) ───────────────────────────
