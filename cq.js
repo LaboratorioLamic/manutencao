@@ -422,6 +422,11 @@ function _cqCan(k) {
 // quem tem "Cadastros e áreas de CQ" ou a permissão própria "Editar cadastros". Criar e excluir cadastros
 // e configurar áreas continuam exigindo "Cadastros e áreas de CQ" (configurar).
 function _cqPodeEditarCad(existe = true) { return _cqCan('configurar') || (existe && _cqCan('editarCadastros')); }
+// "Editar cadastros" também cria lotes (controle e reagente) e exclui lote, produto ou material sem vínculos
+// (cadastro errado); analitos, testes e áreas seguem exigindo "Cadastros e áreas de CQ".
+const CQ_COL_EDITOR_EXCLUI = ['lotesControle', 'insumos', 'insumoProdutos', 'materiais', 'conjuntosPreparo'];
+function _cqPodeCriarLote() { return _cqCan('configurar') || _cqCan('editarCadastros'); }
+function _cqPodeExcluirCad(colecao) { return _cqCan('configurar') || (CQ_COL_EDITOR_EXCLUI.includes(colecao) && _cqCan('editarCadastros')); }
 function _cqEstacao() { try { return localStorage.getItem('cq-estacao') || ''; } catch (e) { return ''; } }
 function _cqLocal() { return { unidadeId: _cqUnidadeAtivaId(), estacao: _cqEstacao() || 'não informada' }; }
 
@@ -1670,6 +1675,7 @@ function _cqRenderPainel(body) {
 
   // Preparos da área (cq-trocas.js); sem testes na área, vêm antes dos equipamentos
   const preparos = (typeof _cqPainelPreparosHTML === 'function' ? _cqPainelPreparosHTML(u) : '')
+    + (typeof _cqPainelControlesHTML === 'function' ? _cqPainelControlesHTML(u) : '')
     + (typeof _cqPainelInsumosHTML === 'function' ? _cqPainelInsumosHTML(u) : '');
   const equipamentos = `<div class="cq-sec-titulo">Equipamentos e testes · ${_cqEsc(un.sigla)}${fSetor ? ' · ' + _cqEsc(_cqRotuloSetor(fSetor === '__sem__' ? '' : fSetor)) : ''}</div>
       ${cards || `<div class="cq-vazio">Nenhum teste cadastrado ${fSetor ? 'neste setor' : 'nesta área'}. ${_cqCan('configurar') ? `<a href="#" onclick="cqNav('cadastros');return false;">Cadastrar testes</a>` : ''}</div>`}

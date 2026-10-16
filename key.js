@@ -1586,7 +1586,7 @@ const PERM_LABELS = {
   excluirPublicacoes:'Excluir Publicações',
   registrar:'Registrar', tratar:'Tratar (impacto, causa, ações)', liberarAtivo:'Liberar ativo para uso',
   encerrar:'Encerrar / reabrir', cancelar:'Cancelar',
-  lancar:'Lançar corridas de controle', liberar:'Avaliar / liberar corridas', configurar:'Cadastros e áreas de CQ', editarCadastros:'Editar cadastros (situação e pausa)',
+  lancar:'Lançar corridas de controle', liberar:'Avaliar / liberar corridas', configurar:'Cadastros e áreas de CQ', editarCadastros:'Editar cadastros, criar lotes e excluir cadastro sem vínculo',
   definirAlvos:'Definir médias, DP e regras', ceq:'Controle externo (CEQ)', revisar:'Revisão mensal / análise crítica',
   relatorios:'Relatórios de CQ', invalidar:'Corrigir / invalidar resultados',
   visualizarConfig:'Visualizar configurações', backup:'Backup',

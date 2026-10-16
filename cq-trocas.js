@@ -12,9 +12,9 @@ function _cqConjuntosDaUnidade(u, inclusiveInativos) {
   return Object.values(cqState.config.conjuntosPreparo || {}).filter(c => _cqNaUnidade(c, u) && (inclusiveInativos || c.ativo !== false))
     .sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt'));
 }
-function _cqConjuntoItens(c) { return _cqArr(c?.itens).filter(x => x && x.produtoId); }
+function _cqConjuntoItens(c) { return _cqArr(c?.itens).filter(x => x && (x.produtoId || x.materialId)); }
 function _cqConjuntoItemTxt(x) {
-  const nome = cqState.config.insumoProdutos[x.produtoId]?.nome || 'produto removido';
+  const nome = _cqTrNome(_cqTrKey(x)) || (x.materialId ? 'controle removido' : 'produto removido');
   return x.quantidade ? `${nome} (${String(x.quantidade).replace('.', ',')} ${x.unidadeQtd || ''})`.replace(' )', ')') : nome;
 }
 function _cqConjuntoResumo(c) { return _cqConjuntoItens(c).map(_cqConjuntoItemTxt).join(', '); }
@@ -46,12 +46,13 @@ let _cqCjForm = null;
 function cqConjuntoForm(id) {
   if (!_cqCan('configurar')) { showToast('Sem permissão para editar conjuntos de troca.', 'error'); return; }
   const c = id ? cqState.config.conjuntosPreparo[id] : null;
-  _cqCjForm = { id: c ? c.id : null, nome: c?.nome || '', ativo: c ? c.ativo !== false : true, itens: _cqConjuntoItens(c).map(x => ({ ...x })) };
+  _cqCjForm = { id: c ? c.id : null, nome: c?.nome || '', ativo: c ? c.ativo !== false : true, itens: _cqConjuntoItens(c).map(x => ({ produtoId: _cqTrKey(x), quantidade: x.quantidade, unidadeQtd: x.unidadeQtd })) };
   if (!_cqCjForm.itens.length) _cqCjForm.itens.push({ produtoId: '', quantidade: '', unidadeQtd: 'mL' });
   cqDrawerOpen({
     titulo: c ? c.nome : 'Novo conjunto de troca', subtitulo: 'Produtos preparados trocados juntos, com a quantidade de cada troca', icone: 'repeat',
     corpo: c ? _cqAbasHTML('cj', [{ k: 'dados', rotulo: 'Conjunto', html: '<div id="cq-cj-form"></div>' }, _cqAbaTrilha(c)]) : '<div id="cq-cj-form"></div>',
-    rodape: `<button class="btn btn-outline" onclick="cqDrawerClose()">Cancelar</button>
+    rodape: `${c && _cqPodeExcluirCad('conjuntosPreparo') ? `<div class="cq-rodape-esq"><button class="btn btn-outline cq-btn-perigo" onclick="cqExcluirCadastro('conjuntosPreparo','${c.id}')">Excluir</button></div>` : ''}
+      <button class="btn btn-outline" onclick="cqDrawerClose()">Cancelar</button>
       <button class="btn btn-primary" onclick="cqConjuntoSalvar()">${CQ_ICO.check} Salvar</button>`,
   });
   _cqCjRedesenhar();
@@ -61,10 +62,12 @@ function _cqCjFormHTML() {
   const f = _cqCjForm;
   const u = _cqUnidadeAtivaId();
   const prods = _cqPrepProdutos(u);
+  const mats = _cqCtlMateriaisPrep(u);
   const opts = sel => {
-    const fora = sel && !prods.some(p => p.id === sel) ? cqState.config.insumoProdutos[sel] : null;
-    return `<option value="">Selecione o produto</option>${fora ? `<option value="${fora.id}" selected>${_cqEsc(fora.nome)} (fora da lista da área)</option>` : ''}`
-      + prods.map(p => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${_cqEsc(p.nome)}${p.fabricante ? ' — ' + _cqEsc(p.fabricante) : ''}</option>`).join('');
+    const fora = sel && !prods.some(p => p.id === sel) && !mats.some(m => 'mat:' + m.id === sel) && _cqTrNome(sel) ? sel : null;
+    return `<option value="">Selecione o produto ou controle</option>${fora ? `<option value="${_cqEsc(fora)}" selected>${_cqEsc(_cqTrNome(fora))} (fora da lista da área)</option>` : ''}`
+      + (prods.length ? `<optgroup label="Reagentes, meios e insumos">${prods.map(p => `<option value="${p.id}" ${p.id === sel ? 'selected' : ''}>${_cqEsc(p.nome)}${p.fabricante ? ' — ' + _cqEsc(p.fabricante) : ''}</option>`).join('')}</optgroup>` : '')
+      + (mats.length ? `<optgroup label="Controles (um preparo por nível)">${mats.map(m => `<option value="mat:${m.id}" ${'mat:' + m.id === sel ? 'selected' : ''}>${_cqEsc(m.nome)}${m.fabricante ? ' — ' + _cqEsc(m.fabricante) : ''}</option>`).join('')}</optgroup>` : '');
   };
   return `<div class="form-section"><div class="form-section-title">${CQ_ICO.repeat}Conjunto</div>
       <div class="form-field"><label class="field-label">Nome <span class="required">*</span></label>
@@ -72,7 +75,7 @@ function _cqCjFormHTML() {
       <label class="oc-check"><input type="checkbox" ${f.ativo ? 'checked' : ''} onchange="_cqCjForm.ativo=this.checked"> Ativo (oferecido na troca)</label>
     </div>
     <div class="form-section"><div class="form-section-title">${CQ_ICO.beaker}Produtos</div>
-      ${prods.length ? '' : '<div class="cq-nota cq-txt-amarelo">Nenhum produto preparado no laboratório nesta área. Marque “Preparado ou fracionado pelo laboratório” no cadastro do produto.</div>'}
+      ${prods.length || mats.length ? '' : '<div class="cq-nota cq-txt-amarelo">Nenhum produto preparado no laboratório nesta área. Marque “Preparado ou fracionado pelo laboratório” no cadastro do produto.</div>'}
       <div class="cq-cj-itens">${f.itens.map((x, k) => `<div class="cq-cj-lin">
         <select class="field-select" onchange="cqCjItem(${k},'produtoId',this.value)">${opts(x.produtoId)}</select>
         <input type="number" class="field-input" min="0" step="any" inputmode="decimal" value="${_cqEsc(x.quantidade ?? '')}" placeholder="Qtd." title="Quantidade de cada troca" oninput="cqCjItem(${k},'quantidade',this.value)">
@@ -96,10 +99,11 @@ async function cqConjuntoSalvar() {
   if (!nome) { showToast('Informe o nome do conjunto.', 'error'); return; }
   const itens = f.itens.filter(x => x.produtoId).map(x => {
     const q = Number(String(x.quantidade ?? '').replace(',', '.'));
-    return { produtoId: x.produtoId, quantidade: q > 0 ? q : null, unidadeQtd: x.unidadeQtd || 'mL' };
+    const ref = _cqTrEhMat(x.produtoId) ? { materialId: x.produtoId.slice(4) } : { produtoId: x.produtoId };
+    return { ...ref, quantidade: q > 0 ? q : null, unidadeQtd: x.unidadeQtd || 'mL' };
   });
   if (!itens.length) { showToast('Inclua ao menos um produto.', 'error'); return; }
-  if (new Set(itens.map(x => x.produtoId)).size !== itens.length) { showToast('Produto repetido no conjunto.', 'error'); return; }
+  if (new Set(itens.map(_cqTrKey)).size !== itens.length) { showToast('Produto ou controle repetido no conjunto.', 'error'); return; }
   const dup = _cqConjuntosDaUnidade(u, true).find(c => c.id !== f.id && _cqNormBusca(c.nome || '') === _cqNormBusca(nome));
   if (dup) { showToast('Já existe um conjunto com este nome nesta área.', 'error'); return; }
   const antes = f.id ? cqState.config.conjuntosPreparo[f.id] : null;
@@ -136,7 +140,7 @@ function _cqConjuntoSituacao(cj, u) {
   _cqConjuntoItens(cj).forEach(it => {
     const prod = cqState.config.insumoProdutos[it.produtoId];
     if (prod?.preparo?.avisoDias != null) aviso = Math.max(aviso ?? 0, Number(prod.preparo.avisoDias) || 0);
-    const preps = _cqLotesDoProduto(it.produtoId).filter(i => _cqNaUnidade(i, u)).flatMap(i => _cqPreparosDe(i));
+    const preps = it.materialId ? _cqCtlPrepsMaterial(it.materialId, u).map(x => x.p) : _cqLotesDoProduto(it.produtoId).filter(i => _cqNaUnidade(i, u)).flatMap(i => _cqPreparosDe(i));
     if (preps.length) algum = true;
     preps.forEach(p => { const d = p.dataHora || p.data; if (d && (!ultima || d > ultima)) ultima = d; });
     const uso = preps.filter(p => !p.finalizado && p.situacao !== 'reprovado');
@@ -174,7 +178,7 @@ function _cqTrocaCjPopHTML(cjs, atual, u) {
   const linha = (c, sel) => {
     const s = _cqConjuntoSituacao(c, u);
     const itens = _cqConjuntoItens(c);
-    const nomes = itens.map(x => cqState.config.insumoProdutos[x.produtoId]?.nome || '?').join(', ');
+    const nomes = itens.map(x => _cqTrNome(_cqTrKey(x)) || '?').join(', ');
     return `<span class="cq-sitpop-marca"><span class="cq-sitpop-dot st-${CQ_CJ_DOT[s.tipo]}"></span></span>
       <span class="cq-tr-cj-txt"><span class="cq-tr-cj-l1"><b>${_cqEsc(c.nome)}</b><span class="cq-tr-cj-sit ${s.tipo}">${_cqEsc(s.txt)}</span></span>
         <small title="${_cqEsc(nomes)}">${itens.length} produto${itens.length === 1 ? '' : 's'} · ${s.ultima ? `última troca ${_cqFmtData(s.ultima)}` : 'sem trocas'}${sel ? '' : ` · ${_cqEsc(nomes)}`}</small></span>`;
@@ -194,6 +198,7 @@ function cqTrocaCjEscolher(id) {
 
 // Situação da troca de um produto na área (seletor da troca fracionada): mesma regra do aviso
 function _cqProdutoTrocaSit(pid, u) {
+  if (_cqTrEhMat(pid)) return _cqCtlTrocaSit(pid.slice(4), u);
   const hoje = _cqHoje(cqState.config.unidades[u]?.fuso);
   const prod = cqState.config.insumoProdutos[pid];
   const preps = _cqLotesDoProduto(pid).filter(i => _cqNaUnidade(i, u)).flatMap(i => _cqPreparosDe(i));
@@ -209,29 +214,31 @@ function _cqProdutoTrocaSit(pid, u) {
 }
 // Produtos que podem entrar numa troca fracionada: preparados no laboratório, ativos, da área
 function _cqTrocaProdutos(u) {
-  return _cqDaUnidade('insumoProdutos', u).filter(p => p.ativo !== false && p.preparoInterno);
+  return _cqDaUnidade('insumoProdutos', u).filter(p => p.ativo !== false && p.preparoInterno)
+    .concat(_cqCtlMateriaisPrep(u).map(m => ({ id: 'mat:' + m.id, nome: m.nome, fabricante: m.fabricante, ctl: m })));
 }
 // Quantidade e unidade padrão do produto na troca fracionada: as do primeiro conjunto que o contém
 function _cqTrocaFracItem(pid, u) {
   for (const c of _cqConjuntosDaUnidade(u)) {
-    const it = _cqConjuntoItens(c).find(x => x.produtoId === pid);
+    const it = _cqConjuntoItens(c).find(x => _cqTrKey(x) === pid);
     if (it) return it;
   }
-  return { produtoId: pid, quantidade: '', unidadeQtd: 'mL' };
+  const m = _cqTrMat(pid);
+  return m ? { materialId: m.id, quantidade: m.preparo?.volume ?? '', unidadeQtd: m.preparo?.unidadeQtd || 'mL' } : { produtoId: pid, quantidade: '', unidadeQtd: 'mL' };
 }
 
 // Seletor da troca fracionada: popover com busca e multisseleção, produtos agrupados por conjunto
 // (os mais urgentes primeiro); quem não está em conjunto fica em "Fora de conjunto"
 function _cqTrocaAddPopHTML(u, dia) {
   const t = _cqTroca;
-  const prods = _cqTrocaProdutos(u).filter(p => _cqProdutoPassaSetor(p, u));
+  const prods = _cqTrocaProdutos(u).filter(p => _cqProdutoPassaSetor(p.ctl || p, u));
   const ord = { vencida: 0, proxima: 1, nova: 2, ok: 3 };
   const sits = {};
   prods.forEach(p => { sits[p.id] = _cqProdutoTrocaSit(p.id, u); });
   const porUrg = (a, b) => ord[sits[a.id].tipo] - ord[sits[b.id].tipo] || (sits[a.id].dias ?? 1e6) - (sits[b.id].dias ?? 1e6) || a.nome.localeCompare(b.nome, 'pt');
   const ids = new Set(prods.map(p => p.id));
   const grupos = _cqConjuntosDaUnidade(u)
-    .map(c => ({ cj: c, prods: _cqConjuntoItens(c).map(x => x.produtoId).filter(id => ids.has(id)).map(id => cqState.config.insumoProdutos[id]) }))
+    .map(c => ({ cj: c, prods: _cqConjuntoItens(c).map(_cqTrKey).filter(id => ids.has(id)).map(id => prods.find(p => p.id === id)) }))
     .filter(g => g.prods.length);
   const emCj = new Set(grupos.flatMap(g => g.prods.map(p => p.id)));
   const soltos = prods.filter(p => !emCj.has(p.id));
@@ -239,7 +246,7 @@ function _cqTrocaAddPopHTML(u, dia) {
   const sel = new Set(t.sel);
   const item = p => {
     const s = sits[p.id];
-    const nl = _cqPrepLotesValidos(p.id, u, dia).length;
+    const nl = p.ctl ? _cqCtlLotesMaterial(p.ctl.id, u, dia).length : _cqPrepLotesValidos(p.id, u, dia).length;
     const usoTxt = s.uso.length ? `em uso: ${s.uso.map(x => x.codigo || _cqFmtData(x.data)).join(', ')}` : '';
     return `<button type="button" class="cq-sitpop-op cq-tr-add-op${sel.has(p.id) ? ' sel' : ''}" data-pid="${p.id}" data-b="${_cqEsc(_cqNormBusca(`${p.nome} ${p.fabricante || ''}`))}" onclick="cqTrocaFracToggle('${p.id}')">
       <span class="cq-sitpop-marca"><span class="cq-sitpop-dot st-${CQ_CJ_DOT[s.tipo]}"></span></span>
@@ -252,7 +259,7 @@ function _cqTrocaAddPopHTML(u, dia) {
     return `<div class="cq-tp-grupo-tit">${g.cj ? CQ_ICO.lista : CQ_ICO.beaker}${_cqEsc(g.cj ? g.cj.nome : 'Fora de conjunto')}
       ${g.cj ? `<button type="button" class="cq-tr-add-todos" data-cj="${g.cj.id}" onclick="cqTrocaFracGrupo('${g.cj.id}')">${todos ? 'Desmarcar todos' : 'Marcar todos'}</button>` : `<span>${g.prods.length}</span>`}</div>`;
   };
-  const nomes = t.sel.map(id => cqState.config.insumoProdutos[id]?.nome).filter(Boolean);
+  const nomes = t.sel.map(_cqTrNome).filter(Boolean);
   return `<div class="cq-sitpop cq-tp cq-tr-add${nomes.length ? ' tem' : ''}" id="cq-tr-add-pop">
     <button type="button" class="cq-sitpop-btn" onclick="cqSitPopAbrir('cq-tr-add');setTimeout(()=>document.getElementById('cq-tr-add-busca')?.focus(),40)">
       <span class="cq-sitpop-marca"><span class="cq-sitpop-ico">${CQ_ICO.plus}</span></span>
@@ -301,7 +308,7 @@ function _cqTrocaFracAtualizar() {
     });
   }
   const rot = document.getElementById('cq-tr-add-rot');
-  if (rot) rot.innerHTML = _cqTrocaAddRotHTML(t.sel.map(id => cqState.config.insumoProdutos[id]?.nome).filter(Boolean));
+  if (rot) rot.innerHTML = _cqTrocaAddRotHTML(t.sel.map(_cqTrNome).filter(Boolean));
   const n = document.getElementById('cq-tr-add-n');
   if (n) n.textContent = _cqTrocaAddNTxt(t.sel.length);
   const l = document.getElementById('cq-tr-lista');
@@ -318,7 +325,7 @@ function cqTrocaFracGrupo(cjId) {
   const t = _cqTroca;
   if (!t) return;
   const validos = new Set(_cqTrocaProdutos(t.u).map(p => p.id));
-  const ids = _cqConjuntoItens(cqState.config.conjuntosPreparo[cjId]).map(x => x.produtoId).filter(id => validos.has(id));
+  const ids = _cqConjuntoItens(cqState.config.conjuntosPreparo[cjId]).map(_cqTrKey).filter(id => validos.has(id));
   t.sel = ids.every(id => t.sel.includes(id)) ? t.sel.filter(id => !ids.includes(id)) : [...t.sel, ...ids.filter(id => !t.sel.includes(id))];
   _cqTrocaFracAtualizar();
 }
@@ -375,8 +382,10 @@ function _cqTrocaListaHTML() {
   const dh = t.dh || _cqNowLocal().slice(0, 16);
   const dia = dh.slice(0, 10);
   const item = it => {
+    const key = _cqTrKey(it);
+    const x = t.itens[key] = t.itens[key] || { incluir: true, lote: '', qtd: it.quantidade ?? '', un: it.unidadeQtd || 'mL', valEdit: false, val: '', valMot: '' };
+    if (it.materialId) return _cqCtlTrocaItemHTML(key, x, t, frac, dia, dh);
     const p = cqState.config.insumoProdutos[it.produtoId];
-    const x = t.itens[it.produtoId] = t.itens[it.produtoId] || { incluir: true, lote: '', qtd: it.quantidade ?? '', un: it.unidadeQtd || 'mL', valEdit: false, val: '', valMot: '' };
     if (!p) { x.incluir = false; return '<div class="cq-tr-item off"><b class="cq-muted">Produto removido do cadastro</b></div>'; }
     const pid = p.id;
     const incluir = frac || x.incluir;
@@ -464,8 +473,14 @@ async function cqTrocaRegistrar() {
   const hoje = _cqHoje();
   const plano = [];
   for (const it of _cqTrocaFonte()) {
-    const x = t.itens[it.produtoId];
+    const x = t.itens[_cqTrKey(it)];
     if (!x || (!frac && !x.incluir)) continue;
+    if (it.materialId) {
+      const pc = _cqCtlTrocaPlano(_cqTrKey(it), x, t, dia);
+      if (!pc) return;
+      plano.push(pc);
+      continue;
+    }
     const p = cqState.config.insumoProdutos[it.produtoId];
     const ins = x.lote ? cqState.config.insumos[x.lote] : null;
     if (!p || !ins) { showToast(`${p?.nome || 'Produto'}: nenhum lote em uso dentro da validade. ${frac ? 'Tire o produto da troca' : 'Desmarque o produto'} ou cadastre o lote.`, 'error'); return; }
@@ -489,9 +504,15 @@ async function cqTrocaRegistrar() {
   // Troca fracionada: sem conjunto; o código `troca` liga os preparos registrados juntos
   const conjunto = frac ? { fracionada: true, nome: 'Troca fracionada', troca: _cqUid(), produtos: plano.length } : { id: cj.id, nome: cj.nome, troca: _cqUid() };
   const updates = {};
-  const novos = [], finalizados = [];
+  const novos = [], finalizados = [], ctls = [];
   const seqLote = {};
   plano.forEach((x, k) => {
+    if (x.ctl) {
+      const r = _cqCtlTrocaGravar(updates, x, k, { dia, dh, respId: t.resp, obs: t.obs, conjunto, finalizar: t.finalizar, u: t.u,
+        motivoFin: `Substituído na ${frac ? 'troca fracionada' : `troca do conjunto ${cj.nome}`}` }, ass);
+      ctls.push({ x, r });
+      return;
+    }
     seqLote[x.ins.id] = (seqLote[x.ins.id] ?? _cqPrepSeq(x.ins) - 1) + 1;
     const obj = _cqPrepMontar(x.ins, { dia, dh, respId: t.resp, qtd: x.qtd, un: x.un, obs: t.obs, validade: x.validade, padrao: x.padrao, motivoVal: x.motivoVal, conjunto, origem: 'troca' }, ass, seqLote[x.ins.id]);
     const base = `${CQ_KEYS.config}/insumos/${x.ins.id}`;
@@ -523,11 +544,13 @@ async function cqTrocaRegistrar() {
     if (ins !== cru) ins.preparos = cru.preparos;
   });
   finalizados.forEach(({ i, id, fin }) => { const pr = _cqLoteCru(i).preparos?.[id]; if (pr) pr.finalizado = fin; });
+  ctls.forEach(({ x, r }) => _cqCtlTrocaAplicarLocal(x, r));
   _cqTroca = null;
   cqDrawerClose();
   cqRender();
   _cqAtualizarAlertasPreparo();
-  showToast(`Troca registrada: ${novos.length} preparo(s)${finalizados.length ? `, ${finalizados.length} finalizado(s)` : ''}.`, 'success');
+  const nCtl = ctls.reduce((s, c) => s + c.r.novos.length, 0), fCtl = ctls.reduce((s, c) => s + c.r.fins.length, 0);
+  showToast(`Troca registrada: ${novos.length + nCtl} preparo(s)${finalizados.length + fCtl ? `, ${finalizados.length + fCtl} finalizado(s)` : ''}.`, 'success');
   cqModalOpen({
     titulo: 'Troca registrada', subtitulo: `${frac ? 'Troca fracionada' : cj.nome} · ${_cqFmtDH(dh)}`, icone: 'repeat', largura: '620px',
     corpo: `<div class="cq-nota" style="margin-bottom:10px;">Identifique as cubas ou frascos com a etiqueta de cada preparo (RDC 978, art. 101).</div>
@@ -535,6 +558,9 @@ async function cqTrocaRegistrar() {
         <div class="cq-cj-info"><b>${_cqEsc(obj.codigo)}</b><small>${_cqEsc(ins.nome)} · lote ${_cqEsc(ins.lote)} · val. ${_cqFmtData(obj.validade)}</small></div>
         <div class="cq-cj-acoes"><button class="btn btn-outline btn-sm" onclick="cqImprimirRotulo('${ins.id}','${obj.id}')">${CQ_ICO.print} Etiqueta</button>
           <button class="cq-icobtn" title="Baixar etiqueta em PDF" onclick="cqEtqBaixar('${ins.id}','${obj.id}')">${CQ_ICO.baixar}</button></div>
+      </div>`).join('')}${ctls.map(({ x, r }) => `<div class="cq-cj-item">
+        <div class="cq-cj-info"><b>${_cqEsc(r.novos.map(p => p.codigo).join(', '))}</b><small>${_cqEsc(x.m.nome)} · lote ${_cqEsc(x.l.lote)} · val. ${_cqFmtData(x.validade)} · uma etiqueta por nível</small></div>
+        <div class="cq-cj-acoes"><button class="btn btn-outline btn-sm" onclick="cqCtlEtq('${x.l.id}','${r.novos.map(p => p.id).join(',')}')">${CQ_ICO.print} Etiquetas (${r.novos.length})</button></div>
       </div>`).join('')}</div>`,
     rodape: '<div></div><button class="btn btn-primary" onclick="cqModalClose()">Fechar</button>',
   });
@@ -608,15 +634,19 @@ function _cqTrocasFaixaHTML(u) {
 const CQ_PAINEL_PREP_MAX = 12;
 const CQ_PAINEL_PREP_TC = { vencida: 'rejeitado', proxima: 'alerta', ok: 'aceito', nova: 'nenhum' };
 function _cqPainelPreparosHTML(u) {
-  const prods = _cqTrocaProdutos(u).filter(p => _cqProdutoPassaSetor(p, u));
-  if (!prods.length) return '';
+  // Tiles por produto; controle (material preparado no laboratório) entra igual, inclusive nunca preparado
+  const prods = _cqTrocaProdutos(u).filter(p => _cqProdutoPassaSetor(p.ctl || p, u));
+  if (!prods.length && !_cqConjuntosDaUnidade(u).length) return '';
   const hoje = _cqHoje(cqState.config.unidades[u]?.fuso);
   const desde = _cqSomarDias(hoje, -30);
   const n = { uso: 0, vencendo: 0, vencidos: 0, aguardando: 0, mes: 0 };
   let ultimo = null;
   const tiles = prods.map(prod => {
     const aviso = prod.preparo?.avisoDias != null ? Math.max(0, Number(prod.preparo.avisoDias) || 0) : 3;
-    const pares = _cqLotesDoProduto(prod.id).filter(i => _cqNaUnidade(i, u)).flatMap(i => _cqPreparosDe(i).map(p => ({ i, p })));
+    // Controle: o "lote" do par é o lote de controle (i.ctl marca para o clique e a etiqueta)
+    const pares = prod.ctl
+      ? _cqCtlPrepsMaterial(prod.ctl.id, u).map(({ l, p }) => ({ i: { id: l.id, lote: l.lote, nome: prod.nome, ctl: true }, p }))
+      : _cqLotesDoProduto(prod.id).filter(i => _cqNaUnidade(i, u)).flatMap(i => _cqPreparosDe(i).map(p => ({ i, p })));
     pares.forEach(({ i, p }) => {
       if (!p.legado && (p.data || '') >= desde) n.mes++;
       if (!p.legado && (!ultimo || (p.dataHora || p.data || '') > (ultimo.p.dataHora || ultimo.p.data || ''))) ultimo = { i, p };
@@ -650,17 +680,17 @@ function _cqPainelPreparosHTML(u) {
     const itens = _cqConjuntoItens(c);
     // Última troca do conjunto (data e responsável), pelos preparos que a registraram
     let ult = null;
-    itens.forEach(it => _cqLotesDoProduto(it.produtoId).filter(i => _cqNaUnidade(i, u)).forEach(i => _cqPreparosDe(i).forEach(p => {
+    itens.forEach(it => (it.materialId ? _cqCtlPrepsMaterial(it.materialId, u).map(x => x.p) : _cqLotesDoProduto(it.produtoId).filter(i => _cqNaUnidade(i, u)).flatMap(i => _cqPreparosDe(i))).forEach(p => {
       if (p.conjunto?.id === c.id && (!ult || (p.dataHora || '') > (ult.dataHora || ''))) ult = p;
-    })));
-    const sub = [`${itens.length} produto${itens.length === 1 ? '' : 's'}`,
+    }));
+    const sub = [`${itens.length} ${itens.some(x => x.materialId) ? 'ite' + (itens.length === 1 ? 'm' : 'ns') : 'produto' + (itens.length === 1 ? '' : 's')}`,
       ult ? `última troca ${_cqFmtData(ult.data)}${ult.responsavel ? ' por ' + ult.responsavel.split(' ')[0] : ''}` : s.ultima ? `último preparo ${_cqFmtData(s.ultima)}` : 'nunca trocado',
       s.prox ? `próxima até ${_cqFmtData(s.prox)}` : ''].filter(Boolean).join(' · ');
     const urgente = s.tipo === 'vencida' || s.tipo === 'proxima';
     return `<div class="cq-pp-cj">
       <span class="cq-sitpop-dot st-${CQ_CJ_DOT[s.tipo]}"></span>
       <div class="cq-pp-cj-txt"><div class="cq-tr-cj-l1"><b>${_cqEsc(c.nome)}</b><span class="cq-tr-cj-sit ${s.tipo}">${_cqEsc(s.txt)}</span></div>
-        <small title="${_cqEsc(itens.map(x => cqState.config.insumoProdutos[x.produtoId]?.nome || '?').join(', '))}">${_cqEsc(sub)}</small></div>
+        <small title="${_cqEsc(itens.map(x => _cqTrNome(_cqTrKey(x)) || '?').join(', '))}">${_cqEsc(sub)}</small></div>
       ${pode ? `<button class="btn ${urgente ? 'btn-primary' : 'btn-outline'} btn-sm" onclick="cqTrocaAbrir('${c.id}')">${CQ_ICO.repeat} Trocar</button>` : ''}
     </div>`;
   }).join('');
@@ -673,10 +703,11 @@ function _cqPainelPreparosHTML(u) {
     const pe = p ? `${_cqFmtData(p.data)}${p.responsavel ? ' · ' + p.responsavel.split(' ')[0] : ''}${p.validade ? ` → ${_cqFmtData(p.validade)}` : ''}` : 'sem preparo em uso';
     // Sem preparo em uso: o clique já abre o registro de um novo preparo deste produto
     const novo = !p && _cqPodeRegistrarPreparo();
-    const clique = p && !p.legado ? `cqPreparoInfo('${atual.i.id}','${p.id}')` : novo ? `cqPrepNovoAbrir('${prod.id}')` : 'cqAbrirPreparos()';
+    const clique = prod.ctl ? (p ? `cqLoteVer('${atual.i.id}','preparos')` : novo ? `cqPrepCtlEscolher('${prod.ctl.id}')` : 'cqAbrirPreparos()')
+      : p && !p.legado ? `cqPreparoInfo('${atual.i.id}','${p.id}')` : novo ? `cqPrepNovoAbrir('${prod.id}')` : 'cqAbrirPreparos()';
     const dica = p ? 'Ver o preparo em uso' : novo ? 'Registrar um novo preparo deste produto' : 'Abrir a aba Preparos';
     return `<button type="button" class="cq-tc cq-tc-${CQ_PAINEL_PREP_TC[s.tipo]} cq-pp-tc" title="${dica}" onclick="${clique}">
-      <div class="cq-tc-top"><span class="cq-tc-nome">${_cqEsc(prod.nome)}</span><span class="cq-tc-st"><i></i>${_cqEsc(s.txt)}</span></div>
+      <div class="cq-tc-top"><span class="cq-tc-nome">${_cqEsc(prod.nome)}${prod.ctl ? ' <span class="cq-tc-tag">controle</span>' : ''}</span><span class="cq-tc-st"><i></i>${_cqEsc(s.txt)}</span></div>
       <div class="cq-tc-sub">${_cqEsc(sub)}</div>
       ${pct !== null ? `<div class="cq-pp-barra" title="${pct}% da validade de uso decorrida"><i style="width:${pct}%"></i></div>` : ''}
       <div class="cq-tc-pe"><span>${CQ_ICO.clock}${_cqEsc(pe)}</span>${p?.situacao === 'em_avaliacao' ? '<span class="cq-tc-tag aguarda">aguardando avaliação</span>' : ''}</div>
@@ -706,15 +737,34 @@ function _cqPainelPreparosHTML(u) {
 // Lote ativo = não encerrado. Vazio quando a área não tem produto cadastrado.
 const CQ_PAINEL_INS_MAX = 10;
 function cqAbrirInsumos() { _cqCadTab = 'insumos'; _cqCadExp.clear(); cqNav('cadastros'); }
+function cqAbrirControles() { _cqCadTab = 'materiais'; _cqCadExp.clear(); cqNav('cadastros'); }
 function _cqPainelInsumosHTML(u) {
-  const prods = _cqDaUnidade('insumoProdutos', u).filter(p => p.ativo !== false && _cqProdutoPassaSetor(p, u));
+  const lotesU = _cqDaUnidade('insumos', u);
+  return _cqPainelLotesHTML(u, {
+    prods: _cqDaUnidade('insumoProdutos', u).filter(p => p.ativo !== false && _cqProdutoPassaSetor(p, u)),
+    lotesDe: p => lotesU.filter(l => _cqLoteCru(l).produtoId === p.id),
+    sub: p => [CQ_TIPOS_INSUMO[p.tipo] || p.tipo, p.fabricante, p.preparoInterno ? 'preparado no laboratório' : ''],
+    ver: p => `cqInsumoProdutoVer('${p.id}')`, titulo: 'Reagentes, meios e insumos', abrir: 'cqAbrirInsumos()', rotSem: 'produtos sem lote ativo', rotItens: 'produtos',
+  });
+}
+// Controles/materiais da área: mesmo quadro, com os lotes de controle
+function _cqPainelControlesHTML(u) {
+  const lotesU = _cqDaUnidade('lotesControle', u);
+  return _cqPainelLotesHTML(u, {
+    prods: _cqDaUnidade('materiais', u).filter(m => m.ativo !== false && _cqProdutoPassaSetor(m, u)),
+    lotesDe: m => lotesU.filter(l => l.materialId === m.id),
+    sub: m => [CQ_TIPOS_MATERIAL[m.tipo] || m.tipo, m.fabricante, `${Object.keys(m.niveis || {}).length} nível(is)`, m.preparoInterno ? 'preparado no laboratório' : ''],
+    ver: m => `cqMaterialVer('${m.id}')`, titulo: 'Controles e materiais', abrir: 'cqAbrirControles()', rotSem: 'controles sem lote ativo', rotItens: 'controles',
+  });
+}
+function _cqPainelLotesHTML(u, cfg) {
+  const prods = cfg.prods;
   if (!prods.length) return '';
   const hoje = _cqHoje(cqState.config.unidades[u]?.fuso);
-  const lotesU = _cqDaUnidade('insumos', u);
   const n = { ativos: 0, vencendo: 0, vencidos: 0, avaliacao: 0, semLote: 0 };
   const ord = { vencido: 0, sem: 1, vencendo: 2, ok: 3 };
   const linhas = prods.map(p => {
-    const ls = lotesU.filter(l => _cqLoteCru(l).produtoId === p.id && !_cqLoteInativo(l)).sort((a, b) => (a.validade || '9999').localeCompare(b.validade || '9999'));
+    const ls = cfg.lotesDe(p).filter(l => !_cqLoteInativo(l)).sort((a, b) => (a.validade || '9999').localeCompare(b.validade || '9999'));
     n.ativos += ls.length;
     const venc = ls.filter(l => _cqLoteVencido(l, hoje));
     n.vencidos += venc.length;
@@ -734,16 +784,16 @@ function _cqPainelInsumosHTML(u) {
 
   const stat = (v, l, cls, tit) => `<div class="cq-pp-stat${v && cls ? ' ' + cls : ''}" title="${_cqEsc(tit)}"><b>${v}</b><span>${l}</span></div>`;
   const stats = `<div class="cq-pp-stats">
-    ${stat(n.ativos, 'lotes ativos', '', 'Lotes não encerrados dos produtos da área')}
+    ${stat(n.ativos, 'lotes ativos', '', `Lotes não encerrados dos ${cfg.rotItens} da área`)}
     ${stat(n.vencendo, 'vencendo em 30 dias', 'amarelo', 'Lotes ativos que vencem nos próximos 30 dias')}
     ${stat(n.vencidos, 'vencidos não encerrados', 'vermelho', 'Lotes com validade expirada ainda não encerrados')}
     ${stat(n.avaliacao, 'em avaliação / quarentena', 'ciano', 'Lotes novos ainda não liberados para uso pleno')}
-    ${stat(n.semLote, 'produtos sem lote ativo', 'amarelo', 'Produtos ativos sem nenhum lote em uso')}
+    ${stat(n.semLote, cfg.rotSem, 'amarelo', `Cadastros ativos sem nenhum lote em uso`)}
   </div>`;
   const cor = { vencido: 'vermelho', sem: 'cinza', vencendo: 'amarelo', ok: 'verde' };
-  const linha = ({ p, ls, prox, aval, sit }) => `<button type="button" class="cq-pi2-lin" onclick="cqInsumoProdutoVer('${p.id}')" title="Ver o produto">
+  const linha = ({ p, ls, prox, aval, sit }) => `<button type="button" class="cq-pi2-lin" onclick="${cfg.ver(p)}" title="Ver o cadastro">
       <span class="cq-pi2-ico ${cor[sit.k]}">${CQ_ICO.beaker}</span>
-      <span class="cq-pi2-nome"><b>${_cqEsc(p.nome)}</b><small>${_cqEsc([CQ_TIPOS_INSUMO[p.tipo] || p.tipo, p.fabricante, p.preparoInterno ? 'preparado no laboratório' : ''].filter(Boolean).join(' · '))}</small></span>
+      <span class="cq-pi2-nome"><b>${_cqEsc(p.nome)}</b><small>${_cqEsc(cfg.sub(p).filter(Boolean).join(' · '))}</small></span>
       <span class="cq-pi2-lotes">${ls.length ? `<b>${ls.length}</b> lote${ls.length === 1 ? '' : 's'}<small>${_cqEsc(ls.slice(0, 2).map(l => l.lote).join(', '))}${ls.length > 2 ? '…' : ''}</small>` : '<small>nenhum lote ativo</small>'}</span>
       <span class="cq-pi2-val">${prox ? `<b>${_cqFmtData(prox)}</b><small>próximo vencimento</small>` : '<small>—</small>'}</span>
       <span class="cq-pi2-sit">${aval ? '<span class="cq-tc-tag aguarda">em avaliação</span>' : ''}<span class="cq-pi2-pill ${cor[sit.k]}"><i></i>${_cqEsc(sit.txt)}</span></span>
@@ -751,12 +801,12 @@ function _cqPainelInsumosHTML(u) {
   const vis = linhas.slice(0, CQ_PAINEL_INS_MAX);
   const un = cqState.config.unidades[u];
   return `<div class="cq-pp">
-    <div class="cq-pp-head"><div class="cq-sec-titulo">Reagentes, meios e insumos · ${_cqEsc(un?.sigla || '')}</div>
-      <div class="cq-pp-acoes"><button class="btn btn-outline btn-sm" onclick="cqAbrirInsumos()">${CQ_ICO.cadastro} Ver cadastro</button></div></div>
+    <div class="cq-pp-head"><div class="cq-sec-titulo">${cfg.titulo} · ${_cqEsc(un?.sigla || '')}</div>
+      <div class="cq-pp-acoes"><button class="btn btn-outline btn-sm" onclick="${cfg.abrir}">${CQ_ICO.cadastro} Ver cadastro</button></div></div>
     <div class="cq-equip-card cq-pp-card">
       ${stats}
       <div class="cq-pi2-lista">${vis.map(linha).join('')}</div>
-      ${linhas.length > vis.length ? `<a href="#" class="cq-link" onclick="cqAbrirInsumos();return false;">Ver todos os produtos (${linhas.length})</a>` : ''}
+      ${linhas.length > vis.length ? `<a href="#" class="cq-link" onclick="${cfg.abrir};return false;">Ver todos os ${cfg.rotItens} (${linhas.length})</a>` : ''}
     </div>
   </div>`;
 }

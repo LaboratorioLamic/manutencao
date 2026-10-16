@@ -118,7 +118,7 @@ function cqRenderCadastros(body) {
   const uAt = _cqUnidadeAtivaId();
   const qtd = { analitos: _cqDaUnidade('analitos', uAt).length, materiais: _cqDaUnidade('materiais', uAt).filter(m => _cqProdutoPassaSetor(m, uAt)).length,
                 insumos: _cqDaUnidade('insumoProdutos', uAt).filter(p => _cqProdutoPassaSetor(p, uAt)).length + _cqDaUnidade('insumos', uAt).filter(i => !_cqProdutoInsumo(i) && _cqProdutoPassaSetor(i, uAt)).length,
-                preparos: _cqPrepAbaItens(uAt).filter(x => !x.p.finalizado).length };
+                preparos: _cqPrepAbaItens(uAt).filter(x => !x.p.finalizado).length + _cqCtlPrepItens(uAt).filter(x => !x.p.finalizado).length };
   const tabsHTML = `<div class="ot-modal-tabs cq-subtabs">${Object.entries(tabs).map(([k, l], i) => `<button class="ot-modal-tab-btn${k === _cqCadTab ? ' active' : ''}" onclick="cqCadTab('${k}')"${k === 'preparos' ? ' title="Preparos em uso"' : ''}><span class="cq-step${qtd[k] ? ' feito' : ''}">${i + 1}</span>${l}${qtd[k] ? `<span class="cq-step-qtd">${qtd[k]}</span>` : ''}</button>`).join('')}</div>`;
   // Preparos: formulário de registro + lista, com filtros próprios
   if (_cqCadTab === 'preparos') {
@@ -126,17 +126,17 @@ function cqRenderCadastros(body) {
     _cqPrepAbaLista();
     return;
   }
-  const podeCfg = _cqCan('configurar');
+  const podeCfg = _cqCan('configurar'), podeLote = _cqPodeCriarLote();
   const nSemUn = CQ_COLECOES_UNIDADE.reduce((n, c) => n + Object.values(cfg[c] || {}).filter(_cqSemUnidade).length, 0);
   const novo = {
     analitos: podeCfg ? `<button class="btn btn-outline btn-sm" onclick="cqModelosMicro()" title="Cria analitos qualitativos para meios de cultura e colorações">${CQ_ICO.beaker} Modelos de microbiologia</button>
       <button class="btn btn-outline btn-sm" onclick="cqModelosMicro('ester')" title="Cria analitos qualitativos para o integrador químico, o indicador biológico e o Bowie &amp; Dick da autoclave">${CQ_ICO.beaker} Modelos de esterilização</button>
       <button class="btn btn-primary btn-sm" onclick="cqAnalitoForm(null)">${CQ_ICO.plus} Novo analito</button>` : '',
-    materiais: podeCfg ? `<button class="btn btn-outline btn-sm" onclick="cqLoteForm(null)">${CQ_ICO.plus} Novo lote</button>
-      <button class="btn btn-primary btn-sm" onclick="cqMaterialForm(null)">${CQ_ICO.plus} Novo material / cepa</button>` : '',
-    insumos: podeCfg ? `${_cqInsumosLegados().length ? `<button class="btn btn-outline btn-sm" onclick="cqInsumosOrganizar()" title="Lotes cadastrados antes da separação entre produto e lote">${CQ_ICO.alerta} Organizar ${_cqInsumosLegados().length} lote(s) antigo(s)</button>` : ''}
-      <button class="btn btn-outline btn-sm" onclick="cqInsumoForm(null)">${CQ_ICO.plus} Novo lote</button>
-      <button class="btn btn-primary btn-sm" onclick="cqInsumoProdutoForm(null)">${CQ_ICO.plus} Novo produto</button>` : '',
+    materiais: `${podeLote ? `<button class="btn btn-outline btn-sm" onclick="cqLoteForm(null)">${CQ_ICO.plus} Novo lote</button>` : ''}
+      ${podeCfg ? `<button class="btn btn-primary btn-sm" onclick="cqMaterialForm(null)">${CQ_ICO.plus} Novo material / cepa</button>` : ''}`,
+    insumos: `${podeCfg && _cqInsumosLegados().length ? `<button class="btn btn-outline btn-sm" onclick="cqInsumosOrganizar()" title="Lotes cadastrados antes da separação entre produto e lote">${CQ_ICO.alerta} Organizar ${_cqInsumosLegados().length} lote(s) antigo(s)</button>` : ''}
+      ${podeLote ? `<button class="btn btn-outline btn-sm" onclick="cqInsumoForm(null)">${CQ_ICO.plus} Novo lote</button>` : ''}
+      ${podeCfg ? `<button class="btn btn-primary btn-sm" onclick="cqInsumoProdutoForm(null)">${CQ_ICO.plus} Novo produto</button>` : ''}`,
   }[_cqCadTab];
   // Filtros de analito e de equipamento/sistema (as três abas; a seleção vale ao trocar de aba).
   // Um restringe o outro: só aparecem os analitos dos equipamentos marcados e vice-versa.
@@ -493,7 +493,7 @@ function _cqCadRenderLista() {
               <td style="font-size:12px;">${usoTxt(l)}</td>
               <td style="font-size:12px;max-width:300px;">${_cqEsc(l.observacoes || '—')}</td><td>${_cqLoteSituacaoBadge(l, hoje)}</td>
               ${podeEd ? `<td class="cq-td-acao"><button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();cqLoteForm('${l.id}')">${CQ_ICO.edit} Editar</button></td>` : ''}</tr>`).join('') : ls.length ? _cqLotesAbaVazio(ab.k, nColL) : vazioLotes(total, nColL)}</tbody></table></div>
-          ${podeCfg ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="event.stopPropagation();cqLoteForm(null,{materialId:'${m.id}'})">${CQ_ICO.plus} Novo lote de ${_cqEsc(m.nome)}</button>` : ''}</td></tr>` : '');
+          ${_cqPodeCriarLote() ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="event.stopPropagation();cqLoteForm(null,{materialId:'${m.id}'})">${CQ_ICO.plus} Novo lote de ${_cqEsc(m.nome)}</button>` : ''}</td></tr>` : '');
       }).join('') : `<tr><td colspan="${podeEd ? 9 : 8}" class="cq-td-vazio">${q || filtroAnEq ? 'Nenhum material ou lote corresponde aos filtros.' : 'Nenhum material nesta área.'}</td></tr>`}</tbody>
     </table></div>`;
     return;
@@ -539,7 +539,7 @@ function _cqCadRenderLista() {
               <td class="${_cqLoteVencido(l, hoje) ? 'oc-vencido' : ''}">${_cqFmtData(l.validade)}</td><td style="font-size:12px;">${prepTxt(l)}</td>
               <td style="font-size:12px;max-width:300px;">${_cqEsc(l.observacoes || '—')}</td><td><div class="cq-lote-sit">${_cqLoteSituacaoBadge(l, hoje)}${podeEd ? _cqLoteUsoBtn(l, hoje) : ''}</div></td>
               ${podeEd ? `<td class="cq-td-acao"><button type="button" class="btn btn-outline btn-sm" onclick="event.stopPropagation();cqInsumoForm('${l.id}')">${CQ_ICO.edit} Editar</button></td>` : ''}</tr>`).join('') : ls.length ? _cqLotesAbaVazio(ab.k, podeEd ? 6 : 5) : vazioLotes(total, podeEd ? 6 : 5)}</tbody></table></div>
-          ${podeCfg ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="event.stopPropagation();cqInsumoForm(null,{produtoId:'${p.id}'})">${CQ_ICO.plus} Novo lote de ${_cqEsc(p.nome)}</button>` : ''}</td></tr>` : '');
+          ${_cqPodeCriarLote() ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="event.stopPropagation();cqInsumoForm(null,{produtoId:'${p.id}'})">${CQ_ICO.plus} Novo lote de ${_cqEsc(p.nome)}</button>` : ''}</td></tr>` : '');
       }).join('') : `<tr><td colspan="${podeEd ? 7 : 6}" class="cq-td-vazio">${q || filtroAnEq || _cqCadProds.length ? 'Nenhum produto ou lote corresponde aos filtros.' : 'Nenhum produto nesta área.'}</td></tr>`}</tbody>
     </table></div>
     ${legados.length ? `<div class="cq-sec-titulo" style="margin-top:22px;">Lotes sem produto (cadastro antigo)</div>
@@ -740,6 +740,7 @@ function cqToggle(id) {
   btn.classList.toggle('on', chk.checked);
   btn.setAttribute('aria-pressed', chk.checked);
   btn.querySelector('small').textContent = chk.checked ? btn.dataset.on : btn.dataset.off;
+  document.dispatchEvent(new CustomEvent('cq-toggle', { detail: { id, on: chk.checked } }));
 }
 
 function _cqResumoRegras(regras) {
@@ -748,8 +749,9 @@ function _cqResumoRegras(regras) {
 }
 
 function _cqRodapeForm(fnSalvar, podeEditar, fnExcluir, ativoCfg) {
-  // Excluir exige "Cadastros e áreas de CQ"; ativar/inativar acompanha a edição
-  const esq = podeEditar ? `${fnExcluir && _cqCan('configurar') ? `<button class="btn btn-outline cq-btn-perigo" onclick="${fnExcluir}">Excluir</button>` : ''}${_cqBtnAtivoHTML(ativoCfg)}` : '';
+  // Excluir: "Cadastros e áreas de CQ" ou, para lote/produto/material, "Editar cadastros"; ativar/inativar acompanha a edição
+  const colExcl = /cqExcluirCadastro\('(\w+)'/.exec(fnExcluir || '')?.[1];
+  const esq = podeEditar ? `${fnExcluir && _cqPodeExcluirCad(colExcl) ? `<button class="btn btn-outline cq-btn-perigo" onclick="${fnExcluir}">Excluir</button>` : ''}${_cqBtnAtivoHTML(ativoCfg)}` : '';
   return `${esq ? `<div class="cq-rodape-esq">${esq}</div>` : ''}
     <button class="btn btn-outline" onclick="cqDrawerClose()">${podeEditar ? 'Cancelar' : 'Fechar'}</button>
     ${podeEditar ? `<button class="btn btn-primary" onclick="${fnSalvar}">${CQ_ICO.check} Salvar</button>` : ''}`;
@@ -1300,6 +1302,7 @@ const CQ_LBL_MATERIAL = {
   nome: 'Nome', fabricante: 'Fabricante', fornecedor: 'Fornecedor', regAnvisa: 'Registro ANVISA', tipo: 'Tipo', matriz: 'Matriz',
   codigoReferencia: 'Código de referência', niveis: 'Níveis', armazenamento: 'Armazenamento',
   estabilidadeAbertoDias: 'Estabilidade após abertura (dias)', equips: 'Equipamentos / sistemas', analitoIds: 'Analitos', unidadeIds: 'Áreas', ativo: 'Ativo',
+  preparoInterno: 'Preparado no laboratório', preparo: 'Dados do preparo',
 };
 
 function cqMaterialForm(id, opts = {}) {
@@ -1338,13 +1341,14 @@ function cqMaterialForm(id, opts = {}) {
           ${[1, 2, 3].map(n => `<div class="cq-nivel-row"><label class="oc-check"><input type="checkbox" class="cq-mat-nivel" value="${n}" ${niveis[n] ? 'checked' : ''} ${_cqRo(pode)}> Nível ${n}</label>
             <input type="text" class="field-input cq-mat-nivel-nome" data-n="${n}" value="${_cqEsc(niveis[n]?.nome || '')}" placeholder="Nome (opcional)" ${_cqRo(pode)}></div>`).join('')}
         </div>
+        ${_cqCtlPrepCamposHTML(m, pode)}
         ${m?.tipo === 'pool_interno' || !m ? `<div class="cq-nota">Pool interno: forma alternativa de avaliação da precisão quando não há controle comercial (RDC 978, art. 182; PALC 11.9). Documente preparo, homogeneidade e estabilidade.</div>` : ''}
         <input type="checkbox" id="cq-mat-ativo" hidden ${m?.ativo === false ? '' : 'checked'}>
       </div>
 ` }, m && (() => {
       const ls = Object.values(cqState.config.lotesControle).filter(l => l.materialId === m.id).sort((a, b) => (b.validade || '').localeCompare(a.validade || ''));
       return { k: 'lotes', rotulo: `Lotes${ls.length ? ` <span class="cq-step-qtd">${ls.length}</span>` : ''}`,
-        html: _cqLotesCompactoHTML(ls, 'cqLoteVer', _cqCan('configurar') ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="cqLoteForm(null,{materialId:'${m.id}'})">${CQ_ICO.plus} Novo lote</button>` : '') };
+        html: _cqLotesCompactoHTML(ls, 'cqLoteVer', _cqPodeCriarLote() ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="cqLoteForm(null,{materialId:'${m.id}'})">${CQ_ICO.plus} Novo lote</button>` : '') };
     })(), _cqAbaTrilha(m)], opts.aba),
     rodape: _cqRodapeForm('cqMaterialSalvar()', pode, m ? `cqExcluirCadastro('materiais','${m.id}')` : '',
       m && { ids: 'cq-mat-ativo', fn: 'cqMaterialSalvar', colecao: 'materiais', id: m.id, ativo: m.ativo !== false }),
@@ -1393,10 +1397,14 @@ async function cqMaterialSalvar() {
     estabilidadeAbertoDias: est === '' ? null : Math.max(0, Number(est) || 0), armazenamento: _cqVal('cq-mat-arm'), niveis, equips, analitoIds, unidadeIds,
     ativo: _cqChk('cq-mat-ativo'),
   };
+  const prep = _cqCtlPrepCamposLer();
+  if (!prep) return;
+  rec.preparoInterno = prep.preparoInterno;
+  if (prep.preparo) rec.preparo = prep.preparo; else delete rec.preparo;
   if (!antes) { rec.criadoEm = _cqAgora(); rec.criadoPor = _cqAssinatura(); }
   const fmt = { niveis: v => Object.entries(v || {}).map(([n, x]) => `N${n}${x?.nome ? ' ' + x.nome : ''}`).join(', '), tipo: v => CQ_TIPOS_MATERIAL[v] || v,
                 equips: v => _cqArr(v).map(_cqRotuloEquip).join(', ') || 'Qualquer', analitoIds: v => _cqArr(v).map(a => _cqAnalito(a)?.nome || a).join(', ') || 'Todos',
-                unidadeIds: _cqSiglasUnidades, ativo: v => v ? 'Sim' : 'Não' };
+                unidadeIds: _cqSiglasUnidades, ativo: v => v ? 'Sim' : 'Não', preparoInterno: v => v ? 'Sim' : 'Não', preparo: _cqCtlFmtPreparo };
   const diffs = antes ? _cqDiff(antes, rec, CQ_LBL_MATERIAL, fmt) : [];
   if (antes && !diffs.length) { cqDrawerClose(); return; }
   _cqTrilhaAdd(rec, antes ? 'edicao' : 'criacao', antes ? 'Material alterado' : 'Material cadastrado', diffs);
@@ -1550,7 +1558,7 @@ function _cqLoteUsoCapturar(l) {
 
 function cqLoteForm(id, opts = {}) {
   const l = id ? cqState.config.lotesControle[id] : null;
-  const pode = _cqPodeEditarCad(!!l);
+  const pode = l ? _cqPodeEditarCad() : _cqPodeCriarLote();
   _cqLoteFormId = id || null;
   const mats = Object.values(cqState.config.materiais).filter(m => m.id === l?.materialId || m.id === opts.materialId || (m.ativo !== false && _cqNaUnidade(m))).sort((a, b) => a.nome.localeCompare(b.nome));
   if (!mats.length) { showToast('Cadastre antes o material de controle desta área.', 'error'); return; }
@@ -1631,15 +1639,15 @@ function cqMaterialVer(id, aba) {
   const secNiv = _cqPvSecao(CQ_ICO.lista, 'Níveis', niveis.length
     ? `<div class="cq-pv-chips">${niveis.map(([n, x]) => _cqPvPill(`Nível ${n}${x?.nome ? ' · ' + _cqEsc(x.nome) : ''}`, 'contorno')).join(' ')}</div>`
     : '<div class="cq-pv-nota">Nenhum nível definido.</div>');
-  const geral = `<div class="cq-vw">${hero}${stats}${secMat}${secNiv}</div>`;
-  const lotesHTML = _cqLotesCompactoHTML(lotes, 'cqLoteVer', _cqCan('configurar') ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="cqLoteForm(null,{materialId:'${m.id}'})">${CQ_ICO.plus} Novo lote</button>` : '');
+  const geral = `<div class="cq-vw">${hero}${stats}${secMat}${secNiv}${_cqCtlPrepSecaoMaterial(m)}</div>`;
+  const lotesHTML = _cqLotesCompactoHTML(lotes, 'cqLoteVer', _cqPodeCriarLote() ? `<button class="btn btn-outline btn-sm cq-an-novo-teste" onclick="cqLoteForm(null,{materialId:'${m.id}'})">${CQ_ICO.plus} Novo lote</button>` : '');
   cqDrawerOpen({
     titulo: m.nome, subtitulo: [tipo, m.fabricante, m.ativo === false ? 'inativo' : ''].filter(Boolean).join(' · ') || 'Material de controle', icone: 'beaker',
     corpo: `${_cqInativoNota(m, 'ativo', 'não é oferecido em testes novos')}${_cqAbasHTML('matver', [
       { k: 'geral', rotulo: 'Geral', html: geral },
       { k: 'lotes', rotulo: `Lotes${lotes.length ? ` <span class="cq-step-qtd">${lotes.length}</span>` : ''}`, html: lotesHTML },
       _cqAbaTrilha(m)], aba)}`,
-    rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
+    rodape: `<div>${_cqPodeExcluirCad('materiais') ? `<button class="btn btn-outline cq-btn-perigo" onclick="cqExcluirCadastro('materiais','${m.id}')">Excluir</button>` : ''}</div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
       ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqMaterialForm('${m.id}',{aba:document.querySelector('#cq-abas-matver .ot-modal-tab-btn.active')?.dataset.aba})">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
   });
 }
@@ -1687,8 +1695,9 @@ function cqLoteVer(id, aba) {
     corpo: (mat ? _cqVoltarHTML(mat.nome, `cqMaterialVer('${mat.id}','lotes')`, 'Voltar para o material') : '') + _cqAbasHTML('lotever', [
       { k: 'geral', rotulo: 'Geral', html: geral },
       { k: 'uso', rotulo: `Uso nos testes${testes.length ? ` <span class="cq-step-qtd">${testes.length}</span>` : ''}`, html: _cqLoteUsoHTML(l, false) },
+      _cqCtlPrepAbaLote(l, mat),
       _cqAbaTrilha(l)], aba),
-    rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
+    rodape: `<div>${_cqPodeExcluirCad('lotesControle') ? `<button class="btn btn-outline cq-btn-perigo" onclick="cqExcluirCadastro('lotesControle','${l.id}')">Excluir</button>` : ''}</div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
       ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqLoteForm('${l.id}',{aba:document.querySelector('#cq-abas-lotever .ot-modal-tab-btn.active')?.dataset.aba})">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
   });
 }
@@ -1704,7 +1713,7 @@ function cqLoteMatChange() {
 }
 
 async function cqLoteSalvar() {
-  if (_cqSalvando || !_cqPodeEditarCad(!!_cqLoteFormId)) return;
+  if (_cqSalvando || !(_cqLoteFormId ? _cqPodeEditarCad() : _cqPodeCriarLote())) return;
   const antes = _cqLoteFormId ? cqState.config.lotesControle[_cqLoteFormId] : null;
   const materialId = antes ? antes.materialId : _cqVal('cq-lote-mat');
   const lote = antes ? antes.lote : _cqVal('cq-lote-num');
@@ -1737,7 +1746,10 @@ async function cqLoteSalvar() {
     if (uso.length) _cqTrilhaAdd(rec, 'edicao', `Lote em uso alterado no cadastro do lote — ${uso.map(x => `${_cqNomeTeste(x.t)} · ${_cqEquipTeste(x.t)} (${x.mud.join(', ')})`).join('; ')}: ${justificativa}`);
     rec.atualizadoEm = _cqAgora();
     const C = CQ_KEYS.config;
-    const updates = { [`${C}/lotesControle/${rec.id}`]: rec };
+    // Campo a campo: os preparos (cq-controle-preparo.js) podem ter sido gravados por outra estação
+    const updates = {};
+    const campos = new Set([...Object.keys(antes || {}), ...Object.keys(rec)]);
+    campos.forEach(k => { if (k !== 'preparos' && k !== 'preparoSeq') updates[`${C}/lotesControle/${rec.id}/${k}`] = rec[k] ?? null; });
     uso.forEach(x => {
       const p = `${C}/testes/${x.t.id}`;
       updates[`${p}/lotesAtivos`] = x.la;
@@ -1906,7 +1918,7 @@ function _cqPvUltimoPrep(ult) {
 function cqInsumoProdutoVer(id, aba) {
   const p = cqState.config.insumoProdutos[id];
   if (!p) return;
-  const pode = _cqCan('configurar');
+  const pode = _cqPodeCriarLote();
   const hoje = _cqHoje();
   const prep = p.preparo || {};
   const lotes = _cqLotesDoProduto(p.id).sort((a, b) => (b.validade || '').localeCompare(a.validade || ''));
@@ -1966,7 +1978,7 @@ function cqInsumoProdutoVer(id, aba) {
       { k: 'lotes', rotulo: `Lotes${lotes.length ? ` <span class="cq-step-qtd">${lotes.length}</span>` : ''}`, html: lotesHTML },
       preps.length && { k: 'preparos', rotulo: `Preparos <span class="cq-step-qtd">${preps.length}</span>`, html: prepsHTML },
       _cqAbaTrilha(p)], aba)}`,
-    rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
+    rodape: `<div>${_cqPodeExcluirCad('insumoProdutos') ? `<button class="btn btn-outline cq-btn-perigo" onclick="cqExcluirCadastro('insumoProdutos','${p.id}')">Excluir</button>` : ''}</div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
       ${_cqPodeEditarCad() ? `<button class="btn btn-primary" onclick="cqInsumoProdutoForm('${p.id}',{aba:document.querySelector('#cq-abas-prodver .ot-modal-tab-btn.active')?.dataset.aba})">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
   });
 }
@@ -2031,7 +2043,7 @@ function cqInsumoVer(id) {
       { k: 'geral', rotulo: 'Geral', html: geral },
       preps.length && { k: 'preparos', rotulo: `Preparos <span class="cq-step-qtd">${preps.length}</span>`, html: _cqPrepsAtivosInativosHTML(preps, false) },
       _cqAbaTrilha(i)]),
-    rodape: `<div></div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
+    rodape: `<div>${_cqPodeExcluirCad('insumos') ? `<button class="btn btn-outline cq-btn-perigo" onclick="cqExcluirCadastro('insumos','${i.id}')">Excluir</button>` : ''}</div><div style="display:flex;gap:8px;"><button class="btn btn-outline" onclick="cqDrawerClose()">Fechar</button>
       ${pode ? `<button class="btn btn-primary" onclick="cqInsumoForm('${i.id}',{aba:document.querySelector('#cq-abas-insver .ot-modal-tab-btn.active')?.dataset.aba})">${CQ_ICO.edit} Editar</button>` : ''}</div>`,
   });
 }
@@ -2121,7 +2133,7 @@ const CQ_LBL_INSUMO = { produtoId: 'Produto', lote: 'Lote', validade: 'Validade'
 
 function cqInsumoForm(id, opts = {}) {
   const i = id ? cqState.config.insumos[id] : null;
-  const pode = _cqPodeEditarCad(!!i);
+  const pode = i ? _cqPodeEditarCad() : _cqPodeCriarLote();
   _cqInsumoFormId = id || null;
   const prodAtual = _cqProdutoInsumo(i);
   const legado = !!i && !prodAtual;
@@ -2176,7 +2188,7 @@ function cqInsumoProdChange() {
 }
 
 async function cqInsumoSalvar() {
-  if (_cqSalvando || !_cqPodeEditarCad(!!_cqInsumoFormId)) return;
+  if (_cqSalvando || !(_cqInsumoFormId ? _cqPodeEditarCad() : _cqPodeCriarLote())) return;
   const antes = _cqInsumoFormId ? cqState.config.insumos[_cqInsumoFormId] : null;
   const cruA = antes ? _cqLoteCru(antes) : null;
   // Produto fixo depois do cadastro do lote (lote antigo, sem produto, escolhe uma vez)
@@ -3006,20 +3018,25 @@ function _cqEtqImprimir(d, cfg, copias) {
   // A etiqueta vai impressa como a mesma imagem do PDF, na resolução escolhida (dpi do ajuste),
   // com o tamanho físico em mm: a impressora recebe exatamente os pontos que vai imprimir
   const [fw, fh] = _cqEtqFisico(cfg);
-  let etq;
-  try {
-    const src = _cqEtqCanvas(d, cfg, cfg.dpi || 300).toDataURL('image/png');
-    etq = `<div class="etq" style="box-sizing:border-box;width:${fw}mm;height:${fh}mm;overflow:hidden;background:#fff;${folha ? 'border:0.2mm dashed #999;' : ''}"><img src="${src}" alt="" style="display:block;width:100%;height:100%;image-rendering:${(cfg.dpi || 300) < 200 ? 'pixelated' : 'auto'};"></div>`;
-  } catch (err) {
-    console.error('[cq-cadastros.js] _cqEtqImprimir: imagem da etiqueta', err);
-    etq = _cqEtiquetaHTML(d, cfg, folha);   // sem canvas: imprime o layout em mm
-  }
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiqueta ${_cqEsc(d.codigo || d.lote)}</title>
+  // d: uma etiqueta ou uma lista (ex.: um preparo de controle por nível); cada uma sai em `copias` cópias
+  const ds = Array.isArray(d) ? d : [d];
+  const etqs = ds.map(x => {
+    try {
+      const src = _cqEtqCanvas(x, cfg, cfg.dpi || 300).toDataURL('image/png');
+      return `<div class="etq" style="box-sizing:border-box;width:${fw}mm;height:${fh}mm;overflow:hidden;background:#fff;${folha ? 'border:0.2mm dashed #999;' : ''}"><img src="${src}" alt="" style="display:block;width:100%;height:100%;image-rendering:${(cfg.dpi || 300) < 200 ? 'pixelated' : 'auto'};"></div>`;
+    } catch (err) {
+      console.error('[cq-cadastros.js] _cqEtqImprimir: imagem da etiqueta', err);
+      return _cqEtiquetaHTML(x, cfg, folha);   // sem canvas: imprime o layout em mm
+    }
+  });
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Etiqueta ${_cqEsc(ds[0].codigo || ds[0].lote)}${ds.length > 1 ? ` (+${ds.length - 1})` : ''}</title>
     <style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact}${css}</style></head>
-    <body><template id="etq">${etq}</template><script>
-      // A imagem vai uma vez no HTML e é clonada para cada cópia
-      const t = document.getElementById('etq').content.firstElementChild;
-      for (let i = 0; i < ${copias}; i++) document.body.appendChild(t.cloneNode(true));
+    <body>${etqs.map(e => `<template class="etq-t">${e}</template>`).join('')}<script>
+      // Cada imagem vai uma vez no HTML e é clonada para cada cópia
+      document.querySelectorAll('template.etq-t').forEach(tp => {
+        const t = tp.content.firstElementChild;
+        for (let i = 0; i < ${copias}; i++) document.body.appendChild(t.cloneNode(true));
+      });
       window.onload = () => window.print();
     <\/script></body></html>`;
   const w = window.open('', '_blank');
@@ -3417,7 +3434,7 @@ function _cqPrepProdPopHTML(prods, n, dia, u) {
     <div class="cq-sitpop-menu cq-tp-menu">
       <div class="cq-tp-busca">${CQ_ICO.busca}<input type="text" id="cq-pf-prod-busca" placeholder="Buscar produto ou fabricante…" autocomplete="off" oninput="cqPrepProdFiltrar(this.value)"></div>
       ${_cqPrepEquips.length ? `<div class="cq-pf-prod-filtro">${CQ_ICO.ativo} Filtrado pela aba: ${_cqEsc(_cqPrepEquips.map(_cqRotuloEquip).join(', '))}</div>` : ''}
-      <div class="cq-tp-lista">${gruposHTML || `<div class="cq-ms-vazio">${_cqPrepEquips.length ? 'Nenhum produto preparado para os equipamentos filtrados na aba.' : 'Nenhum produto preparado no laboratório.'}</div>`}
+      <div class="cq-tp-lista">${(gruposHTML + _cqCtlPrepPopGrupoHTML(u, dia)) || `<div class="cq-ms-vazio">${_cqPrepEquips.length ? 'Nenhum produto preparado para os equipamentos filtrados na aba.' : 'Nenhum produto preparado no laboratório.'}</div>`}
         <div class="cq-ms-vazio cq-tp-nada" hidden>Nenhum produto encontrado.</div></div>
     </div>
   </div>`;
@@ -3596,7 +3613,8 @@ function _cqPrepProdsAba(u) {
 }
 function _cqPrepOpsProd(u) {
   return _cqPrepProdsAba(u).filter(_cqPrepServeEquip).sort((a, b) => (a.nome || '').localeCompare(b.nome || '', 'pt'))
-    .map(p => ({ value: p.id, label: p.nome, sub: [CQ_TIPOS_INSUMO[p.tipo], p.fabricante].filter(Boolean).join(' · '), grupo: CQ_TIPOS_INSUMO[p.tipo] || 'Outros' }));
+    .map(p => ({ value: p.id, label: p.nome, sub: [CQ_TIPOS_INSUMO[p.tipo], p.fabricante].filter(Boolean).join(' · '), grupo: CQ_TIPOS_INSUMO[p.tipo] || 'Outros' }))
+    .concat(_cqCtlPrepOpsProd(u));
 }
 function _cqPrepOpsEquip(u) {
   const ks = new Map();
@@ -3613,7 +3631,7 @@ function _cqPrepEquipsMudou(v) {
 }
 
 function _cqPrepAbaHTML(u) {
-  const itens = _cqPrepAbaItens(u);
+  const itens = [..._cqPrepAbaItens(u), ..._cqCtlPrepItens(u)];
   const nUso = itens.filter(x => !x.p.finalizado).length;
   const opsEquip = _cqPrepOpsEquip(u);
   _cqPrepEquips = _cqPrepEquips.filter(k => opsEquip.some(o => _cqEquipChave(o.value) === _cqEquipChave(k)));
@@ -3633,7 +3651,8 @@ function _cqPrepAbaHTML(u) {
       ${_cqPodeRegistrarPreparo() && nCj ? `<button class="btn btn-outline btn-sm" onclick="cqTrocaAbrir()">${CQ_ICO.repeat} Trocar conjunto</button>` : ''}
       ${_cqPodeRegistrarPreparo() ? `<button class="btn btn-primary btn-sm" onclick="cqPrepNovoAbrir()">${CQ_ICO.plus} Novo preparo</button>` : ''}
     </div>
-    <div id="cq-cad-lista"></div>`;
+    <div id="cq-cad-lista"></div>
+    <div id="cq-ctl-prep-lista"></div>`;
 }
 
 function _cqPrepAbaLista() {
@@ -3664,13 +3683,16 @@ function _cqPrepAbaLista() {
         ${_cqPrepBtnExcluir(i, p, 'aba')}
       </td></tr>`;
   };
+  const todas = [...itens.map(x => ({ ord: x.p.dataHora || x.p.data || '', criadoEm: x.p.criadoEm || '', html: linha(x) })), ..._cqCtlPrepAbaLinhas(u, hoje)]
+    .sort((a, b) => b.ord.localeCompare(a.ord) || b.criadoEm.localeCompare(a.criadoEm));
   const vazio = { em_uso: 'Nenhum preparo em uso', finalizados: 'Nenhum preparo finalizado', todos: 'Nenhum preparo registrado' }[_cqPrepFiltro] + (_cqPrepProds.length || _cqPrepEquips.length ? ' para os filtros marcados.' : ' nesta área.');
   el.innerHTML = `<div class="oc-table-scroll"><table class="ot-list-table cq-table cq-prep-tbl">
     <thead><tr><th class="ot-list-th">Código</th><th class="ot-list-th">Produto · lote</th><th class="ot-list-th">Quantidade</th><th class="ot-list-th">Preparo</th>
       <th class="ot-list-th">Validade</th><th class="ot-list-th">Situação</th><th class="ot-list-th" title="Corridas que usaram o preparo" style="text-align:center;">Corridas</th><th class="ot-list-th"></th></tr></thead>
-    <tbody>${itens.length ? itens.map(linha).join('') : `<tr><td colspan="8" class="cq-td-vazio">${vazio}</td></tr>`}</tbody></table></div>
+    <tbody>${todas.length ? todas.map(x => x.html).join('') : `<tr><td colspan="8" class="cq-td-vazio">${vazio}</td></tr>`}</tbody></table></div>
     ${podeSit ? '<div class="cq-nota" style="margin-top:8px;">Clique na situação para liberar, reprovar ou finalizar. Preparos finalizados, reprovados ou vencidos não são oferecidos no lançamento.</div>' : ''}`;
   _cqPrepDestaque = null;
+  _cqCtlPrepAbaLista();
 }
 
 // Insumos utilizáveis num teste (validade e situação); `produto` é o id do produto (só os lotes dele)
@@ -4456,7 +4478,7 @@ async function cqAlvoSalvar() {
 // quais nenhum outro cadastro depende. Cadastros já usados devem ser
 // inativados (registros do CQ são retidos — RDC 978/2025). Cada exclusão
 // fica registrada com cópia do cadastro em CQ_KEYS.exclusoes.
-const CQ_COLECAO_LABEL = { testes: 'teste', analitos: 'analito', materiais: 'material de controle', lotesControle: 'lote de controle', insumoProdutos: 'produto', insumos: 'lote de insumo' };
+const CQ_COLECAO_LABEL = { testes: 'teste', analitos: 'analito', materiais: 'material de controle', lotesControle: 'lote de controle', insumoProdutos: 'produto', insumos: 'lote de insumo', conjuntosPreparo: 'conjunto de troca' };
 
 // Leitura que lança exceção em caso de erro (dbLoad devolve null tanto para "vazio" quanto para erro)
 function _cqLerOuFalhar(path) { return window.dbGet(path); }
@@ -4519,16 +4541,27 @@ function _cqBloqueiosExclusao(colecao, id, uso) {
     if (usado('materiais', id) || lotes.some(l => usado('lotesControle', l.id)) || testes.some(t => matsDoTeste(t).includes(id) && usado('testes', t.id))) motivos.push('Possui lançamentos de CQ.');
     lotes.forEach(l => motivos.push(`Possui o lote de controle ${l.lote} (exclua o lote antes).`));
     testes.filter(t => matsDoTeste(t).includes(id)).forEach(t => motivos.push(`Usado no ${nomeTeste(t)}.`));
+    Object.values(cfg.conjuntosPreparo || {}).filter(c => (c?.itens || []).some(x => x?.materialId === id)).forEach(c => motivos.push(`Faz parte do conjunto de preparo ${c.nome} (retire-o do conjunto antes).`));
   } else if (colecao === 'lotesControle') {
     if (usado('lotesControle', id)) motivos.push('Possui lançamentos de CQ.');
     testes.filter(t => lotesDoTeste(t).includes(id)).forEach(t => motivos.push(`Em uso no ${nomeTeste(t)}.`));
+    const nPrep = Object.values(cfg.lotesControle[id]?.preparos || {}).filter(p => p?.id).length;
+    if (nPrep) motivos.push(`Possui ${nPrep} preparo(s) registrado(s) (exclua os preparos antes).`);
   } else if (colecao === 'insumoProdutos') {
     const lotes = _cqLotesDoProduto(id);
     if (lotes.some(l => usado('insumos', l.id))) motivos.push('Possui lançamentos de CQ.');
     lotes.forEach(l => motivos.push(`Possui o lote ${l.lote} (exclua o lote antes).`));
     testes.filter(t => t.insumoProdutoId === id).forEach(t => motivos.push(`Controlado pelo ${nomeTeste(t)}.`));
+    Object.values(cfg.conjuntosPreparo || {}).filter(c => (c?.itens || []).some(x => x?.produtoId === id)).forEach(c => motivos.push(`Faz parte do conjunto de preparo ${c.nome} (retire-o do conjunto antes).`));
+  } else if (colecao === 'conjuntosPreparo') {
+    // Utilizado = alguma troca registrou preparo com este conjunto
+    const n = Object.values(cfg.insumos).reduce((s, i) => s + Object.values(_cqLoteCru(i)?.preparos || {}).filter(p => p?.conjunto?.id === id).length, 0)
+      + Object.values(cfg.lotesControle).reduce((s, l) => s + Object.values(l?.preparos || {}).filter(p => p?.conjunto?.id === id).length, 0);
+    if (n) motivos.push(`Já usado em troca (${n} preparo(s) registrados com este conjunto). Desmarque “Ativo” para retirá-lo de uso.`);
   } else if (colecao === 'insumos') {
     if (usado('insumos', id)) motivos.push('Possui lançamentos de CQ.');
+    const nPrep = Object.values(_cqLoteCru(cfg.insumos[id] || {})?.preparos || {}).filter(p => p?.id).length;
+    if (nPrep) motivos.push(`Possui ${nPrep} preparo(s) registrado(s) (exclua os preparos antes).`);
   }
   return motivos;
 }
@@ -4540,11 +4573,12 @@ function _cqResumoCadastro(colecao, r) {
   if (colecao === 'lotesControle') return `Lote ${r.lote} — ${cqState.config.materiais[r.materialId]?.nome || '?'}`;
   if (colecao === 'insumoProdutos') return `${r.nome} (${CQ_TIPOS_INSUMO[r.tipo] || r.tipo})`;
   if (colecao === 'insumos') return `${r.nome || '?'} — lote ${r.lote}`;
+  if (colecao === 'conjuntosPreparo') return r.nome || r.id;
   return r.id;
 }
 
 async function cqExcluirCadastro(colecao, id) {
-  if (!_cqCan('configurar')) { showToast('Sem permissão para excluir cadastros do CQ.', 'error'); return; }
+  if (!_cqPodeExcluirCad(colecao)) { showToast('Sem permissão para excluir cadastros do CQ.', 'error'); return; }
   const rec = cqState.config[colecao]?.[id];
   if (!rec) return;
   if (!_cqPodeGravar()) return;
