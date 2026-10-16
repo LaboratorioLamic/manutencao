@@ -2081,15 +2081,54 @@ function _cqAbaTrilha(rec) {
   return { k: 'trilha', rotulo: `Rastreabilidade${n ? ` <span class="cq-step-qtd">${n}</span>` : ''}`, html: _cqTrilhaHTML(rec) };
 }
 
-// Trilha formatada (lista) para exibição
+// Trilha formatada para exibição: um card por registro; cada campo alterado vira um chip
+// que abre o antes → depois logo abaixo (cqTrilhaChip)
+const CQ_TRILHA_TOM = {
+  criacao: 'ok', edicao: 'info', correcao: 'aviso', alvo: 'info', decisao: 'aviso', acao: 'info', conclusao: 'ok',
+  eficacia: 'ok', exclusao: 'erro', cancelamento: 'erro', reinicio_historico: 'aviso', migracao: 'mig', automatico: 'mig', ocorrencia: 'aviso',
+};
+const CQ_TRILHA_ICO = {
+  ok: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  info: '<path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/>',
+  aviso: '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17h.01"/>',
+  erro: '<path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/>',
+  mig: '<path d="M4 12a8 8 0 0114-5.3L20 9M20 4v5h-5M20 12a8 8 0 01-14 5.3L4 15M4 20v-5h5"/>',
+};
+function _cqTrilhaIniciais(nome) {
+  const p = String(nome || '').trim().split(/\s+/).filter(Boolean);
+  return ((p[0]?.[0] || '?') + (p.length > 1 ? p[p.length - 1][0] : '')).toUpperCase();
+}
 function _cqTrilhaHTML(rec) {
   const itens = _cqTrilhaLista(rec).reverse();
   if (!itens.length) return '<div class="cq-vazio-p">Sem registros.</div>';
-  return `<div class="cq-trilha">${itens.map(t => `<div class="cq-trilha-item">
-    <div class="cq-trilha-head"><b>${_cqEsc(t.userName || '—')}</b> · ${_cqFmtDH(t.ts)}${t.estacao ? ` · estação ${_cqEsc(t.estacao)}` : ''}</div>
-    <div class="cq-trilha-txt">${_cqEsc(t.texto || t.acao)}</div>
-    ${t.diffs.length ? `<div class="cq-trilha-diffs">${t.diffs.map(d => `<div><span>${_cqEsc(d.campo)}:</span> <s>${_cqEsc(d.antes)}</s> → <b>${_cqEsc(d.depois)}</b></div>`).join('')}</div>` : ''}
-  </div>`).join('')}</div>`;
+  const vazio = v => v === undefined || v === null || v === '';
+  return `<div class="cq-tl">${itens.map(t => {
+    const tom = CQ_TRILHA_TOM[t.acao] || 'info';
+    const titulo = t.texto || t.acao || 'Registro';
+    const longo = titulo.length > 140;
+    return `<div class="cq-tl-card cq-tl-${tom}">
+      <span class="cq-tl-ico"><svg viewBox="0 0 24 24">${CQ_TRILHA_ICO[tom]}</svg></span>
+      <div class="cq-tl-corpo">
+        <div class="cq-tl-txt${longo ? ' cq-tl-longo' : ''}"${longo ? ' onclick="this.classList.toggle(\'aberto\')" title="Clique para ver tudo"' : ''}>${_cqEsc(titulo)}</div>
+        <div class="cq-tl-meta"><span class="cq-tl-av">${_cqEsc(_cqTrilhaIniciais(t.userName))}</span><b>${_cqEsc(t.userName || '—')}</b><span>${_cqFmtDH(t.ts)}</span>${t.estacao ? `<span class="cq-tl-est">${_cqEsc(t.estacao)}</span>` : ''}</div>
+        ${t.diffs.length ? `<div class="cq-tl-chips">${t.diffs.map((d, i) => `<button type="button" class="cq-tl-chip" data-i="${i}" onclick="cqTrilhaChip(this)">${_cqEsc(d.campo)}<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button>`).join('')}</div>
+        ${t.diffs.map((d, i) => `<div class="cq-tl-det" data-i="${i}" hidden>
+          <div class="cq-tl-det-tit">${_cqEsc(d.campo)}</div>
+          <div class="cq-tl-det-par">
+            <div class="cq-tl-antes"><small>Antes</small>${vazio(d.antes) ? '<i>vazio</i>' : _cqEsc(d.antes)}</div>
+            <div class="cq-tl-seta"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+            <div class="cq-tl-depois"><small>Depois</small>${vazio(d.depois) ? '<i>vazio</i>' : _cqEsc(d.depois)}</div>
+          </div></div>`).join('')}` : ''}
+      </div></div>`;
+  }).join('')}</div>`;
+}
+function cqTrilhaChip(btn) {
+  const card = btn.closest('.cq-tl-card'), i = btn.dataset.i;
+  const det = card?.querySelector(`.cq-tl-det[data-i="${i}"]`);
+  if (!det) return;
+  const abrir = det.hidden;
+  det.hidden = !abrir;
+  btn.classList.toggle('ativo', abrir);
 }
 
 // ── CONFIGURAÇÕES › CONTROLE DE QUALIDADE ────────────────────

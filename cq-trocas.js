@@ -330,9 +330,12 @@ function cqTrocaFracGrupo(cjId) {
   t.sel = ids.every(id => t.sel.includes(id)) ? t.sel.filter(id => !ids.includes(id)) : [...t.sel, ...ids.filter(id => !t.sel.includes(id))];
   _cqTrocaFracAtualizar();
 }
+// Aba escolhida (Em lote / Fracionado) fica salva nesta estação para a próxima troca
+function _cqTrocaModoSalvo() { try { return localStorage.getItem('cq-troca-modo') === 'fracionado' ? 'fracionado' : 'lote'; } catch (e) { return 'lote'; } }
 function cqTrocaModo(m) {
   if (!_cqTroca || _cqTroca.modo === m) return;
   _cqTroca.modo = m;
+  try { localStorage.setItem('cq-troca-modo', m); } catch (e) { /* sem armazenamento: só não lembra */ }
   _cqTrocaRedesenhar();
 }
 
@@ -343,7 +346,7 @@ function cqTrocaAbrir(cjId) {
   const cjs = _cqConjuntosDaUnidade(u);
   if (!cjs.length) { showToast(_cqCan('configurar') ? 'Crie primeiro um conjunto de troca (botão Conjuntos).' : 'Nenhum conjunto de troca nesta área.', 'error'); return; }
   const cj = cjs.find(c => c.id === cjId) || _cqConjuntosSugeridos(u)[0] || cjs[0];
-  _cqTroca = { u, modo: 'lote', cj: cj.id, sel: [], dh: '', resp: _cqSess().id, obs: '', finalizar: true, itens: {} };
+  _cqTroca = { u, modo: _cqTrocaModoSalvo(), cj: cj.id, sel: [], dh: '', resp: _cqSess().id, obs: '', finalizar: true, itens: {} };
   cqDrawerOpen({
     titulo: 'Trocar conjunto', subtitulo: 'Um preparo por produto, com a mesma data, hora e responsável', icone: 'repeat',
     corpo: '<div id="cq-tr-wrap" class="cq-prep-modal"></div>',
@@ -386,7 +389,7 @@ function _cqTrocaListaHTML() {
     const key = _cqTrKey(it);
     // Quantidade: a do conjunto; sem ela, o volume padrão do produto
     const pfp = !it.materialId ? cqState.config.insumoProdutos[it.produtoId]?.preparo : null;
-    const x = t.itens[key] = t.itens[key] || { incluir: true, lote: '', qtd: it.quantidade ?? pfp?.volume ?? '', un: it.quantidade ? (it.unidadeQtd || 'mL') : (pfp?.unidadeQtd || it.unidadeQtd || 'mL'), valEdit: false, val: '', valMot: '' };
+    const x = t.itens[key] = t.itens[key] || { incluir: true, lote: '', qtd: it.quantidade ?? pfp?.volume ?? '', un: it.quantidade ? (it.unidadeQtd || 'mL') : (pfp?.unidadeQtd || (it.materialId ? _cqTrMat(key)?.preparo?.unidadeQtd : '') || it.unidadeQtd || 'mL'), valEdit: false, val: '', valMot: '' };
     if (it.materialId) return _cqCtlTrocaItemHTML(key, x, t, frac, dia, dh);
     const p = cqState.config.insumoProdutos[it.produtoId];
     if (!p) { x.incluir = false; return '<div class="cq-tr-item off"><b class="cq-muted">Produto removido do cadastro</b></div>'; }

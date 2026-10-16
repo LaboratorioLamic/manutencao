@@ -2089,7 +2089,9 @@ async function cqInsumoProdutoSalvar() {
     especificacao: _cqVal('cq-ins-prep-esp'), armazenamento: _cqVal('cq-ins-prep-arm'), riscos: _cqVal('cq-ins-prep-risco'),
     validadeDias: diasTxt === '' ? null : Math.max(1, Math.round(Number(diasTxt)) || 0) || null,
     // Volume padrão: vem preenchido no registro do preparo e na troca (pode ser ajustado lá)
-    ...(Number(_cqVal('cq-ins-prep-vol').replace(',', '.')) > 0 ? { volume: Number(_cqVal('cq-ins-prep-vol').replace(',', '.')), unidadeQtd: _cqVal('cq-ins-prep-un') || 'mL' } : {}),
+    ...(Number(_cqVal('cq-ins-prep-vol').replace(',', '.')) > 0 ? { volume: Number(_cqVal('cq-ins-prep-vol').replace(',', '.')) } : {}),
+    // Unidade padrão vale mesmo sem volume (vem selecionada no preparo); 'mL' de produto antigo não é gravado à toa
+    ...(_cqVal('cq-ins-prep-vol') || _cqVal('cq-ins-prep-un') !== 'mL' || antes?.preparo?.unidadeQtd ? { unidadeQtd: _cqVal('cq-ins-prep-un') || 'mL' } : {}),
     // Só gravados quando ligados: produto antigo salvo sem mudança não acusa diferença
     ...(_cqChk('cq-ins-prep-livre') ? { liberaSemCIQ: true } : {}),
     ...(_cqChk('cq-ins-prep-aviso') ? { avisoDias: Math.max(0, Math.round(Number(_cqVal('cq-ins-prep-aviso-dias'))) || 0) } : {}),
@@ -3310,7 +3312,7 @@ function _cqPrepNovoEstado(u) {
   if (!lotes.some(l => l.id === n.lote)) n.lote = lotes[0]?.id || '';
   // Volume padrão do produto: preenche quantidade e unidade ao escolher o produto (uma vez por escolha)
   const pf = n.prod ? cqState.config.insumoProdutos[n.prod]?.preparo : null;
-  if (n.prod && n.qtdProd !== n.prod) { n.qtdProd = n.prod; if (pf?.volume) { if (n.qtd === '') n.qtd = String(pf.volume); n.un = pf.unidadeQtd || n.un; } }
+  if (n.prod && n.qtdProd !== n.prod) { n.qtdProd = n.prod; if (pf?.volume && n.qtd === '') n.qtd = String(pf.volume); if (pf?.unidadeQtd) n.un = pf.unidadeQtd; }
   if (n.prod && !n.un) n.un = pf?.unidadeQtd || _cqPrepUltimaUnidade(n.prod) || 'mL';
   return n;
 }
