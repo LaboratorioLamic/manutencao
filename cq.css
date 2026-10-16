@@ -2096,3 +2096,16 @@ body.dark-mode .cq-pi2-pill.amarelo { color: var(--amber); }
 .cq-prep-parar.cq-prep-parar-lg { width: 40px; height: 40px; border-radius: 10px; border-width: 1.5px; box-shadow: 0 2px 8px rgba(230,57,70,0.18); }
 .cq-prep-parar.cq-prep-parar-lg svg { width: 18px; height: 18px; }
 .cq-prep-parar.cq-prep-parar-lg:hover { transform: none; box-shadow: 0 4px 14px rgba(230,57,70,0.35); }
+
+/* Busca que se abre no próprio campo (lupa → campo) — aba Preparos */
+.cq-busca-exp { display: inline-flex; align-items: center; height: 36px; width: 36px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--bg-card); overflow: hidden; transition: width .2s ease, border-color .15s, box-shadow .15s; }
+.cq-busca-exp.aberta { width: 220px; border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(8, 145, 178, .12); }
+.cq-busca-exp-ico { flex: 0 0 34px; height: 34px; display: grid; place-items: center; border: 0; background: none; color: var(--text-muted); cursor: pointer; padding: 0; }
+.cq-busca-exp-ico svg { width: 16px; height: 16px; }
+.cq-busca-exp.aberta .cq-busca-exp-ico { color: var(--cyan); }
+.cq-busca-exp input { flex: 1; min-width: 0; border: 0; outline: none; background: none; font: inherit; font-size: 13px; color: inherit; padding: 0 2px; opacity: 0; transition: opacity .15s; }
+.cq-busca-exp.aberta input { opacity: 1; }
+.cq-busca-exp-x { flex: 0 0 26px; height: 26px; margin-right: 4px; border: 0; border-radius: 6px; background: none; color: var(--text-muted); font-size: 16px; line-height: 1; cursor: pointer; display: none; }
+.cq-busca-exp.aberta .cq-busca-exp-x { display: block; }
+.cq-busca-exp-x:hover { background: rgba(100, 116, 139, .12); }

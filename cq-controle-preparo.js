@@ -419,7 +419,7 @@ function _cqCtlPrepOpsProd(u) {
 function _cqCtlPrepAbaLinhas(u, hoje) {
   return _cqCtlPrepItens(u)
     .filter(({ p, mat }) => (!_cqPrepProds.length || _cqPrepProds.includes('mat:' + mat?.id)) && _cqPrepServeEquip(mat || {})
-      && (_cqPrepFiltro === 'todos' || (_cqPrepFiltro === 'finalizados') === !!p.finalizado))
+      && (_cqPrepFiltro === 'todos' || (_cqPrepFiltro === 'finalizados') === !!p.finalizado) && _cqPrepBuscaBate(p))
     .map(x => ({ ord: x.p.dataHora || x.p.data || '', criadoEm: x.p.criadoEm || '', html: _cqCtlPrepLinhaAbaHTML(x, hoje) }));
 }
 function _cqCtlPrepLinhaAbaHTML({ l, p, mat }, hoje) {
@@ -467,7 +467,9 @@ function _cqCtlTrocaItemHTML(key, x, t, frac, dia, dh) {
   const l = x.lote ? cqState.config.lotesControle[x.lote] : null;
   const val = l ? _cqCtlPrepValidade(m, l, dia) : null;
   const nv = l ? _cqArr(l.niveis).map(Number).sort((a, b) => a - b) : [];
-  const emUso = _cqCtlTrocaEmUso(m.id, t.u, dh);
+  // Níveis desta troca: padrão todos os do lote (x.niveis = null)
+  const sel = _cqCtlTrocaNiveisSel(x, l);
+  const emUso = _cqCtlTrocaEmUso(m.id, t.u, dh).filter(({ p }) => sel.includes(Number(p.nivel)));
   const usoTxt = emUso.length ? `Em uso: ${emUso.map(({ p }) => `${p.codigo} (val. ${_cqFmtData(p.validade)})`).join(', ')}${t.finalizar ? ' — será finalizado' : ''}` : 'Nenhum preparo em uso';
   const k = _cqEsc(key);
   const cab = frac
@@ -486,9 +488,24 @@ function _cqCtlTrocaItemHTML(key, x, t, frac, dia, dh) {
           <div class="cq-pf-qtd"><input type="number" class="field-input" min="0" step="any" inputmode="decimal" value="${_cqEsc(x.qtd)}" placeholder="0" oninput="cqTrocaItem('${k}','qtd',this.value)">
             <select class="field-select" onchange="cqTrocaItem('${k}','un',this.value)">${CQ_UNID_PREPARO.map(un => `<option ${un === x.un ? 'selected' : ''}>${un}</option>`).join('')}</select></div></div>
       </div>
-      ${nv.length ? `<div class="cq-muted cq-tr-uso">Um preparo e uma etiqueta por nível: ${_cqEsc(nv.map(n => _cqCtlNivelRot(m, n)).join(', '))}</div>` : ''}
+      ${nv.length ? `<div class="form-field"><label class="field-label">Níveis desta troca</label>
+        <div class="cq-checks cq-checks-inline">${nv.map(n => `<label class="oc-check"><input type="checkbox" ${sel.includes(n) ? 'checked' : ''} onchange="cqTrocaCtlNivel('${k}',${n},this.checked)"> ${_cqEsc(_cqCtlNivelRot(m, n))}</label>`).join('')}</div>
+        <div class="cq-muted cq-tr-uso">Um preparo e uma etiqueta por nível marcado.</div></div>` : ''}
       <div class="cq-muted cq-tr-uso">${_cqEsc(usoTxt)}</div>` : ''}
   </div>`;
+}
+// Níveis marcados do item (padrão: todos os do lote); só os que o lote tem
+function _cqCtlTrocaNiveisSel(x, l) {
+  const nv = l ? _cqArr(l.niveis).map(Number).sort((a, b) => a - b) : [];
+  return Array.isArray(x.niveis) ? nv.filter(n => x.niveis.includes(n)) : nv;
+}
+function cqTrocaCtlNivel(key, n, on) {
+  const x = _cqTroca?.itens[key];
+  if (!x) return;
+  const l = cqState.config.lotesControle[x.lote];
+  const atual = _cqCtlTrocaNiveisSel(x, l);
+  x.niveis = on ? [...new Set([...atual, n])] : atual.filter(v => v !== n);
+  _cqTrocaRedesenhar();
 }
 // Valida o item de controle da troca; devolve o plano ou null (erro já avisado)
 function _cqCtlTrocaPlano(key, x, t, dia) {
@@ -500,7 +517,9 @@ function _cqCtlTrocaPlano(key, x, t, dia) {
   if (qtd !== null && !(qtd > 0)) { showToast(`${m.nome}: quantidade inválida.`, 'error'); return null; }
   const validade = _cqCtlPrepValidade(m, l, dia);
   if (validade && validade < _cqHoje()) { showToast(`${m.nome}: preparo já vencido (validade ${_cqFmtData(validade)}).`, 'error'); return null; }
-  return { ctl: true, m, l, qtd, un: qtd ? x.un : '', validade, niveis: _cqArr(l.niveis).map(Number).sort((a, b) => a - b) };
+  const niveis = _cqCtlTrocaNiveisSel(x, l);
+  if (!niveis.length) { showToast(`${m.nome}: marque ao menos um nível${t.modo === 'fracionado' ? ' ou tire o controle da troca' : ' ou deixe o controle fora desta troca'}.`, 'error'); return null; }
+  return { ctl: true, m, l, qtd, un: qtd ? x.un : '', validade, niveis };
 }
 // Grava os preparos (um por nível) e finaliza os em uso do material
 function _cqCtlTrocaGravar(updates, x, k, { dia, dh, respId, obs, conjunto, finalizar, motivoFin, u }, ass) {
@@ -518,7 +537,7 @@ function _cqCtlTrocaGravar(updates, x, k, { dia, dh, respId, obs, conjunto, fina
   updates[`${base}/atualizadoEm`] = ass.em;
   updates[`${base}/trilha/${_cqTk()}c${k}`] = _cqTrilhaEntry('edicao', `Preparo registrado na ${conjunto.fracionada ? 'troca fracionada' : `troca do conjunto ${conjunto.nome}`} (${novos.map(p => p.codigo).join(', ')}): ${dh.replace('T', ' ')} por ${respNome || '—'}, validade ${_cqFmtData(x.validade)}`);
   const fins = [];
-  if (finalizar) _cqCtlTrocaEmUso(x.m.id, u, dh).forEach(({ l, p }, j) => {
+  if (finalizar) _cqCtlTrocaEmUso(x.m.id, u, dh).filter(({ p }) => x.niveis.includes(Number(p.nivel))).forEach(({ l, p }, j) => {
     const fin = { auto: false, motivo: `${motivoFin} (${novos.map(q => q.codigo).join(', ')})`, ...ass };
     updates[`${CQ_KEYS.config}/lotesControle/${l.id}/preparos/${p.id}/finalizado`] = fin;
     updates[`${CQ_KEYS.config}/lotesControle/${l.id}/atualizadoEm`] = ass.em;

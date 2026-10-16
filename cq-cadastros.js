@@ -3236,6 +3236,28 @@ let _cqPrepFiltro = 'em_uso';     // em_uso | finalizados | todos
 let _cqPrepProds = [];            // filtro de produtos (ids)
 let _cqPrepNovo = null;           // rascunho do formulário (sobrevive às atualizações vindas do banco)
 let _cqPrepDestaque = null;       // preparo recém-registrado (destacado na lista)
+let _cqPrepBusca = null;          // busca por código (null = lupa fechada)
+// Compara só letras e números: "1690 n1", "1690-N1" e "1690n1" encontram 1690-N1-P01
+const _cqPrepBuscaNorm = v => _cqNormBusca(String(v || '')).replace(/[^a-z0-9]/g, '');
+function _cqPrepBuscaBate(p) { const q = _cqPrepBuscaNorm(_cqPrepBusca); return !q || _cqPrepBuscaNorm(p?.codigo).includes(q); }
+// Lupa que se abre no próprio campo (sem redesenhar a aba)
+function cqPrepBuscaAbrir() {
+  const box = document.getElementById('cq-prep-busca-box'), inp = document.getElementById('cq-prep-busca');
+  if (!box || !inp) return;
+  if (box.classList.contains('aberta') && !inp.value) { cqPrepBuscaFechar(); return; }
+  box.classList.add('aberta');
+  _cqPrepBusca = inp.value;
+  inp.focus();
+}
+function cqPrepBuscaFechar() {
+  const box = document.getElementById('cq-prep-busca-box'), inp = document.getElementById('cq-prep-busca');
+  if (inp) inp.value = '';
+  box?.classList.remove('aberta');
+  const tinha = !!_cqPrepBusca;
+  _cqPrepBusca = null;
+  if (tinha) _cqPrepAbaLista();
+}
+function cqPrepBuscar(v) { _cqPrepBusca = v; _cqPrepAbaLista(); }
 
 function _cqPodeRegistrarPreparo() { return _cqCan('lancar') || _cqCan('configurar'); }
 // Atalho do cabeçalho: Cadastros › Preparos
@@ -3303,8 +3325,12 @@ function _cqPrepFormRedesenhar() {
 
 function _cqPrepFormHTML(u) {
   const prods = _cqPrepProdutos(u);
+  // Área só com controles preparados (ex.: IMU): lista os controles; escolher abre o registro por nível
+  const ctl = !prods.length ? _cqCtlPrepPopGrupoHTML(u, _cqHoje()) : '';
+  if (ctl) return `<div class="cq-prep-form"><div class="cq-nota" style="margin-bottom:10px;">Escolha o controle: cada nível do lote ganha um preparo, um código e uma etiqueta.</div>
+    <div class="cq-tp-lista cq-prep-ctl-lista">${ctl}</div></div>`;
   if (!prods.length) return `<div class="cq-prep-form cq-prep-form-vazio">${CQ_ICO.beaker}<div><b>Nenhum produto preparado no laboratório nesta área.</b>
-    <small>Marque “Preparado ou fracionado pelo laboratório” no cadastro do produto (aba Reagentes, meios e insumos).</small></div></div>`;
+    <small>Marque “Preparado ou fracionado pelo laboratório” no cadastro do produto (aba Reagentes, meios e insumos) ou “Preparado no laboratório” no material de controle.</small></div></div>`;
   const n = _cqPrepNovoEstado(u);
   const agora = _cqNowLocal().slice(0, 16);
   const dh = n.dh || agora;
@@ -3617,10 +3643,14 @@ function _cqPrepOpsProd(u) {
     .concat(_cqCtlPrepOpsProd(u));
 }
 function _cqPrepOpsEquip(u) {
+  // Produtos preparados e controles (materiais) preparados no laboratório ou com preparo na área
+  const mats = new Map(_cqCtlMateriaisPrep(u).map(m => [m.id, m]));
+  _cqCtlPrepItens(u).forEach(({ mat }) => { if (mat) mats.set(mat.id, mat); });
+  const recs = [..._cqPrepProdsAba(u), ...mats.values()];
   const ks = new Map();
-  _cqPrepProdsAba(u).forEach(p => _cqEquipsInsumo(p).forEach(k => { if (!ks.has(_cqEquipChave(k))) ks.set(_cqEquipChave(k), k); }));
+  recs.forEach(p => _cqEquipsInsumo(p).forEach(k => { if (!ks.has(_cqEquipChave(k))) ks.set(_cqEquipChave(k), k); }));
   return [...ks.values()].map(k => ({ value: k, label: _cqRotuloEquip(k), grupo: k.startsWith('a:') ? 'Equipamentos' : 'Sistemas e bancadas',
-    sub: `${_cqPrepProdsAba(u).filter(p => _cqEquipsInsumo(p).some(x => _cqEquipChave(x) === _cqEquipChave(k))).length} produto(s)` }))
+    sub: `${recs.filter(p => _cqEquipsInsumo(p).some(x => _cqEquipChave(x) === _cqEquipChave(k))).length} produto(s)/controle(s)` }))
     .sort((a, b) => a.grupo.localeCompare(b.grupo) || a.label.localeCompare(b.label, 'pt'));
 }
 function _cqPrepEquipsMudou(v) {
@@ -3646,6 +3676,12 @@ function _cqPrepAbaHTML(u) {
         onchange: v => _cqPrepEquipsMudou(v), vazio: 'Nenhum equipamento vinculado aos produtos preparados.' })}</div>
       <div class="cq-cad-equip">${_cqMultiHTML('cq-prep-prod', opsProd, _cqPrepProds, { placeholder: 'Todos os produtos', resumo: 'produtos', filtro: true, ico: CQ_ICO.cadastro,
         onchange: v => { _cqPrepProds = v; _cqPrepAbaLista(); }, vazio: 'Nenhum produto preparado no laboratório nesta área.' })}</div>
+      <div class="cq-busca-exp${_cqPrepBusca !== null ? ' aberta' : ''}" id="cq-prep-busca-box">
+        <button type="button" class="cq-busca-exp-ico" title="Buscar preparo pelo código" onclick="cqPrepBuscaAbrir()">${CQ_ICO.busca}</button>
+        <input type="text" id="cq-prep-busca" placeholder="Buscar código…" autocomplete="off" value="${_cqEsc(_cqPrepBusca || '')}"
+          oninput="cqPrepBuscar(this.value)" onkeydown="if(event.key==='Escape')cqPrepBuscaFechar()" onblur="if(!this.value)cqPrepBuscaFechar()">
+        <button type="button" class="cq-busca-exp-x" title="Limpar" onmousedown="event.preventDefault()" onclick="cqPrepBuscaFechar()">×</button>
+      </div>
       <div class="cq-spacer"></div>
       ${_cqCan('configurar') || nCj ? `<button class="btn btn-outline btn-sm" onclick="cqConjuntosAbrir()" title="Produtos preparados trocados juntos (ex.: bateria de coloração)">${CQ_ICO.lista} Conjuntos</button>` : ''}
       ${_cqPodeRegistrarPreparo() && nCj ? `<button class="btn btn-outline btn-sm" onclick="cqTrocaAbrir()">${CQ_ICO.repeat} Trocar conjunto</button>` : ''}
@@ -3663,7 +3699,7 @@ function _cqPrepAbaLista() {
   const podeSit = _cqPodeSituacaoPreparo();
   const itens = _cqPrepAbaItens(u)
     .filter(({ i, p }) => (!_cqPrepProds.length || _cqPrepProds.includes(_cqLoteCru(i).produtoId)) && _cqPrepServeEquip(_cqProdutoInsumo(i) || i)
-      && (_cqPrepFiltro === 'todos' || (_cqPrepFiltro === 'finalizados') === !!p.finalizado))
+      && (_cqPrepFiltro === 'todos' || (_cqPrepFiltro === 'finalizados') === !!p.finalizado) && _cqPrepBuscaBate(p))
     .sort((a, b) => (b.p.dataHora || b.p.data || '').localeCompare(a.p.dataHora || a.p.data || '') || (b.p.criadoEm || '').localeCompare(a.p.criadoEm || ''));
   const icoFim = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>';
   const linha = ({ i, p }) => {
@@ -3685,7 +3721,7 @@ function _cqPrepAbaLista() {
   };
   const todas = [...itens.map(x => ({ ord: x.p.dataHora || x.p.data || '', criadoEm: x.p.criadoEm || '', html: linha(x) })), ..._cqCtlPrepAbaLinhas(u, hoje)]
     .sort((a, b) => b.ord.localeCompare(a.ord) || b.criadoEm.localeCompare(a.criadoEm));
-  const vazio = { em_uso: 'Nenhum preparo em uso', finalizados: 'Nenhum preparo finalizado', todos: 'Nenhum preparo registrado' }[_cqPrepFiltro] + (_cqPrepProds.length || _cqPrepEquips.length ? ' para os filtros marcados.' : ' nesta área.');
+  const vazio = { em_uso: 'Nenhum preparo em uso', finalizados: 'Nenhum preparo finalizado', todos: 'Nenhum preparo registrado' }[_cqPrepFiltro] + (_cqPrepBusca ? ` com o código “${_cqPrepBusca}”.` : _cqPrepProds.length || _cqPrepEquips.length ? ' para os filtros marcados.' : ' nesta área.');
   el.innerHTML = `<div class="oc-table-scroll"><table class="ot-list-table cq-table cq-prep-tbl">
     <thead><tr><th class="ot-list-th">Código</th><th class="ot-list-th">Produto · lote</th><th class="ot-list-th">Quantidade</th><th class="ot-list-th">Preparo</th>
       <th class="ot-list-th">Validade</th><th class="ot-list-th">Situação</th><th class="ot-list-th" title="Corridas que usaram o preparo" style="text-align:center;">Corridas</th><th class="ot-list-th"></th></tr></thead>
